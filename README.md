@@ -1,5 +1,5 @@
 # Oxide VCL
----
+
 ## A Rust replacement for the PlayStation 2 Vector Unit Compiler.
 
 `oxide-vcl` compiles VCL, the PlayStation 2 Vector Unit language, into scheduled
@@ -22,10 +22,9 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
 - Defects of the original that the port reproduces, and proposed opt-in
   fixes, are in [VCL_BUGS.md](docs/VCL_BUGS.md).
 
-## Original artifact
+## Original artifact (not included here)
 
-- `vcl` (482,736 bytes; not included here).
-- SHA-256: `83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274`.
+- `vcl` (SHA-256 `83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274`).
 - Linux ELF32, little endian Intel 80386, stripped.
 - Embedded identification: "VCL 1.4beta7".
 
@@ -63,6 +62,7 @@ or emulator dependency; the historical binary is only a research oracle.
 cargo build --release
 target/release/oxide-vcl -h
 target/release/oxide-vcl -oexample.vsm example.vcl
+
 cargo test
 cargo clippy --all-targets -- -D warnings
 ```
@@ -141,7 +141,7 @@ at your option. Unless you state otherwise, a contribution intentionally
 submitted for inclusion is dual licensed as above, without any additional
 terms or conditions.
 
-Not covered:
+**Not covered:**
 
 - The programs in `tests/corpus` keep their own licenses (GPL-2.0, GPL-3.0,
   LGPL-2.1, AFL-2.0, Apache-2.0), recorded in each program's header and in
@@ -151,4 +151,3 @@ Not covered:
   `tests/probes` (`stdout.bin`, `stderr.bin`, `result.json`) are reference
   data for the tests, not part of the licensed work. vcl itself is SCE's and
   is not distributed here.
-
