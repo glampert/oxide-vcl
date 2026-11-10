@@ -4,7 +4,6 @@ The runtime oracle executes the supplied `vcl` ELF, whose SHA-256 is
 `83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274`.
 Its `-h` output identifies version **1.4beta7**, compiled at **15:26:57 on
 December 17, 2004**, for Linux. This is a 32-bit i386 dynamically linked ELF.
-It cannot run directly on this arm64 macOS host.
 
 ## Reproduce a run
 

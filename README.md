@@ -1,21 +1,22 @@
-# Oxide VCL: a compatible VCL compiler
+# Oxide VCL
+---
+## A Rust replacement for the PlayStation 2 Vector Unit Compiler.
 
-Oxide VCL (`oxide-vcl`) compiles VCL, the PlayStation 2 vector unit language, into scheduled
-VU assembly. It is a Rust reimplementation of SCE's vcl 1.4beta7 that aims to
-produce the same output, ignoring whitespace and comments, for the same input
-and options. vcl 1.4beta7's behaviour is the authority: it was established by
-analysing and running the original executable, with the PS2 manuals for
-hardware context; openvcl's implementation was not used.
+`oxide-vcl` compiles VCL, the PlayStation 2 Vector Unit language, into scheduled
+VU assembly. It is a Rust reimplementation of SCE's `vcl 1.4beta7` that aims to
+produce byte-identical output given the same input and options. `vcl 1.4beta7`'s
+behaviour is the authority: it was established by analysing and running the original
+executable, with the PS2 manuals for hardware context.
 
-To write programs for it, start with the [VCL reference](docs/VCL_REFERENCE.md):
-the language, every `--` annotation and `.` directive, and the command line.
+To write programs for it, start with the [VCL language reference](docs/VCL_REFERENCE.md).
+The syntax, every `--` annotation, `.` directive, and command line option is described there.
 
 ## Status
 
-- All 52 public corpus programs (`tests/corpus/`) get the original's result:
+- All 52 public corpus programs in `tests/corpus/` get the original's result:
   47 compile to the same listing and 5 are rejected as the original rejects
-  them. The local corpus of disassembled VU programs (117 cases, not
-  distributed) matches too.
+  them. An extended local corpus of disassembled VU programs (117 cases, not
+  distributed here) matches too.
 - Matching the corpus does not prove equivalence on programs it does not
   cover. Known gaps are listed in [COMPATIBILITY.md](docs/COMPATIBILITY.md).
 - Defects of the original that the port reproduces, and proposed opt-in
@@ -23,16 +24,15 @@ the language, every `--` annotation and `.` directive, and the command line.
 
 ## Original artifact
 
-- File: `local/vcl` (482,736 bytes; local, not tracked).
+- `vcl` (482,736 bytes; not included here).
 - SHA-256: `83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274`.
-- ELF32, little endian Intel 80386, stripped, Linux interpreter `/lib/ld-linux.so.2`.
-- Embedded identification: VCL 1.4beta7.
+- Linux ELF32, little endian Intel 80386, stripped.
+- Embedded identification: "VCL 1.4beta7".
 
 The tools that set up and run the original are in `tools/` (`setup_oracle.py`,
 `run_oracle.py`, `replay_oracle.py`, `run_native.py`); the binary, its runs
-under `local/evidence/` and the analysis tools that read its internals
-(`local/tools/`) are not tracked. [RUNTIME.md](docs/RUNTIME.md) describes the
-emulated oracle and what it needs under `local/`.
+and the analysis tools that read its output are not tracked. [RUNTIME.md](docs/RUNTIME.md)
+describes the emulated oracle and what it needs under a `local/` path.
 
 ## Layout
 
