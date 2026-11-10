@@ -152,7 +152,31 @@ command-line driver is the separate `crates/oxide-vcl` crate.
 | `allocator::external_allocation`, `allocator::lifetime` | Assignment across streams; component/stream intervals and exclusive issue locks |
 | `compiler` | Source/stream lowering, analysis and scheduling/allocation integration, one file per phase |
 | `emit` | Register/operand rendering and paired text layout |
+| `diagnostics` | Modes, typed messages and the reporter that prints all output |
 | `oxide-vcl` (driver crate) | Original argument rules, file I/O and preprocessing |
+
+### Modes and diagnostics
+
+`vcl::Mode` selects the compiler: `Vcl`, the default, is vcl 1.4beta7's
+behaviour and wording, which every test asserts; `Oxide` (`--mode=oxide`)
+enables the port's own fixes, optimizations and messages, which may break
+compatibility. The mode travels in `vcl::Options::mode`; code that departs
+from vcl checks it and keeps the vcl path unchanged. Today no behaviour or
+message differs between the two.
+
+Every message is a typed value in `vcl::diagnostics`, never preformatted
+text: `Message` groups `CliMessage` (command line), `DriverMessage` (files,
+streams, preprocessors), `ParseMessage` and `CompileMessage`.
+`CompileMessage::Internal` carries a failure of one of the port's own phases,
+for which vcl has no message. A `Diagnostic` adds severity and source line.
+Each message has a vcl wording; its oxide wording defaults to the vcl one
+until one is written. `Reporter` owns standard output and standard error and
+prints everything the driver writes (notices, warnings, compile and driver
+errors, the abort line, the help screen and the assembly), reproducing the
+vcl layout byte for byte in vcl mode. `CompileError` and `Compiled::warnings`
+carry these values; their `Display` is the vcl rendering. Developer traces,
+switched on by `VCL_*` environment variables, print through `vcl::trace!`
+and belong to neither mode.
 
 Unit coverage of a score or allocator does not establish the original
 scheduler's complete lock, move, loop-expansion, or final-reduction behavior.

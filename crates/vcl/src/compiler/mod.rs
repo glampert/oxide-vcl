@@ -7,6 +7,7 @@
 use crate::Options;
 use crate::allocator::allocation::{Allocator, VirtualRegister};
 use crate::analysis::flow::{self, Access, Definition};
+use crate::diagnostics::{CompileMessage, Diagnostic, Message, Severity};
 use crate::isa::instruction::{self, Direction, RegisterFamily, Syntax};
 use crate::parser::{self, Directive, Instruction, ParseMode, StatementKind, Synthetic};
 use crate::scheduler::schedule::{
@@ -40,10 +41,12 @@ use table_planning::*;
 use table_timing::*;
 use wrangle_tables::*;
 
+/// A compile failure: the source line (0 when there is none) and the typed
+/// message, rendered by [`crate::diagnostics`] in either mode.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompileError {
     pub line: usize,
-    pub message: String,
+    pub message: Message,
     kind: CompileErrorKind,
 }
 
@@ -66,13 +69,17 @@ impl CompileError {
     }
 }
 
+impl CompileError {
+    /// The error as a diagnostic, for [`crate::diagnostics::Reporter`].
+    pub fn diagnostic(&self) -> Diagnostic {
+        Diagnostic::new(Severity::Error, self.line, self.message.clone())
+    }
+}
+
+/// Renders in vcl mode: `line N: message`, or the message alone.
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.line == 0 {
-            f.write_str(&self.message)
-        } else {
-            write!(f, "line {}: {}", self.line, self.message)
-        }
+        self.diagnostic().fmt(f)
     }
 }
 
@@ -83,7 +90,7 @@ pub struct Compiled {
     pub assembly: String,
     pub header: String,
     pub instruction_pairs: usize,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<Diagnostic>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -315,7 +322,7 @@ struct Source {
     mpg: Option<String>,
     unique_labels: bool,
     unique_prefix: Option<String>,
-    warnings: Vec<String>,
+    warnings: Vec<Diagnostic>,
     /// Each name's current base binding (register ID to physical number),
     /// the register's binding in the original decoder. Every
     /// mapped IN/OUT operand replaces it; an unmapped one takes it. It
@@ -513,7 +520,10 @@ impl Source {
                 };
                 return Err(error(
                     line,
-                    format!("can't use {name} as a name for one of the {kind}"),
+                    CompileMessage::ReservedName {
+                        name: name.to_string(),
+                        kind: kind.to_string(),
+                    },
                 ));
             }
         }
@@ -534,10 +544,7 @@ impl Source {
                 } else if matches!(operand.class, 22..=25 | 55) {
                     None
                 } else {
-                    return Err(error(
-                        line,
-                        "operand register pool is not implemented for this target",
-                    ));
+                    return Err(error(line, CompileMessage::OperandPoolUnsupported));
                 }
             } else {
                 None
@@ -634,10 +641,7 @@ impl Source {
                 && !matches!(&statement.kind, StatementKind::Instruction(instruction)
                     if instruction.mode == ParseMode::Raw && instruction.synthetic().is_none())
             {
-                return Err(error(
-                    line,
-                    "raw branch requires one explicit delay pair before a boundary",
-                ));
+                return Err(error(line, CompileMessage::RawBranchDelayBeforeBoundary));
             }
             match statement.kind {
                 StatementKind::Directive(directive) => match directive {
@@ -683,17 +687,29 @@ impl Source {
                                 (id, id)
                             };
                             let first = first.ok_or_else(|| {
-                                error(line, format!("invalid physical register {name}"))
+                                error(
+                                    line,
+                                    CompileMessage::InvalidPhysicalRegister {
+                                        name: name.to_string(),
+                                    },
+                                )
                             })?;
                             let last = last.ok_or_else(|| {
-                                error(line, format!("invalid physical register {name}"))
+                                error(
+                                    line,
+                                    CompileMessage::InvalidPhysicalRegister {
+                                        name: name.to_string(),
+                                    },
+                                )
                             })?;
                             let mask = if vector {
                                 if suffix.is_empty() {
                                     15
                                 } else {
                                     instruction::Mask::parse(suffix)
-                                        .ok_or_else(|| error(line, "invalid component mask"))?
+                                        .ok_or_else(|| {
+                                            error(line, CompileMessage::InvalidComponentMask)
+                                        })?
                                         .0
                                 }
                             } else {
@@ -747,9 +763,9 @@ impl Source {
                         let request = crate::analysis::memory::WorkAreaRequest::from_parsed(
                             &device, address, size,
                         )
-                        .map_err(|e| error(line, e.to_string()))?;
+                        .map_err(|e| internal(line, e))?;
                         crate::analysis::memory::activate_marigold(&request)
-                            .map_err(|e| error(line, e.to_string()))?;
+                            .map_err(|e| internal(line, e))?;
                     }
                 },
                 StatementKind::Label(label) => {
@@ -813,10 +829,7 @@ impl Source {
                             Synthetic::EndExit => binding = None,
                             Synthetic::Input | Synthetic::Output => {
                                 if instruction.mnemonic.eq_ignore_ascii_case("in_hw_mac") {
-                                    return Err(error(
-                                        line,
-                                        "explicit mac register - but I'm writing ASTATUS here??",
-                                    ));
+                                    return Err(error(line, CompileMessage::ExplicitMacWrite));
                                 }
                                 let located = self.lower(instruction, line)?;
                                 for (operand, id) in
@@ -839,27 +852,31 @@ impl Source {
                                             if let Some(physical) = physical
                                                 && let Some(previous) =
                                                     self.bindings.insert(id, physical)
-                                                    && previous != physical {
-                                                        self.warnings.push(format!(
-                                                            "changing binding for {name} from {} to {}",
-                                                            physical_name(family, previous),
-                                                            physical_name(family, physical),
-                                                        ));
-                                                    }
+                                                && previous != physical
+                                            {
+                                                self.warnings.push(
+                                                    Diagnostic::warning(
+                                                        CompileMessage::BindingChanged {
+                                                            name: name.to_string(),
+                                                            from: physical_name(family, previous),
+                                                            to: physical_name(family, physical),
+                                                        },
+                                                    )
+                                                    .at(line),
+                                                );
+                                            }
                                             physical
                                         }
-                                        None if named && binding.is_some() => {
-                                            Some(self.bindings.get(&id).copied().ok_or_else(
-                                                || {
-                                                    error(
-                                                        line,
-                                                        format!(
-                                                            "can't figure out which base register to map {name} to"
-                                                        ),
-                                                    )
-                                                },
-                                            )?)
-                                        }
+                                        None if named && binding.is_some() => Some(
+                                            self.bindings.get(&id).copied().ok_or_else(|| {
+                                                error(
+                                                    line,
+                                                    CompileMessage::UnmappableBase {
+                                                        name: name.to_string(),
+                                                    },
+                                                )
+                                            })?,
+                                        ),
                                         None => None,
                                     };
                                     let access = Access {
@@ -885,11 +902,10 @@ impl Source {
                                             {
                                                 return Err(error(
                                                     line,
-                                                    format!(
-                                                        "regweb:: set map - can't map to different base registers.. try to map both {} and {}",
-                                                        physical_name(family, base),
-                                                        physical_name(family, previous),
-                                                    ),
+                                                    CompileMessage::ConflictingBases {
+                                                        first: physical_name(family, base),
+                                                        second: physical_name(family, previous),
+                                                    },
                                                 ));
                                             }
                                         }
@@ -902,10 +918,7 @@ impl Source {
                             }
                             Synthetic::Continue => {
                                 if !matches!(current.block().end, End::Fallthrough) {
-                                    return Err(error(
-                                        line,
-                                        "CONT directive encountered - but end mode isn't null",
-                                    ));
+                                    return Err(error(line, CompileMessage::ContWithEndMode));
                                 }
                                 current.block().end = End::Continue;
                                 current.split();
@@ -920,16 +933,18 @@ impl Source {
                                 let minimum = immediate_i32(&instruction, 0, line)?;
                                 let safe = immediate_i32(&instruction, 1, line)?;
                                 if minimum < 1 {
-                                    self.warnings.push(format!(
-                                        "line {line}: for --LoopCS, the minimum known count (arg 1) must be must be >0"
-                                    ));
+                                    self.warnings.push(
+                                        Diagnostic::warning(CompileMessage::LoopCsKnownCount)
+                                            .at(line),
+                                    );
                                     continue;
                                 }
                                 current.block().loop_hints.minimum = Some(minimum as u32);
                                 if safe < 0 {
-                                    self.warnings.push(format!(
-                                        "line {line}: for --LoopCS, the minimum safe count (arg 2) must be must be >=0"
-                                    ));
+                                    self.warnings.push(
+                                        Diagnostic::warning(CompileMessage::LoopCsSafeCount)
+                                            .at(line),
+                                    );
                                     continue;
                                 }
                                 current.block().loop_hints.safe = safe as u32;
@@ -937,14 +952,13 @@ impl Source {
                             Synthetic::LoopAbsolute => {
                                 let value = immediate_i32(&instruction, 0, line)?;
                                 if value < 3 {
-                                    self.warnings.push(format!(
-                                        "line {line}: failed to get immediate field 0 (extra loop count) while processing --LoopAbs. value must be >=2"
-                                    ));
+                                    self.warnings.push(
+                                        Diagnostic::warning(CompileMessage::LoopAbsCount).at(line),
+                                    );
                                     continue;
                                 }
-                                let value = u16::try_from(value).map_err(|_| {
-                                    error(line, "loop period exceeds supported schedule range")
-                                })?;
+                                let value = u16::try_from(value)
+                                    .map_err(|_| error(line, CompileMessage::LoopPeriodRange))?;
                                 current.block().loop_hints.absolute = Some(value);
                             }
                             // A negative extra period is reported too, but the
@@ -952,18 +966,14 @@ impl Source {
                             Synthetic::LoopExtra => {
                                 let value = immediate_i32(&instruction, 0, line)?;
                                 if value < 0 {
-                                    return Err(error(
-                                        line,
-                                        "failed to get immediate field 0 (extra loop count) while processing --LoopExtra. value must be >=0",
-                                    ));
+                                    return Err(error(line, CompileMessage::LoopExtraCount));
                                 }
-                                let value = u16::try_from(value).map_err(|_| {
-                                    error(line, "loop period exceeds supported schedule range")
-                                })?;
+                                let value = u16::try_from(value)
+                                    .map_err(|_| error(line, CompileMessage::LoopPeriodRange))?;
                                 current.block().loop_hints.extra = value;
                             }
                             Synthetic::Unknown => {
-                                return Err(error(line, "unknown synthetic instruction"));
+                                return Err(error(line, CompileMessage::UnknownSynthetic));
                             }
                         }
                         continue;
@@ -972,7 +982,7 @@ impl Source {
                     let is_branch = located.instruction.metadata.is_branch();
                     if is_branch {
                         if raw_delay.is_some() {
-                            return Err(error(line, "branch inside a raw branch delay slot"));
+                            return Err(error(line, CompileMessage::BranchInRawDelaySlot));
                         }
                         let metadata = located.instruction.metadata;
                         let target = located
@@ -1017,7 +1027,7 @@ impl Source {
             }
         }
         if raw_delay.is_some() {
-            return Err(error(0, "raw branch requires one explicit delay pair"));
+            return Err(error(0, CompileMessage::RawBranchDelay));
         }
         if current.nonempty() {
             self.regions.push(current);
@@ -1056,14 +1066,14 @@ fn immediate_i32(
         .operands
         .get(index)
         .and_then(|operand| operand.immediate.as_deref())
-        .ok_or_else(|| error(line, "missing loop hint operand"))?;
+        .ok_or_else(|| error(line, CompileMessage::MissingLoopHint))?;
     crate::parser::expression::evaluate(text)
         .ok()
         .and_then(|value| value.number())
         .map(|value| value.to_i32())
-        .ok_or_else(|| error(line, "loop hint must be a numeric constant"))
+        .ok_or_else(|| error(line, CompileMessage::LoopHintNotConstant))
 }
-fn error(line: usize, message: impl Into<String>) -> CompileError {
+fn error(line: usize, message: impl Into<Message>) -> CompileError {
     CompileError {
         line,
         message: message.into(),
@@ -1071,8 +1081,13 @@ fn error(line: usize, message: impl Into<String>) -> CompileError {
     }
 }
 
+/// A failure inside one of the port's phases, described by that phase.
+fn internal(line: usize, detail: impl fmt::Display) -> CompileError {
+    error(line, CompileMessage::Internal(detail.to_string()))
+}
+
 fn allocation_error(failure: crate::allocator::allocation::AllocationError) -> CompileError {
-    let mut result = error(0, failure.to_string());
+    let mut result = error(0, CompileMessage::Allocation(failure.clone()));
     if matches!(
         failure,
         crate::allocator::allocation::AllocationError::NoFit { .. }

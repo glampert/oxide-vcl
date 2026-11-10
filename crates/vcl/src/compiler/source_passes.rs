@@ -11,7 +11,7 @@ pub(super) fn normalize_copies(
 ) -> Result<Region, CompileError> {
     use crate::analysis::copies::{self, Kind};
     let graph = build_flow_graph(program, source)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut result = source.clone();
     for block in &source.blocks {
         let allowed = block.selected_table.as_ref().map_or_else(
@@ -71,12 +71,12 @@ pub(super) fn normalize_copies(
                 continue;
             };
             let Some(destination) = ordinary else {
-                return Err(error(located.line, "move destination is not bound"));
+                return Err(error(located.line, CompileMessage::MoveDestinationUnbound));
             };
             if program.registers.named(destination).physical == Some(0) {
                 return Err(CompileError {
                     line: located.line,
-                    message: "found a move to a const zero register".into(),
+                    message: CompileMessage::ZeroCopyDestination.into(),
                     kind: CompileErrorKind::ZeroCopyDestination,
                 });
             }
@@ -169,7 +169,7 @@ pub(super) fn coalesce_immediates(
     // Reaching-definition identities therefore remain valid while numeric
     // constants move. Rebuild flow later when copy normalization changes IR.
     let graph = build_flow_graph(program, &result)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let reads: BTreeMap<_, _> = analysis
         .reads
         .iter()
@@ -260,14 +260,13 @@ pub(super) fn coalesce_immediates(
                 users.push(User::EscapingOutput);
             }
             if std::env::var_os("VCL_COALESCE_TRACE").is_some() {
-                eprintln!(
+                crate::trace!(
                     "coalesce {id} {} line {} users {users:?}",
-                    result.instructions[id].instruction.mnemonic, result.instructions[id].line
+                    result.instructions[id].instruction.mnemonic,
+                    result.instructions[id].line
                 );
             }
-            if let Some(plan) =
-                induction::plan(producer, &users).map_err(|e| error(0, e.to_string()))?
-            {
+            if let Some(plan) = induction::plan(producer, &users).map_err(|e| internal(0, e))? {
                 for change in std::iter::once(&plan.producer).chain(&plan.consumers) {
                     rewrite(program, &mut result, change)?;
                 }
@@ -279,7 +278,7 @@ pub(super) fn coalesce_immediates(
         }
     }
 
-    Err(error(
+    Err(internal(
         0,
         "VI immediate coalescing exceeded its transformation budget",
     ))
@@ -293,7 +292,7 @@ pub(super) fn drop_redundant_branches(
     region: &Region,
 ) -> Result<Option<Region>, CompileError> {
     let graph = build_flow_graph(program, region)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut result = region.clone();
     let mut changed = false;
     for &id in &analysis.reachable {
@@ -485,7 +484,7 @@ pub(super) fn prune_source_region(
         .filter_map(|(id, located)| located.effects.side_effect.then_some(id))
         .collect();
     let liveness =
-        prune::propagate(&expanded, &edges, &roots, &keep).map_err(|e| error(0, e.to_string()))?;
+        prune::propagate(&expanded, &edges, &roots, &keep).map_err(|e| internal(0, e))?;
     let mut result = region.clone();
     for (id, pruned) in liveness.pruned.iter().enumerate() {
         let located = &mut result.instructions[id];
@@ -748,14 +747,14 @@ pub(super) fn construct_register_webs(
         && std::env::var_os("VCL_WEB_DEBUG").is_some()
     {
         let located = &region.instructions[*operation];
-        eprintln!(
+        crate::trace!(
             "missing read: op {operation} line {} {:?} reg {} ({}) c {component}",
             located.line,
             located.instruction.mnemonic,
             register,
             program.registers.named(*register).name
         );
-        eprintln!(
+        crate::trace!(
             "  operands {:?}",
             located
                 .instruction
@@ -764,7 +763,7 @@ pub(super) fn construct_register_webs(
                 .map(|o| (o.text.clone(), o.mask.0, o.direction))
                 .collect::<Vec<_>>()
         );
-        eprintln!(
+        crate::trace!(
             "  reads {:?}",
             web_analysis
                 .reads
@@ -776,7 +775,7 @@ pub(super) fn construct_register_webs(
                 ))
                 .collect::<Vec<_>>()
         );
-        eprintln!(
+        crate::trace!(
             "  effects {:?}",
             located
                 .effects
@@ -789,21 +788,21 @@ pub(super) fn construct_register_webs(
             .blocks
             .iter()
             .position(|b| b.operations.contains(operation));
-        eprintln!(
+        crate::trace!(
             "  block {block:?} reachable {:?} owner {}",
             block.map(|b| web_analysis.reachable.contains(&b)),
             block.map_or(0, |b| flow_owner(region, &region.blocks[b], *operation))
         );
         if let Some(b) = block {
             let ops = &region.blocks[b].operations;
-            eprintln!(
+            crate::trace!(
                 "  block ops {} with reads {}",
                 ops.len(),
                 ops.iter()
                     .filter(|&&o| web_analysis.reads.iter().any(|r| r.operation == o))
                     .count()
             );
-            eprintln!(
+            crate::trace!(
                 "  block mode {:?} raw lines {:?}",
                 region.instructions[*operation].instruction.mode,
                 region.blocks[b].selected_table.is_some()
@@ -814,13 +813,12 @@ pub(super) fn construct_register_webs(
         // One web reaches two interface bindings (`regweb`).
         web::WebError::ConflictingBases { first, second } => error(
             0,
-            format!(
-                "regweb:: set map - can't map to different base registers.. try to map both {} and {}",
-                program.registers.named(first).name.to_ascii_uppercase(),
-                program.registers.named(second).name.to_ascii_uppercase(),
-            ),
+            CompileMessage::ConflictingBases {
+                first: program.registers.named(first).name.to_ascii_uppercase(),
+                second: program.registers.named(second).name.to_ascii_uppercase(),
+            },
         ),
-        e => error(0, e.to_string()),
+        e => internal(0, e),
     })?;
     let mut result = region.clone();
     result.forced.clear();

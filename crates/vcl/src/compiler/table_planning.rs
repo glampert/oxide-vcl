@@ -31,7 +31,7 @@ pub(super) fn plan_wrangled_tables(
             .collect();
         live_of[b] = live.clone();
         if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-            eprintln!(
+            crate::trace!(
                 "plan block {b} live {live:?} selected {} modes {:?}",
                 block.selected_table.is_some(),
                 live.iter()
@@ -245,7 +245,7 @@ pub(super) fn plan_wrangled_tables(
                 }
             }
             if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                eprintln!("select candidate {b} inputs {inputs} outputs {outputs}");
+                crate::trace!("select candidate {b} inputs {inputs} outputs {outputs}");
             }
             if best.is_none_or(|(_, bi, bo)| inputs < bi || (inputs == bi && bo < outputs)) {
                 best = Some((b, inputs, outputs));
@@ -280,7 +280,7 @@ pub(super) fn plan_wrangled_tables(
         let mut table = tables.remove(&b).unwrap();
         context.apply(&mut table, b, &lengths, &placed);
         if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-            eprintln!(
+            crate::trace!(
                 "apply block {b} minimum {:?} end {:?}",
                 table
                     .problem
@@ -295,7 +295,7 @@ pub(super) fn plan_wrangled_tables(
                     .map(|i| i.end_distance)
                     .collect::<Vec<_>>()
             );
-            eprintln!(
+            crate::trace!(
                 "statics block {b} {:?}",
                 table
                     .statics
@@ -341,7 +341,7 @@ pub(super) fn run_wrangle(table: &mut WrangledTable, block_id: usize) -> Option<
         &mut |_| true,
     )?;
     if std::env::var_os("VCL_WRANGLE_TRACE").is_some() {
-        eprintln!(
+        crate::trace!(
             "wrangle block {block_id}: {:?} lb {} rows {} trace {:?}",
             outcome.strategy,
             table.lower_bound,
@@ -397,7 +397,7 @@ pub(super) fn table_stalls(
             let _ = region;
             if available < needed {
                 if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    eprintln!(
+                    crate::trace!(
                         "stall block {block}: setter {setter} ({setter_block} row {setter_row}/{setter_len}) reader {} ({reader_block} row {user_row}) distance {distance} needed {needed}",
                         read.operation
                     );
@@ -504,9 +504,9 @@ pub(super) fn raw_reduce_wrangled(
     let statics = vec![wrangle::Statics::default(); problem.instructions.len()];
     problem.horizon = problem.horizon.max(local_rows.len() as i32 + 1);
     if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-        eprintln!("raw reduce rows {local_rows:?}");
+        crate::trace!("raw reduce rows {local_rows:?}");
         for (index, insn) in problem.instructions.iter().enumerate() {
-            eprintln!(
+            crate::trace!(
                 "  raw insn {index} {} min {} end {} protected {} {} escapes {:?}",
                 region.instructions[table.live[index]].instruction.mnemonic,
                 insn.minimum_position,
@@ -557,13 +557,13 @@ pub(super) fn raw_reduce_wrangled(
             return None;
         }
         if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-            eprintln!("  after raw {} {:?}", reduced.start(), reduced.window());
+            crate::trace!("  after raw {} {:?}", reduced.start(), reduced.window());
         }
     }
     if reduce {
         reduced.prepare_size_reduction();
         if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-            eprintln!("  after sred {:?}", reduced.window());
+            crate::trace!("  after sred {:?}", reduced.window());
         }
     }
     // Tidy runs after reduction, so the E-bit padding follows

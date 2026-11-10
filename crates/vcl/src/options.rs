@@ -5,9 +5,11 @@
 //! `oxide-vcl` driver parses them from the original's command line).
 
 /// Settings for [`crate::compile`]. The default is the original's behaviour
-/// with no switches.
+/// with no switches, in [`crate::Mode::Vcl`].
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Options {
+    /// vcl 1.4beta7's behaviour (the default) or oxide-vcl's (`--mode=oxide`).
+    pub mode: crate::Mode,
     /// Prefix for generated labels (`-u`); the file name when `None`.
     pub unique: Option<String>,
     /// Emit the source lines as comments (`-c`).

@@ -37,8 +37,13 @@ fn arguments(case: &str) -> Vec<String> {
 fn port(case: &str) -> Result<vcl::Compiled, String> {
     let source = read(case, "input.vcl");
     let options = cli::parse(arguments(case)).unwrap().compile;
-    vcl::compile(&source, &format!("/work/{case}.vcl"), &options)
-        .map_err(|errors| format!("{errors:?}"))
+    vcl::compile(&source, &format!("/work/{case}.vcl"), &options).map_err(|errors| {
+        errors
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
 }
 
 fn accepted(case: &str) -> bool {
@@ -104,7 +109,11 @@ fn a_redefined_input_leaves_in_another_register() {
             .any(|line| line.ends_with("ilw.x VI03,10(VI01)"))
     );
     assert_eq!(
-        compiled.warnings,
+        compiled
+            .warnings
+            .iter()
+            .map(|warning| warning.message.to_string())
+            .collect::<Vec<_>>(),
         ["changing binding for t from VI02 to VI03"]
     );
 }
@@ -114,7 +123,11 @@ fn a_redefined_input_leaves_in_another_register() {
 fn rebinding_warns_like_the_original() {
     let compiled = port("binding-two-inputs").unwrap();
     assert_eq!(
-        compiled.warnings,
+        compiled
+            .warnings
+            .iter()
+            .map(|warning| warning.message.to_string())
+            .collect::<Vec<_>>(),
         [
             "changing binding for t from VI02 to VI03",
             "changing binding for t from VI03 to VI02",
@@ -122,7 +135,12 @@ fn rebinding_warns_like_the_original() {
     );
     for line in read("binding-two-inputs", "stderr.bin").lines() {
         if let Some(warning) = line.strip_prefix("WARN: ") {
-            assert!(compiled.warnings.iter().any(|ours| ours == warning));
+            assert!(
+                compiled
+                    .warnings
+                    .iter()
+                    .any(|ours| ours.message.to_string() == warning)
+            );
         }
     }
 }

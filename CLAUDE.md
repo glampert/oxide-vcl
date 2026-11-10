@@ -14,8 +14,9 @@ untracked notes are in `CLAUDE.local.md` when present.
 ## Layout
 
 - `crates/vcl`: the compiler library, by phase: `isa`, `parser`, `analysis`,
-  `scheduler`, `loops`, `allocator`, `emit`, `compiler` (one file per phase).
-  Entry point `vcl::compile`, settings `vcl::Options`.
+  `scheduler`, `loops`, `allocator`, `emit`, `compiler` (one file per phase),
+  plus `diagnostics` (modes, typed messages, the output `Reporter`). Entry
+  point `vcl::compile`, settings `vcl::Options`.
 - `crates/oxide-vcl`: the `oxide-vcl` driver (`main.rs`, plus `cli.rs` as the
   `vcl_cli` library target so tests share the argument parser) and all
   integration tests (`tests/`).
@@ -64,6 +65,14 @@ scheduling or allocation changed.
   manuals or from other implementations.
 - Match the original even where it is odd; keep its user-visible messages
   verbatim. Where the port deliberately differs, say so in the docs.
+- Two modes (`vcl::Mode`, `--mode=`): `vcl` (default) is the original's
+  behaviour and is what the tests assert; `oxide` holds fixes, optimizations
+  and better messages. Anything that breaks compatibility goes behind
+  `options.mode == Mode::Oxide`, leaving the vcl path unchanged.
+- No `println!`/`eprintln!` outside `crates/vcl/src/diagnostics.rs`: messages
+  are `vcl::diagnostics` enum variants (vcl wording in `vcl_text`, oxide
+  wording in `oxide_text`), printed through `Reporter`; developer traces use
+  `vcl::trace!`.
 - Every behaviour fix gets a test that runs without local data (an inline
   program, or a probe in `tests/probes`) and, where an original run exists, a
   comparison with it.

@@ -14,13 +14,16 @@
 //! - [`loops`]: modulo scheduling and software-loop expansion;
 //! - [`allocator`]: register occupancy and physical assignment;
 //! - [`emit`]: assembly formatting;
-//! - [`compiler`]: the driver that runs the phases over a whole program.
+//! - [`compiler`]: the driver that runs the phases over a whole program;
+//! - [`diagnostics`]: every message and the writer that prints them, in vcl
+//!   or oxide [`Mode`].
 //!
 //! [`compile`] is the entry point; [`Options`] holds the settings it reads.
 
 pub mod allocator;
 pub mod analysis;
 pub mod compiler;
+pub mod diagnostics;
 pub mod emit;
 pub mod isa;
 pub mod loops;
@@ -29,6 +32,7 @@ pub mod parser;
 pub mod scheduler;
 
 pub use compiler::{CompileError, Compiled, compile};
+pub use diagnostics::{Diagnostic, Message, Mode};
 pub use options::Options;
 
 /// The project's version, shared by every crate in the workspace.

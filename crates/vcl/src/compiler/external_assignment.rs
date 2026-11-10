@@ -215,7 +215,7 @@ pub(super) fn assign(
             &tables,
             &initial,
         )
-        .map_err(|failure| error(0, failure.to_string()))?;
+        .map_err(|failure| internal(0, failure))?;
         for (register, base) in assignments {
             if !initial.contains_key(&register) {
                 result.forced.insert(register, base);

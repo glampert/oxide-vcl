@@ -2,6 +2,7 @@
 
 pub mod expression;
 
+pub use crate::diagnostics::ParseMessage;
 use crate::isa::instruction::{self, Direction, InstructionDef, Mask, OperandSpec, Syntax};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -147,7 +148,7 @@ pub struct Operand {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError {
     pub line: usize,
-    pub message: String,
+    pub message: ParseMessage,
 }
 
 impl std::fmt::Display for ParseError {
@@ -243,7 +244,7 @@ pub fn parse_with_options(
             if name.is_empty() {
                 errors.push(ParseError {
                     line,
-                    message: "empty label".into(),
+                    message: ParseMessage::EmptyLabel,
                 });
                 continue;
             }
@@ -262,7 +263,7 @@ pub fn parse_with_options(
             if modifiers & !0x0d != 0 {
                 errors.push(ParseError {
                     line,
-                    message: "invalid E/M/D/T bits on a label".into(),
+                    message: ParseMessage::LabelBits,
                 });
             }
             program.statements.push(Statement {
@@ -304,7 +305,7 @@ pub fn parse_with_options(
             if instructions.len() != 1 {
                 errors.push(ParseError {
                     line,
-                    message: "only one synthetic instruction is allowed on a line".into(),
+                    message: ParseMessage::MultipleSynthetics,
                 });
             }
         } else if (state.mode == ParseMode::Vcl && ordinary > 1)
@@ -313,11 +314,10 @@ pub fn parse_with_options(
             errors.push(ParseError {
                 line,
                 message: if state.mode == ParseMode::Vcl {
-                    "more than one instruction on a line in VCL mode"
+                    ParseMessage::MultipleInstructions
                 } else {
-                    "raw mode requires two instructions on each instruction line"
-                }
-                .into(),
+                    ParseMessage::RawPairRequired
+                },
             });
         }
     }
@@ -373,7 +373,7 @@ fn logical_lines(source: &str, errors: &mut Vec<ParseError>) -> Vec<(usize, Stri
             } else {
                 errors.push(ParseError {
                     line,
-                    message: "source contains a non-ASCII character".into(),
+                    message: ParseMessage::NonAscii,
                 });
                 position += 1;
             }
@@ -386,7 +386,7 @@ fn logical_lines(source: &str, errors: &mut Vec<ParseError>) -> Vec<(usize, Stri
             } else {
                 errors.push(ParseError {
                     line,
-                    message: "unexpected line continuation".into(),
+                    message: ParseMessage::UnexpectedContinuation,
                 });
             }
         } else if !trimmed.is_empty() {
@@ -398,7 +398,7 @@ fn logical_lines(source: &str, errors: &mut Vec<ParseError>) -> Vec<(usize, Stri
     lines
 }
 
-fn tokenize(source: &str) -> Result<Vec<Token>, String> {
+fn tokenize(source: &str) -> Result<Vec<Token>, ParseMessage> {
     let mut result: Vec<Token> = Vec::new();
     let mut token = String::new();
     for c in source.chars() {
@@ -410,9 +410,9 @@ fn tokenize(source: &str) -> Result<Vec<Token>, String> {
                 });
             }
             if c == ',' {
-                let previous = result.last_mut().ok_or("unexpected comma")?;
+                let previous = result.last_mut().ok_or(ParseMessage::UnexpectedComma)?;
                 if previous.comma {
-                    return Err("unexpected comma".into());
+                    return Err(ParseMessage::UnexpectedComma);
                 }
                 previous.comma = true;
             }
@@ -435,22 +435,24 @@ fn tokenize(source: &str) -> Result<Vec<Token>, String> {
         });
     }
     if result.len() > 200 {
-        return Err("too many tokens on a line (maximum 200)".into());
+        return Err(ParseMessage::TooManyTokens);
     }
     Ok(result)
 }
 
-fn argument(tokens: &[Token], index: usize, directive: &str) -> Result<String, String> {
+fn argument(tokens: &[Token], index: usize, directive: &str) -> Result<String, ParseMessage> {
     tokens
         .get(index)
         .map(|token| token.text.clone())
-        .ok_or_else(|| format!("missing argument to {directive}"))
+        .ok_or_else(|| ParseMessage::MissingDirectiveArgument {
+            directive: directive.into(),
+        })
 }
 
-fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, String> {
+fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, ParseMessage> {
     let name = tokens[0].text.to_ascii_lowercase();
     let args: Vec<String> = tokens[1..].iter().map(|token| token.text.clone()).collect();
-    let reorder = || -> Result<bool, String> {
+    let reorder = || -> Result<bool, ParseMessage> {
         match args
             .first()
             .map(|argument| argument.to_ascii_lowercase())
@@ -458,7 +460,9 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         {
             None | Some("noreorder") => Ok(false),
             Some("reorder") => Ok(true),
-            Some(value) => Err(format!("bad option '{value}' to raw directive")),
+            Some(value) => Err(ParseMessage::BadRawOption {
+                value: value.into(),
+            }),
         }
     };
     Ok(match name.as_str() {
@@ -470,7 +474,7 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
             state.syntax = match argument(tokens, 1, &name)?.to_ascii_lowercase().as_str() {
                 "new" => Syntax::New,
                 "old" => Syntax::Old,
-                _ => return Err(".syntax expects 'new' or 'old'".into()),
+                _ => return Err(ParseMessage::BadSyntax),
             };
             Directive::Syntax(state.syntax)
         }
@@ -490,7 +494,7 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         },
         ".raw" | ".vsm" => {
             if state.raw_loop {
-                return Err("raw directive inside a raw loop".into());
+                return Err(ParseMessage::RawInRawLoop);
             }
             state.mode = ParseMode::Raw;
             state.reorder = reorder()?;
@@ -500,10 +504,10 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         }
         ".endraw" | ".endvsm" => {
             if state.mode != ParseMode::Raw {
-                return Err("endraw directive outside raw mode".into());
+                return Err(ParseMessage::EndRawOutsideRaw);
             }
             if state.raw_loop {
-                return Err("endraw directive inside a raw loop".into());
+                return Err(ParseMessage::EndRawInRawLoop);
             }
             state.mode = ParseMode::Vcl;
             state.reorder = false;
@@ -511,7 +515,7 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         }
         ".rawloop" | ".vsmloop" => {
             if state.raw_loop {
-                return Err("nested raw loops are invalid".into());
+                return Err(ParseMessage::NestedRawLoop);
             }
             state.saved_mode = state.mode;
             // The original saves the mode but does not save the submode;
@@ -526,7 +530,7 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         }
         ".endrawloop" | ".endvsmloop" => {
             if !state.raw_loop {
-                return Err("endrawloop directive outside a raw loop".into());
+                return Err(ParseMessage::EndRawLoopOutsideRawLoop);
             }
             state.mode = state.saved_mode;
             state.reorder = state.saved_reorder;
@@ -539,14 +543,14 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
                 "vu0" => 0x100,
                 "vu1" => 0x400,
                 "core" => {
-                    return Err("core work areas are not implemented in the original binary".into());
+                    return Err(ParseMessage::CoreWorkArea);
                 }
-                _ => return Err("work area device must be core, vu0 or vu1".into()),
+                _ => return Err(ParseMessage::WorkAreaDevice),
             };
             let address = decimal_prefix(&argument(tokens, 2, &name)?);
             let size = decimal_prefix(&argument(tokens, 3, &name)?);
             if size <= 0 || address < 0 || i64::from(address) + i64::from(size) > capacity {
-                return Err("work area is outside device memory".into());
+                return Err(ParseMessage::WorkAreaOutsideMemory);
             }
             Directive::WorkArea {
                 device,
@@ -559,7 +563,7 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         ".noebits" => Directive::NoEbits,
         ".unique" => {
             if args.first().is_some_and(|value| value.len() > 128) {
-                return Err("unique name too long".into());
+                return Err(ParseMessage::UniqueTooLong);
             }
             Directive::Unique(args.first().cloned())
         }
@@ -570,7 +574,7 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Str
         ".endshow" | ".endhide" => Directive::EndVisibility {
             show: name == ".endshow",
         },
-        _ => return Err(format!("unknown directive '{name}'")),
+        _ => return Err(ParseMessage::UnknownDirective { name }),
     })
 }
 
@@ -602,19 +606,23 @@ fn physical_register(value: &str, vector: bool) -> Option<u8> {
     (number < if vector { 32 } else { 16 }).then_some(number)
 }
 
-fn validate_register_range(value: &str, vector: bool) -> Result<(), String> {
+fn validate_register_range(value: &str, vector: bool) -> Result<(), ParseMessage> {
     let bounds: Vec<_> = value.split('-').collect();
     if bounds.len() > 2 {
-        return Err(format!(
-            "too many '-' characters in register range '{value}'"
-        ));
+        return Err(ParseMessage::RegisterRangeDashes {
+            range: value.into(),
+        });
     }
     for bound in bounds {
         if physical_register(bound, vector).is_none() {
-            return Err(format!("not an allocable physical register: '{bound}'"));
+            return Err(ParseMessage::NotAllocablePhysical {
+                register: bound.into(),
+            });
         }
         if physical_register(bound, vector) == Some(0) {
-            return Err(format!("register '{bound}' is not allocable"));
+            return Err(ParseMessage::RegisterNotAllocable {
+                register: bound.into(),
+            });
         }
     }
     Ok(())
@@ -683,16 +691,19 @@ fn parse_instruction(
     tokens: &[Token],
     cursor: &mut usize,
     state: &State,
-) -> Result<Instruction, String> {
+) -> Result<Instruction, ParseMessage> {
     let source_opcode = &tokens[*cursor].text;
     let (name, specified_mask, modifiers, optional, explicit_loop_id) = opcode_parts(source_opcode);
-    let metadata = instruction::lookup(&name, state.syntax)
-        .ok_or_else(|| format!("unknown instruction '{source_opcode}'"))?;
+    let metadata = instruction::lookup(&name, state.syntax).ok_or_else(|| {
+        ParseMessage::UnknownInstruction {
+            opcode: source_opcode.to_string(),
+        }
+    })?;
     if source_opcode.contains('.') && !source_opcode.contains("..") && specified_mask.is_none() {
-        return Err("invalid instruction component mask".into());
+        return Err(ParseMessage::InvalidInstructionMask);
     }
     if explicit_loop_id > 32 && explicit_loop_id != 0x1024 {
-        return Err("instruction loop ID is larger than 32".into());
+        return Err(ParseMessage::LoopIdTooLarge);
     }
     let allowed_flags = if state.mode == ParseMode::Raw {
         0x0d
@@ -700,22 +711,18 @@ fn parse_instruction(
         0x0c
     };
     if modifiers & !allowed_flags != 0 {
-        return Err("invalid E/M/D/T bits for instruction context".into());
+        return Err(ParseMessage::InstructionBits);
     }
     if state.mode == ParseMode::Vcl && metadata.kind == 0 {
-        return Err(format!(
-            "instruction '{name}' is supported only in raw mode"
-        ));
+        return Err(ParseMessage::RawOnlyInstruction { name: name.clone() });
     }
     let mut mask = match (metadata.mask_mode, specified_mask) {
         (0, Some(_)) => {
-            return Err(format!(
-                "instruction '{name}' does not accept a component mask"
-            ));
+            return Err(ParseMessage::MaskNotAccepted { name: name.clone() });
         }
         (2, None | Some(Mask(7))) => Mask::XYZ,
-        (2, _) => return Err("XYZ instruction requires mask xyz".into()),
-        (_, Some(mask)) if mask.0 == 0 => return Err("empty instruction mask".into()),
+        (2, _) => return Err(ParseMessage::XyzMaskRequired),
+        (_, Some(mask)) if mask.0 == 0 => return Err(ParseMessage::EmptyMask),
         (_, Some(mask)) => mask,
         _ => Mask::XYZW,
     };
@@ -733,7 +740,7 @@ fn parse_instruction(
             text.push_str(&token.text);
             *cursor += 1;
             if text.len() > 1023 {
-                return Err("gathered operand exceeds 1023 characters".into());
+                return Err(ParseMessage::OperandTooLong);
             }
             if token.comma {
                 break;
@@ -741,10 +748,10 @@ fn parse_instruction(
         }
         // --exitm's empty macro operand is an intentional exception.
         if text.is_empty() && !(metadata.kind == 2 && metadata.subtype == 11) {
-            return Err(format!(
-                "missing operand {} for '{name}'",
-                operand_index + 1
-            ));
+            return Err(ParseMessage::MissingOperand {
+                position: operand_index + 1,
+                name: name.clone(),
+            });
         }
         texts.push(text);
     }
@@ -761,7 +768,7 @@ fn parse_instruction(
             .take(2)
             .any(|operand| operand.class == 38 && bracket_field(&operand.text).is_some())
     {
-        return Err("a scalar can only be the third operand in a generalized instruction".into());
+        return Err(ParseMessage::ScalarNotThird);
     }
     if specified_mask.is_none() {
         if let Some(operand) = operands
@@ -775,7 +782,7 @@ fn parse_instruction(
             .filter(|operand| !operand.implicit && matches!(operand.class, 1 | 9 | 35))
             .any(|operand| operand.mask != mask);
         if mismatched {
-            return Err("vector operand component masks do not match".into());
+            return Err(ParseMessage::VectorMasksDiffer);
         }
     }
     for operand in &mut operands {
@@ -785,8 +792,11 @@ fn parse_instruction(
     }
     let mut metadata = if metadata.index < 12 {
         let derived = derive_generalized_name(&name, &operands)?;
-        let concrete = instruction::lookup(&derived, Syntax::Old)
-            .ok_or_else(|| format!("cannot derive instruction '{derived}'"))?;
+        let concrete = instruction::lookup(&derived, Syntax::Old).ok_or_else(|| {
+            ParseMessage::CannotDerive {
+                name: derived.clone(),
+            }
+        })?;
         // Generalized spellings carry I/Q/vector lane selection in operands;
         // adapt the explicit strings to the concrete opcode before decoding.
         for (operand, spec) in operands.iter_mut().zip(concrete.operands) {
@@ -834,14 +844,14 @@ fn parse_instruction(
         && !mask.is_scalar()
         && specified_mask.is_some()
     {
-        return Err("instruction requires a single component".into());
+        return Err(ParseMessage::SingleComponentRequired);
     }
     let tagged = operands
         .iter()
         .filter(|operand| !operand.tags.is_empty())
         .count();
     if tagged > 1 {
-        return Err("only one tagged operand is allowed per instruction".into());
+        return Err(ParseMessage::MultipleTaggedOperands);
     }
     normalize_zero_sources(metadata.index, &mut operands);
     Ok(Instruction {
@@ -908,14 +918,14 @@ fn normalize_zero_sources(index: u16, operands: &mut [Operand]) {
     }
 }
 
-fn derive_generalized_name(name: &str, operands: &[Operand]) -> Result<String, String> {
+fn derive_generalized_name(name: &str, operands: &[Operand]) -> Result<String, ParseMessage> {
     let mut name = name.to_string();
     if operands
         .iter()
         .take(2)
         .any(|operand| operand.class == 38 && bracket_field(&operand.text).is_some())
     {
-        return Err("a scalar can only be the third operand in a generalized instruction".into());
+        return Err(ParseMessage::ScalarNotThird);
     }
     if operands.first().is_some_and(|operand| {
         operand
@@ -947,7 +957,7 @@ fn derive_generalized_name(name: &str, operands: &[Operand]) -> Result<String, S
                 .is_some_and(|name| name.eq_ignore_ascii_case("acc"))
         })
     {
-        return Err("ACC can only be the first vector operand".into());
+        return Err(ParseMessage::AccNotFirst);
     }
     Ok(name)
 }
@@ -958,7 +968,7 @@ fn parse_operands(
     mask: Mask,
     forced_mask: bool,
     syntax: Syntax,
-) -> Result<Vec<Operand>, String> {
+) -> Result<Vec<Operand>, ParseMessage> {
     let mut result = Vec::new();
     let mut explicit = 0;
     for spec in metadata.operands {
@@ -1017,7 +1027,7 @@ fn parse_operands(
 /// The length floors count the mask. So `ilw.x t,0(p)` and `ilwr.x t,(p)`
 /// fail while `0(p)x`, `10(p)` and `(p)x` decode, whatever the register is
 /// named.
-fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), String> {
+fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), ParseMessage> {
     let bytes = body.as_bytes();
     let length = bytes.len();
     let minimum = match class {
@@ -1025,7 +1035,9 @@ fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), String>
         30 => 4,
         _ => 5,
     };
-    let malformed = || format!("failed to decode memory operand '{body}'");
+    let malformed = || ParseMessage::MalformedMemoryOperand {
+        operand: body.to_string(),
+    };
     if length < minimum {
         return Err(malformed());
     }
@@ -1061,11 +1073,11 @@ fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), String>
         32 => body[1..last]
             .strip_suffix("++")
             .map(|register| (0, register, last))
-            .ok_or_else(|| "postincrement operand requires (register++)".into()),
+            .ok_or(ParseMessage::PostincrementRequired),
         _ => body[1..last]
             .strip_prefix("--")
             .map(|register| (0, register, last))
-            .ok_or_else(|| "predecrement operand requires (--register)".into()),
+            .ok_or(ParseMessage::PredecrementRequired),
     }
 }
 
@@ -1082,7 +1094,7 @@ fn parse_operand(
     instruction_mask: Mask,
     forced_mask: bool,
     syntax: Syntax,
-) -> Result<Operand, String> {
+) -> Result<Operand, ParseMessage> {
     let (body, tag_string) = text
         .split_once(':')
         .map_or((text, ""), |(body, tags)| (body, tags));
@@ -1115,16 +1127,16 @@ fn parse_operand(
             }
             if matches!(spec.class, 30 | 31) {
                 operand.mask =
-                    Mask::parse(&body[close + 1..]).ok_or("invalid memory component mask")?;
+                    Mask::parse(&body[close + 1..]).ok_or(ParseMessage::InvalidMemoryMask)?;
                 if operand.mask.0 == 0 {
                     operand.mask = if forced_mask {
                         instruction_mask
                     } else {
-                        return Err("memory component mask is required".into());
+                        return Err(ParseMessage::MemoryMaskRequired);
                     };
                 }
                 if forced_mask && operand.mask != instruction_mask {
-                    return Err("memory and instruction component masks differ".into());
+                    return Err(ParseMessage::MemoryMaskDiffers);
                 }
             }
             validate_register_name(register)?;
@@ -1144,7 +1156,7 @@ fn parse_operand(
     if syntax == Syntax::New && matches!(spec.class, 3 | 11 | 13..=16 | 38) {
         if let Some((name, mask)) = bracket_field(&register) {
             if spec.class == 38 && !mask.is_scalar() {
-                return Err("generalized scalar requires one selected component".into());
+                return Err(ParseMessage::GeneralizedScalarComponent);
             }
             operand_mask = Some(mask);
             register = name.to_string();
@@ -1159,7 +1171,7 @@ fn parse_operand(
             let fields = &register[start..];
             let mask = Mask::parse(fields).expect("trimmed suffix contains only lane letters");
             if mask.0.count_ones() as usize != fields.len() {
-                return Err("duplicate operand component selection".into());
+                return Err(ParseMessage::DuplicateComponent);
             }
             operand_mask = Some(mask);
             register.truncate(start);
@@ -1168,7 +1180,7 @@ fn parse_operand(
             }
         }
     } else if let Some((name, suffix)) = register.rsplit_once('.') {
-        operand_mask = Some(Mask::parse(suffix).ok_or("invalid operand component mask")?);
+        operand_mask = Some(Mask::parse(suffix).ok_or(ParseMessage::InvalidOperandMask)?);
         register = name.into();
     }
     let required_mask = match spec.class {
@@ -1182,11 +1194,11 @@ fn parse_operand(
     let vector = matches!(spec.class, 1 | 3 | 9..=16 | 35 | 38);
     if vector {
         if spec.class == 3 && !operand_mask.is_some_and(Mask::is_scalar) {
-            return Err("scalar operand requires one selected component".into());
+            return Err(ParseMessage::ScalarComponentRequired);
         }
         if let Some(required) = required_mask {
             if operand_mask.is_some_and(|mask| mask != required) {
-                return Err("instruction and operand field selections differ".into());
+                return Err(ParseMessage::FieldSelectionsDiffer);
             }
             operand.mask = required;
         } else if forced_mask && !matches!(spec.class, 3 | 38) {
@@ -1204,14 +1216,18 @@ fn parse_operand(
                 _ => "R",
             };
             if !register.eq_ignore_ascii_case(expected) {
-                return Err(format!("operand must be {expected}"));
+                return Err(ParseMessage::OperandMustBe {
+                    expected: expected.to_string(),
+                });
             }
             register = expected.into();
         }
         9 | 10 => register = "ACC".into(),
         17 => register = "CLIP".into(),
         34 if physical_register(&register, false) != Some(1) => {
-            return Err("operand must be vi01".into());
+            return Err(ParseMessage::OperandMustBe {
+                expected: "vi01".into(),
+            });
         }
         _ => {}
     }
@@ -1219,30 +1235,30 @@ fn parse_operand(
     if let Some(mapping) = &operand.forced_register {
         let vector = spec.class == 35;
         if physical_register(mapping, vector).is_none() {
-            return Err(format!("forced register '{mapping}' is not physical"));
+            return Err(ParseMessage::ForcedRegisterNotPhysical {
+                register: mapping.clone(),
+            });
         }
     }
     operand.register = Some(register);
     Ok(operand)
 }
 
-fn validate_register_name(name: &str) -> Result<(), String> {
+fn validate_register_name(name: &str) -> Result<(), ParseMessage> {
     if name.is_empty() {
-        return Err("empty register name".into());
+        return Err(ParseMessage::EmptyRegisterName);
     }
     if name.len() >= 63 {
-        return Err(format!("register name '{name}' is too long"));
+        return Err(ParseMessage::RegisterNameTooLong { name: name.into() });
     }
     if !name
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || b"[]_$".contains(&byte))
     {
-        return Err(format!("invalid character in register name '{name}'"));
+        return Err(ParseMessage::InvalidRegisterCharacter { name: name.into() });
     }
     if name.len() >= 2 && instruction::lookup(name, Syntax::New).is_some() {
-        return Err(format!(
-            "instruction name '{name}' is reserved as a register name"
-        ));
+        return Err(ParseMessage::ReservedRegisterName { name: name.into() });
     }
     Ok(())
 }
@@ -1256,7 +1272,9 @@ fn validate_stream(program: &Program, allow_incomplete: bool, errors: &mut Vec<P
     for statement in &program.statements {
         let failure = match &statement.kind {
             StatementKind::Label(label) if !labels.insert(label.name.clone()) => {
-                Some(format!("duplicate label '{}'", label.name))
+                Some(ParseMessage::DuplicateLabel {
+                    name: label.name.clone(),
+                })
             }
             StatementKind::Directive(Directive::Visibility { show, .. }) => {
                 visibility.push(*show);
@@ -1265,7 +1283,7 @@ fn validate_stream(program: &Program, allow_incomplete: bool, errors: &mut Vec<P
             StatementKind::Directive(Directive::EndVisibility { show })
                 if visibility.last().is_some_and(|previous| previous != show) =>
             {
-                Some("visibility scope mode mismatch".into())
+                Some(ParseMessage::VisibilityMismatch)
             }
             StatementKind::Directive(Directive::EndVisibility { .. }) => {
                 visibility.pop();
@@ -1305,15 +1323,13 @@ fn validate_stream(program: &Program, allow_incomplete: bool, errors: &mut Vec<P
                     | Synthetic::Input
                     | Synthetic::Output
                     | Synthetic::Continue,
-                ) => Some("synthetic instruction in invalid enter/exit context".into()),
+                ) => Some(ParseMessage::SyntheticContext),
                 Some(Synthetic::LoopExtra | Synthetic::LoopAbsolute)
                     if instruction.mode == ParseMode::Raw =>
                 {
-                    Some("loop-size synthetic is invalid in raw mode".into())
+                    Some(ParseMessage::LoopSizeInRaw)
                 }
-                None if context.is_some() => {
-                    Some("ordinary instruction inside an enter/exit block".into())
-                }
+                None if context.is_some() => Some(ParseMessage::InstructionInEnterExit),
                 _ => None,
             },
             _ => None,
@@ -1333,19 +1349,19 @@ fn validate_stream(program: &Program, allow_incomplete: bool, errors: &mut Vec<P
         if context.is_some() {
             errors.push(ParseError {
                 line,
-                message: "unterminated enter/exit block".into(),
+                message: ParseMessage::UnterminatedEnterExit,
             });
         }
         if enters == 0 {
             errors.push(ParseError {
                 line,
-                message: "source contains no enter block".into(),
+                message: ParseMessage::NoEnter,
             });
         }
         if exits == 0 {
             errors.push(ParseError {
                 line,
-                message: "source contains no exit block".into(),
+                message: ParseMessage::NoExit,
             });
         }
     }
@@ -1381,7 +1397,8 @@ mod tests {
             .collect()
     }
 
-    fn rejected(source: &str, needle: &str) {
+    fn rejected(source: &str, needle: impl std::fmt::Display) {
+        let needle = needle.to_string();
         let errors = parse_with_options(
             source,
             ParserOptions {
@@ -1391,7 +1408,9 @@ mod tests {
         )
         .unwrap_err();
         assert!(
-            errors.iter().any(|error| error.message.contains(needle)),
+            errors
+                .iter()
+                .any(|error| error.message.to_string().contains(&needle)),
             "{errors:?}"
         );
     }
@@ -1431,7 +1450,7 @@ mod tests {
             )
             .unwrap_err()
             .iter()
-            .any(|error| error.message.contains("no exit"))
+            .any(|error| error.message.to_string().contains("no exit"))
         );
         assert!(
             parse(
@@ -1441,7 +1460,7 @@ mod tests {
             )
             .unwrap_err()
             .iter()
-            .any(|error| error.message.contains("unterminated"))
+            .any(|error| error.message.to_string().contains("unterminated"))
         );
         rejected(
             "--exit\n\
@@ -1480,7 +1499,7 @@ mod tests {
         let instructions = instructions(&program);
         assert_eq!(instructions.len(), 1);
         assert_eq!(instructions[0].operands[2].register.as_deref(), Some("a"));
-        rejected("= add a,b,c", "unexpected line continuation");
+        rejected("= add a,b,c", ParseMessage::UnexpectedContinuation);
     }
 
     #[test]
@@ -1940,8 +1959,8 @@ mod tests {
 
     #[test]
     fn malformed_operand_lists_do_not_panic() {
-        rejected(",add b,a,a", "unexpected comma");
-        rejected("add b,,a,a", "unexpected comma");
+        rejected(",add b,a,a", ParseMessage::UnexpectedComma);
+        rejected("add b,,a,a", ParseMessage::UnexpectedComma);
         rejected("add b,a", "missing operand");
         rejected("in_vf x(no_such_register)", "not physical");
         rejected("add toolong-name,a,a", "register name");

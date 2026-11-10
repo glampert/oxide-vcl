@@ -329,11 +329,11 @@ pub(super) fn lpgen_context(
     region: &Region,
 ) -> Result<LpgenContext, CompileError> {
     let graph = build_flow_graph(program, region)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut web_program = program.clone();
     let webs = construct_register_webs(&mut web_program, region, &analysis)?;
     let graph = build_flow_graph(&web_program, &webs)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut bound = external_assignment::assign(&web_program, &webs, &graph, &analysis)?;
     // Webs rename operand IDs; later passes re-lower from spellings.
     for located in &mut bound.instructions {
@@ -349,7 +349,7 @@ pub(super) fn lpgen_context(
         }
     }
     let graph = build_flow_graph(&web_program, &bound)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     Ok(LpgenContext {
         program: web_program,
         region: bound,
@@ -447,9 +447,11 @@ pub(super) fn lpgen_schedule(
         Some(&table.pools),
     )?;
     if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
-        eprintln!(
+        crate::trace!(
             "lpgen {block_id} result {:?} period {} max lid {}",
-            outcome.strategy, outcome.period, outcome.max_iteration
+            outcome.strategy,
+            outcome.period,
+            outcome.max_iteration
         );
     }
     let period = outcome.period;
@@ -576,7 +578,7 @@ pub(super) fn lpgen_schedule(
     }
     if std::env::var_os("VCL_LPGEN_BODY").is_some() {
         for (index, source) in sources.iter().enumerate() {
-            eprintln!(
+            crate::trace!(
                 "body {block_id} {index} {} {:?} at {:?}",
                 source.instruction.mnemonic,
                 source
@@ -589,7 +591,7 @@ pub(super) fn lpgen_schedule(
             );
         }
         for (k, mv) in outcome.problem.instructions[base..].iter().enumerate() {
-            eprintln!(
+            crate::trace!(
                 "body {block_id} move {} {:?} -> {:?} at {:?} collapsed {}",
                 base + k,
                 name_of(mv.operands[1].register),
@@ -768,7 +770,7 @@ pub(super) fn expand_software_loops(
     result.blocks.clear();
     let mut generated_loop = 0u16;
     let graph = build_flow_graph(program, source)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut repairs = Vec::new();
     let mut kernel_blocks = BTreeSet::new();
     let mut part_blocks = BTreeSet::new();
@@ -793,20 +795,14 @@ pub(super) fn expand_software_loops(
             ..
         } = &block.end
         else {
-            return Err(error(
-                0,
-                "staged raw loop requires a terminating conditional self branch",
-            ));
+            return Err(error(0, CompileMessage::StagedRawLoopBranch));
         };
         if !block
             .labels
             .iter()
             .any(|label| label.eq_ignore_ascii_case(target))
         {
-            return Err(error(
-                0,
-                "staged raw loop branch must target its own stream",
-            ));
+            return Err(error(0, CompileMessage::StagedRawLoopTarget));
         }
         let (mut schedule, sources, pins) = if let Some(normal) = normal {
             normal
@@ -822,13 +818,13 @@ pub(super) fn expand_software_loops(
                     slot = 0;
                 }
                 if slot >= 2 || located.instruction.mode != ParseMode::Raw {
-                    return Err(error(located.line, "invalid staged raw pair"));
+                    return Err(error(located.line, CompileMessage::InvalidStagedRawPair));
                 }
                 rows.last_mut().unwrap()[slot] = Some(id);
                 slot += 1;
             }
             let period = u16::try_from(rows.len())
-                .map_err(|_| error(0, "raw loop period exceeds supported range"))?;
+                .map_err(|_| error(0, CompileMessage::RawLoopPeriodRange))?;
             let mut operations = Vec::new();
             let mut sources = Vec::new();
             let mut conditional = None;
@@ -843,7 +839,7 @@ pub(super) fn expand_software_loops(
                         if instruction.loop_id != 0 {
                             return Err(error(
                                 source.instructions[id].line,
-                                "loop id set on a nop",
+                                CompileMessage::LoopIdOnNop,
                             ));
                         }
                         continue;
@@ -851,7 +847,7 @@ pub(super) fn expand_software_loops(
                     if instruction.metadata.issue_mask & (1 << pipe) == 0 {
                         return Err(error(
                             source.instructions[id].line,
-                            "instruction is in the wrong raw issue pipe",
+                            CompileMessage::WrongRawPipe,
                         ));
                     }
                     if instruction.metadata.is_branch() {
@@ -862,7 +858,10 @@ pub(super) fn expand_software_loops(
                         .checked_sub(1)
                         .filter(|&id| id <= 31)
                         .ok_or_else(|| {
-                            error(source.instructions[id].line, "invalid raw loop stage")
+                            error(
+                                source.instructions[id].line,
+                                CompileMessage::InvalidRawLoopStage,
+                            )
                         })?;
                     operations.push(LoopOperation {
                         id,
@@ -877,12 +876,13 @@ pub(super) fn expand_software_loops(
             // The original's raw-table builder rejects a loop-marked table whose
             // largest decoded stage is zero, before later flow/pruning.
             if operations.iter().all(|operation| operation.stage == 0) {
-                return Err(error(0, "max loop id 0 in loop"));
+                return Err(error(0, CompileMessage::MaxLoopIdZero));
             }
             let schedule = LoopSchedule {
                 period,
                 operations,
-                conditional: conditional.ok_or_else(|| error(0, "raw loop has no branch"))?,
+                conditional: conditional
+                    .ok_or_else(|| error(0, CompileMessage::RawLoopWithoutBranch))?,
                 known_minimum: block.loop_hints.minimum.unwrap_or(1),
                 known_safe: block.loop_hints.safe,
                 unique: unique.into(),
@@ -895,12 +895,12 @@ pub(super) fn expand_software_loops(
         }
         generated_loop = generated_loop
             .checked_add(1)
-            .ok_or_else(|| error(0, "too many loop constructs"))?;
+            .ok_or_else(|| error(0, CompileMessage::TooManyLoops))?;
         // Explicit raw tables expand before Init_immFixup in the original
         // driver. Their authored addresses already
         // describe staged execution. Only normal-loop motion has annotations.
-        let expanded = loop_ir::expand(&schedule, &sources, generated_loop)
-            .map_err(|e| error(0, e.to_string()))?;
+        let expanded =
+            loop_ir::expand(&schedule, &sources, generated_loop).map_err(|e| internal(0, e))?;
         let mut ids = Vec::new();
         for clone in &expanded.operations {
             let mut instruction = clone.instruction.clone();
@@ -1023,7 +1023,7 @@ pub(super) fn expand_software_loops(
         repairs.push((expanded, ids));
     }
     let graph = build_flow_graph(program, &result)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let blocks: BTreeMap<_, _> = result
         .blocks
         .iter()
@@ -1186,7 +1186,7 @@ pub(super) fn expand_software_loops(
             .collect();
         let repaired = expanded
             .repair_from_flow(&[], &analysis, &bindings)
-            .map_err(|e| error(0, e.to_string()))?;
+            .map_err(|e| internal(0, e))?;
         for operation in repaired.expanded.operations {
             let global = ids[operation.id];
             let mut instruction = operation.instruction;

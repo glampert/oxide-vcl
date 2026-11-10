@@ -11,7 +11,12 @@ pub(super) fn build_flow_graph(
     for (id, block) in region.blocks.iter().enumerate() {
         for label in &block.labels {
             if labels.insert(label.to_ascii_lowercase(), id).is_some() {
-                return Err(error(0, format!("duplicate label {label}")));
+                return Err(error(
+                    0,
+                    CompileMessage::DuplicateStreamLabel {
+                        label: label.to_string(),
+                    },
+                ));
             }
         }
     }
@@ -58,7 +63,7 @@ pub(super) fn build_flow_graph(
                 }) {
                     return Err(error(
                         region.instructions[*upper].line,
-                        "invalid combination: both issue pipes write the same register",
+                        CompileMessage::PipesWriteSameRegister,
                     ));
                 }
             }
@@ -89,18 +94,28 @@ pub(super) fn build_flow_graph(
                     if let Some(&target) = labels.get(&target.to_ascii_lowercase()) {
                         successors.push(target);
                     } else {
-                        return Err(error(0, format!("unknown branch target {target}")));
+                        return Err(error(
+                            0,
+                            CompileMessage::UnknownBranchTarget {
+                                target: target.to_string(),
+                            },
+                        ));
                     }
                 } else {
                     let mut tagged = BTreeSet::new();
                     for tag in tags {
                         let target = *labels.get(&tag.to_ascii_lowercase()).ok_or_else(|| {
-                            error(0, format!("unknown indirect branch tag {tag}"))
+                            error(
+                                0,
+                                CompileMessage::UnknownBranchTag {
+                                    tag: tag.to_string(),
+                                },
+                            )
                         })?;
                         // A second link to the same stream fails (observed
                         // from vcl 1.4beta7, `audit-indirect-duplicate`).
                         if !tagged.insert(target) {
-                            return Err(error(0, "addNewRef - already present"));
+                            return Err(error(0, CompileMessage::DuplicateBranchTag));
                         }
                         successors.push(target);
                     }
@@ -116,7 +131,7 @@ pub(super) fn build_flow_graph(
                     match register {
                         Some(register) if !*call => indirect.push((id, register, !tags.is_empty())),
                         _ if tags.is_empty() => {
-                            return Err(error(0, "indirect branches require explicit target tags"));
+                            return Err(error(0, CompileMessage::UntaggedIndirectBranch));
                         }
                         _ => {}
                     }
@@ -249,7 +264,7 @@ pub(super) fn infer_returns(
         }
         if !changed {
             if failed {
-                return Err(error(0, "indirect branches require explicit target tags"));
+                return Err(error(0, CompileMessage::UntaggedIndirectBranch));
             }
             return Ok(returns);
         }

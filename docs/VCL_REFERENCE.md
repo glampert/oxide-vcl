@@ -738,9 +738,14 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-q` | Quiet: print only warnings and errors. |
 | `-p` | Microsoft-style errors: `file(line): error: message`. |
 | `-h` | Print the help screen. |
+| `--mode=vcl` | Behave and report exactly as vcl 1.4beta7. The default. |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour: fixes, optimizations and reworded messages that break compatibility with vcl 1.4beta7. It currently behaves and reports as `--mode=vcl`. |
 
 The preprocessing stages run in the order `-G`, `-g`, `-g+`, each on the
 previous stage's output; any combination may be given.
+
+`--mode` is oxide-vcl's own option; vcl 1.4beta7 has no long options and
+rejects it as an unknown switch.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
 time limit; `oxide-vcl` has none), `-S`, `-D`, `-Q` and `-a`. `-P` and `-Z` only
@@ -762,7 +767,8 @@ cat skin.vcl | oxide-vcl -q > skin.vsm        # filter mode
 `ERROR: line N: message`, followed by
 `ERROR: something went wrong, vcl's outta here.` on standard output, as vcl
 does. Warnings print as `WARNING: ...` and informational messages as
-`INFO: ...`; `-q` hides the latter.
+`INFO: ...`; `-q` hides the latter. These are the vcl-mode messages;
+`--mode=oxide` may word and lay them out differently.
 
 ### Reading the output
 

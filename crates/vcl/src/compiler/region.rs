@@ -20,7 +20,7 @@ pub(super) fn compile_region(
         // An unprefixed .vsmloop remains a raw linear table. With LoopCS,
         // the original tries its loop-work builder, whose clone guard requires UTA.
         // This is an original rejection, not an optimization fallback.
-        return Err(error(0, "normal loop optimization requires an unscheduled source table"));
+        return Err(internal(0, "normal loop optimization requires an unscheduled source table"));
     }
     let normal = !options.disable_loops
         && region.blocks.iter().any(|block| {
@@ -35,7 +35,7 @@ pub(super) fn compile_region(
         Ok(()) => Ok(()),
         Err(failure) if normal => {
             if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
-                eprintln!("normal loop round failed: {failure:?}");
+                crate::trace!("normal loop round failed: {failure:?}");
             }
             *output = initial;
             compile_region_round(program, region, unique, options, false, output)
@@ -73,7 +73,7 @@ pub(super) fn compile_region_round(
         Ok(()) => return Ok(()),
         Err(failure) if failure.kind == CompileErrorKind::Allocation && !options.dumb => {
             if std::env::var_os("VCL_RETRY_TRACE").is_some() {
-                eprintln!("retry after allocation failure: {failure:?}");
+                crate::trace!("retry after allocation failure: {failure:?}");
             }
             failure
         }
@@ -133,7 +133,7 @@ pub(super) fn compile_region_candidate(
     let program = &raw_program;
     let region = &raw_region;
     let graph = build_flow_graph(program, region)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     // The original validates source dependencies before its dead-code pass.
     // Unused instructions therefore cannot conceal an undeclared source value.
     if let Some(read) = analysis
@@ -143,11 +143,10 @@ pub(super) fn compile_region_candidate(
     {
         return Err(error(
             region.instructions[read.operation].line,
-            format!(
-                "{}.{} used before set",
-                program.registers.named(read.register).name,
-                ["x", "y", "z", "w", "4", "5", "6"][usize::from(read.component)]
-            ),
+            CompileMessage::UsedBeforeSet {
+                register: program.registers.named(read.register).name.clone(),
+                component: ["x", "y", "z", "w", "4", "5", "6"][usize::from(read.component)].into(),
+            },
         ));
     }
     if let Some(undefined) = analysis.undefined.first() {
@@ -157,10 +156,12 @@ pub(super) fn compile_region_candidate(
             .map_or(0, |id| region.instructions[id].line);
         return Err(error(
             line,
-            format!(
-                "{name}.{} used before set",
-                ["x", "y", "z", "w", "4", "5", "6", "7"][usize::from(undefined.component)]
-            ),
+            CompileMessage::UsedBeforeSet {
+                register: name.clone(),
+                component: ["x", "y", "z", "w", "4", "5", "6", "7"]
+                    [usize::from(undefined.component)]
+                .into(),
+            },
         ));
     }
     let source_pruned = prune_source_region(program, region, &analysis)?;
@@ -171,7 +172,7 @@ pub(super) fn compile_region_candidate(
     let source_pruned = match drop_redundant_branches(program, &source_pruned)? {
         Some(dropped) => {
             let graph = build_flow_graph(program, &dropped)?;
-            let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+            let analysis = graph.analyze().map_err(|e| internal(0, e))?;
             prune_source_region(program, &dropped, &analysis)?
         }
         None => source_pruned,
@@ -200,12 +201,12 @@ pub(super) fn compile_region_candidate(
     let program = &expanded_program;
     let region = &expanded_region;
     let graph = build_flow_graph(program, region)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     if !analysis.undefined.is_empty() {
         if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
             for undefined in &analysis.undefined {
                 let located = undefined.operation.map(|id| &region.instructions[id]);
-                eprintln!(
+                crate::trace!(
                     "undefined {} in {:?} line {:?} block {}",
                     program.registers.named(undefined.register).name,
                     located.map(|l| &l.instruction.mnemonic),
@@ -214,7 +215,7 @@ pub(super) fn compile_region_candidate(
                 );
             }
         }
-        return Err(error(
+        return Err(internal(
             0,
             format!(
                 "expanded loop has undefined dependencies: {:?}",
@@ -227,7 +228,7 @@ pub(super) fn compile_region_candidate(
     let pruned_region = normalize_copies(&mut copy_program, &pruned_region)?;
     let program = &copy_program;
     let graph = build_flow_graph(program, &pruned_region)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut web_program = program.clone();
     let mut web_region = construct_register_webs(&mut web_program, &pruned_region, &analysis)?;
     // The original's pruning removes a copy (a move with a move ID) whose
@@ -253,9 +254,9 @@ pub(super) fn compile_region_candidate(
     let program = &web_program;
     let region = &web_region;
     let graph = build_flow_graph(program, region)?;
-    let analysis = graph.analyze().map_err(|e| error(0, e.to_string()))?;
+    let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     if !analysis.undefined.is_empty() {
-        return Err(error(0, "pruning introduced an undefined dependency"));
+        return Err(internal(0, "pruning introduced an undefined dependency"));
     }
     // External choices are fixed before ordinary local scheduling, rather
     // than being reconsidered by the final lifetime packing score.
@@ -715,10 +716,7 @@ pub(super) fn compile_region_candidate(
                     slot = 0;
                 }
                 if slot > 1 || located.instruction.metadata.issue_mask & (1 << slot) == 0 {
-                    return Err(error(
-                        located.line,
-                        "instruction is in the wrong raw issue pipe",
-                    ));
+                    return Err(error(located.line, CompileMessage::WrongRawPipe));
                 }
                 absolute_positions.insert(id, total_rows + rows.len() - 1);
                 if located.instruction.metadata.name != "nop" || located.instruction.modifiers != 0
@@ -729,8 +727,7 @@ pub(super) fn compile_region_candidate(
             }
             rows
         } else {
-            let mut metrics =
-                schedule::graph_metrics(&problem).map_err(|e| error(0, e.to_string()))?;
+            let mut metrics = schedule::graph_metrics(&problem).map_err(|e| internal(0, e))?;
             for (id, metric) in metrics.iter_mut().enumerate() {
                 metric.status_inputs = 0;
                 metric.mac_inputs = 0;
@@ -775,7 +772,7 @@ pub(super) fn compile_region_candidate(
                 } else {
                     schedule::schedule_best(&problem, &config)
                 }
-                .map_err(|e| error(0, e.to_string()))?;
+                .map_err(|e| internal(0, e))?;
                 for (local_id, placement) in schedule.placements.iter().enumerate() {
                     absolute_positions
                         .insert(live[local_id], total_rows + usize::from(placement.cycle));
@@ -955,7 +952,7 @@ pub(super) fn compile_region_candidate(
     }
     let lifetimes =
         crate::allocator::lifetime::build(&operations, &tables, occupancy_rows, &graph.constants)
-            .map_err(|e| error(0, e.to_string()))?;
+            .map_err(|e| internal(0, e))?;
     // Table-local virtual registers keep the original per-table allocation
     // made for the selected optimizer candidate.
     let local_allocation: BTreeMap<usize, usize> = wrangled_tables
@@ -974,7 +971,7 @@ pub(super) fn compile_region_candidate(
             allowed,
             occupancy_rows,
         )
-        .map_err(|e| error(0, e.to_string()))?;
+        .map_err(|e| internal(0, e))?;
         let mut virtuals = Vec::new();
         for (&id, occupancy) in &lifetimes {
             let register = program.registers.named(id);
@@ -994,7 +991,7 @@ pub(super) fn compile_region_candidate(
         if !options.symbolic {
             if std::env::var_os("VCL_ALLOC_TRACE").is_some() {
                 for v in &virtuals {
-                    eprintln!(
+                    crate::trace!(
                         "global {} {} forced {:?} rows {}",
                         v.id,
                         program.registers.named(v.id).name,
@@ -1009,30 +1006,31 @@ pub(super) fn compile_region_candidate(
                     return allocation_error(failure);
                 };
                 let mut result = allocation_error(failure);
-                let (kind, directive) = if family == Family::Vector {
-                    ("VU User floating point", ".init_vf")
-                } else {
-                    ("VU User integer", ".init_vi")
-                };
+                let vector = family == Family::Vector;
                 let allowed = if family == Family::Vector {
                     &program.allowed_vf
                 } else {
                     &program.allowed_vi
                 };
                 result.message = if allowed.iter().all(|&mask| mask == 0) {
-                    // The original's message for an empty pool.
-                    format!(
-                        "vcl failed to allocate a register of type {kind}, but there's no registers of this type available for it to use.. maybe adding a .init_.. directive would help"
-                    )
+                    CompileMessage::AllocationPoolEmpty { vector }
                 } else {
-                    format!(
-                        "vcl failed to allocate a register of type {kind} for '{}': every allowed register is in use; {directive} or {directive}_all allows more",
-                        program
+                    CompileMessage::AllocationPoolFull {
+                        vector,
+                        register: program
                             .registers
-                            .named(region.web_sources.get(&virtual_id).copied().unwrap_or(virtual_id))
+                            .named(
+                                region
+                                    .web_sources
+                                    .get(&virtual_id)
+                                    .copied()
+                                    .unwrap_or(virtual_id),
+                            )
                             .name
-                    )
-                };
+                            .clone(),
+                    }
+                }
+                .into();
                 result
             })?;
             for (id, physical) in allocated {
@@ -1152,7 +1150,7 @@ pub(super) fn compile_region_candidate(
                 ..Default::default()
             },
         )
-        .map_err(|errors| error(0, format!("failed to construct nop: {errors:?}")))?;
+        .map_err(|errors| internal(0, format!("failed to construct nop: {errors:?}")))?;
         let nop = parsed
             .statements
             .iter()
@@ -1161,7 +1159,7 @@ pub(super) fn compile_region_candidate(
                 StatementKind::Instruction(instruction) => Some(instruction.clone()),
                 _ => None,
             })
-            .ok_or_else(|| error(0, "nop has no instruction"))?;
+            .ok_or_else(|| internal(0, "nop has no instruction"))?;
         for &op in &to_nop {
             let located = &mut allocated_region.instructions[op];
             let mode = located.instruction.mode;
@@ -1461,7 +1459,7 @@ pub(super) fn compile_region_candidate(
         }
         let stalled = table_stalls(region, &timing, &lengths, &placed, block_id, &analysis);
         if std::env::var_os("VCL_MOVE_TRACE").is_some() {
-            eprintln!("raw reduce block {block_id} stalled {stalled}");
+            crate::trace!("raw reduce block {block_id} stalled {stalled}");
         }
         if let Some(plan) = raw_reduce_wrangled(
             program,
@@ -1768,7 +1766,7 @@ pub(super) fn compile_region_candidate(
                         &replacements,
                         if pipe == 0 { extra } else { 0 },
                     )
-                    .map_err(|e| error(located.line, e.to_string()))?;
+                    .map_err(|e| internal(located.line, e))?;
                     if options.comments {
                         output
                             .assembly

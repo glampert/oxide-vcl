@@ -6,6 +6,7 @@
 //! Runtime evidence lives under `local/evidence/oracle/cli-*`.
 
 use std::fmt;
+use vcl::diagnostics::{CliMessage, Diagnostic};
 
 /// The project's version, shared by every crate in the workspace.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -18,18 +19,6 @@ pub fn help() -> String {
     include_str!("help.txt")
         .replace("{version}", VERSION)
         .replace("{date}", BUILD_DATE)
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NoticeLevel {
-    Info,
-    Warning,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Notice {
-    pub level: NoticeLevel,
-    pub message: &'static str,
 }
 
 /// A parsed command line: the compiler's settings plus what the driver does
@@ -60,56 +49,54 @@ pub struct Arguments {
     pub keep_temps: bool,
     /// `-I...` arguments, forwarded to the preprocessors in order.
     pub preprocessor_arguments: Vec<String>,
-    /// Messages in the original's parse order, already honoring `-q` at that point.
-    pub notices: Vec<Notice>,
+    /// Notices in the original's parse order, already honoring `-q` at that point.
+    pub notices: Vec<Diagnostic>,
 }
 
 impl Arguments {
-    fn info(&mut self, message: &'static str) {
+    fn info(&mut self, message: CliMessage) {
         if !self.quiet {
-            self.notices.push(Notice {
-                level: NoticeLevel::Info,
-                message,
-            });
+            self.notices.push(Diagnostic::info(message));
         }
     }
 
-    fn warn(&mut self, message: &'static str) {
-        self.notices.push(Notice {
-            level: NoticeLevel::Warning,
-            message,
-        });
+    fn warn(&mut self, message: CliMessage) {
+        self.notices.push(Diagnostic::warning(message));
+    }
+
+    /// The mode chosen with `--mode=` (vcl when absent).
+    pub fn mode(&self) -> vcl::Mode {
+        self.compile.mode
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DiagnosticKind {
-    Error,
-    User,
-    Plain,
-}
-
+/// A command line the driver rejects, with the notices printed before it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CliError {
-    pub message: String,
-    pub kind: DiagnosticKind,
+    pub diagnostic: Box<Diagnostic>,
     /// Some failures occur only after OS_Init has already logged its message.
     pub os_initialized: bool,
     pub output: Option<String>,
     pub quiet: bool,
-    pub notices: Vec<Notice>,
+    pub mode: vcl::Mode,
+    pub notices: Vec<Diagnostic>,
 }
 
 impl CliError {
-    fn new(message: String, kind: DiagnosticKind, initialized: bool, options: Arguments) -> Self {
+    fn new(message: CliMessage, initialized: bool, options: Arguments) -> Self {
         Self {
-            message,
-            kind,
+            diagnostic: Box::new(Diagnostic::error(message)),
             os_initialized: initialized,
             output: options.output,
             quiet: options.quiet,
+            mode: options.compile.mode,
             notices: options.notices,
         }
+    }
+
+    /// The rejected message, for comparisons in tests.
+    pub fn message(&self) -> &vcl::Message {
+        &self.diagnostic.message
     }
 
     /// Original `exit(-1)` argument, as observed at the i386 syscall boundary.
@@ -124,7 +111,7 @@ impl CliError {
 
 impl fmt::Display for CliError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
+        self.diagnostic.fmt(formatter)
     }
 }
 
@@ -145,6 +132,21 @@ where
     let mut options = Arguments::default();
     let mut index = 0;
     while let Some(argument) = arguments.get(index).filter(|value| value.starts_with('-')) {
+        // oxide-vcl's own option; vcl 1.4beta7 has no long options.
+        if let Some(name) = argument.strip_prefix("--mode=") {
+            let Some(mode) = vcl::Mode::from_name(name) else {
+                return Err(CliError::new(
+                    CliMessage::BadMode {
+                        argument: argument.clone(),
+                    },
+                    false,
+                    options,
+                ));
+            };
+            options.compile.mode = mode;
+            index += 1;
+            continue;
+        }
         let selector = argument.as_bytes().get(1).copied().unwrap_or(0);
         // VCL arguments are byte-oriented. A non-ASCII selector cannot match
         // any switch, so only take this UTF-8 slice when the selector is ASCII.
@@ -155,16 +157,16 @@ where
         };
         match selector {
             b'I' => options.preprocessor_arguments.push(argument.clone()),
-            b'A' | b'a' => options.info("-a option is now on always\n"),
+            b'A' | b'a' => options.info(CliMessage::AlwaysOn),
             b'C' => {
                 options.compile.disable_size_reduction = true;
-                options.info("disabling code size reduction pass..\n");
+                options.info(CliMessage::SizeReductionDisabled);
             }
             // Register dumps during external allocation: not produced.
             b'D' => {}
             b'F' | b'f' => {
                 options.compile.disable_alignment = true;
-                options.info("will skip align emit\n");
+                options.info(CliMessage::AlignmentDisabled);
             }
             b'G' => options.preprocess_cpp = true,
             b'H' | b'h' => {
@@ -174,22 +176,20 @@ where
             b'o' => options.output = Some(value.to_owned()),
             b'K' => {
                 options.keep_temps = true;
-                options.info("keep temporary files in /tmp enabled (/tmp/vclin. etc\n");
+                options.info(CliMessage::KeepTemporaries);
             }
             b'M' => {
                 options.compile.timid_memory = true;
-                options.warn("timid memory access mode enabled\n");
+                options.warn(CliMessage::TimidMemory);
             }
-            b'P' => options
-                .warn(" prune disabled (not) this options was deprecated, and now is disabled\n"),
+            b'P' => options.warn(CliMessage::PruneDeprecated),
             // Undocumented in the original, with no observed effect.
             b'Q' => {}
             // Staggered loop memory access is not implemented: notice only.
-            b'S' => options.info("stagger ram access...\n"),
+            b'S' => options.info(CliMessage::StaggeredMemory),
             b'U' => options.compile.unique_labels = true,
             b'W' | b'w' => options.skip_preprocessing = true,
-            b'Z' => options
-                .warn(" disabled immediate fixups - this option is now deprecated and removed\n"),
+            b'Z' => options.warn(CliMessage::ImmediateFixupsDeprecated),
             b'c' => options.compile.comments = true,
             b'd' => {
                 options.compile.dumb = true;
@@ -198,15 +198,16 @@ where
             b'L' => options.compile.disable_loops = true,
             b'e' => {
                 options.compile.disable_end_bit = true;
-                options.info("disabling [e] bit setting\n");
+                options.info(CliMessage::EndBitDisabled);
             }
             b'g' => match value.as_bytes().first() {
                 None => options.preprocess_gasp = true,
                 Some(b'+') => options.preprocess_gasp_alternate = true,
                 _ => {
                     return Err(CliError::new(
-                        format!("bad command line option '{argument}' .. only -g+ or -g allowed\n"),
-                        DiagnosticKind::User,
+                        CliMessage::BadGaspOption {
+                            argument: argument.clone(),
+                        },
                         false,
                         options,
                     ));
@@ -223,8 +224,9 @@ where
             b'u' => options.compile.unique = Some(value.to_owned()),
             _ => {
                 return Err(CliError::new(
-                    format!("bad args '{argument}', try -h for help\n"),
-                    DiagnosticKind::Error,
+                    CliMessage::BadArgument {
+                        argument: argument.clone(),
+                    },
                     false,
                     options,
                 ));
@@ -233,21 +235,11 @@ where
         index += 1;
     }
     if arguments.len() - index > 1 {
-        return Err(CliError::new(
-            "bad args (-o now specifies output file..)\n".to_owned(),
-            DiagnosticKind::Plain,
-            true,
-            options,
-        ));
+        return Err(CliError::new(CliMessage::TooManyArguments, true, options));
     }
     options.input = arguments.get(index).cloned();
     if options.input.is_some() && options.input == options.output {
-        return Err(CliError::new(
-            "can't have infile==outfile\n".to_owned(),
-            DiagnosticKind::Plain,
-            true,
-            options,
-        ));
+        return Err(CliError::new(CliMessage::SameInputAndOutput, true, options));
     }
     Ok(options)
 }
@@ -294,6 +286,30 @@ fn strtol_decimal_i32(value: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use vcl::diagnostics::Severity;
+
+    #[test]
+    fn mode_defaults_to_vcl_and_oxide_is_explicit() {
+        assert_eq!(parse(["a.vcl"]).unwrap().mode(), vcl::Mode::Vcl);
+        assert_eq!(
+            parse(["--mode=vcl", "a.vcl"]).unwrap().mode(),
+            vcl::Mode::Vcl
+        );
+        let options = parse(["-q", "--mode=oxide", "-C", "a.vcl"]).unwrap();
+        assert_eq!(options.mode(), vcl::Mode::Oxide);
+        assert_eq!(options.compile.mode, vcl::Mode::Oxide);
+        assert!(options.quiet && options.compile.disable_size_reduction);
+        let error = parse(["--mode=sce", "a.vcl"]).unwrap_err();
+        assert!(
+            *error.message()
+                == CliMessage::BadMode {
+                    argument: "--mode=sce".into()
+                }
+        );
+        // vcl has no long options, so its wording is the unknown-switch one.
+        assert_eq!(error.to_string(), "bad args '--mode=sce', try -h for help");
+        assert_eq!(error.exit_status(), 255);
+    }
 
     #[test]
     fn defaults_and_stdin() {
@@ -307,7 +323,10 @@ mod tests {
             assert!(parse([flag, "--invalid", "one", "two"]).unwrap().help);
         }
         for flag in ["--help", "--version", "-v", "--", "-", "-N"] {
-            assert_eq!(parse([flag]).unwrap_err().kind, DiagnosticKind::Error);
+            assert!(matches!(
+                parse([flag]).unwrap_err().message(),
+                vcl::Message::Cli(CliMessage::BadArgument { .. })
+            ));
         }
     }
 
@@ -332,9 +351,12 @@ mod tests {
             Some("file.asm")
         );
         let error = parse(["file.vcl", "-q"]).unwrap_err();
-        assert_eq!(error.kind, DiagnosticKind::Plain);
+        assert!(*error.message() == CliMessage::TooManyArguments);
         assert!(error.os_initialized);
-        assert_eq!(error.message, "bad args (-o now specifies output file..)\n");
+        assert_eq!(
+            error.to_string(),
+            "bad args (-o now specifies output file..)"
+        );
     }
 
     #[test]
@@ -388,18 +410,23 @@ mod tests {
         );
         assert!(options.preprocess_gasp_alternate && options.skip_preprocessing);
         assert_eq!(options.preprocessor_arguments, ["-Iinclude"]);
-        assert_eq!(parse(["-gbad"]).unwrap_err().kind, DiagnosticKind::User);
+        assert!(
+            *parse(["-gbad"]).unwrap_err().message()
+                == CliMessage::BadGaspOption {
+                    argument: "-gbad".into()
+                }
+        );
     }
 
     #[test]
     fn quiet_applies_in_argument_order_and_keeps_warnings() {
         let early = parse(["-a", "-q", "-f", "-P", "-Z"]).unwrap();
         assert_eq!(early.notices.len(), 3);
-        assert_eq!(early.notices[0].level, NoticeLevel::Info);
+        assert_eq!(early.notices[0].severity, Severity::Info);
         assert!(
             early.notices[1..]
                 .iter()
-                .all(|notice| notice.level == NoticeLevel::Warning)
+                .all(|notice| notice.severity == Severity::Warning)
         );
         assert!(parse(["-q", "-h"]).unwrap().quiet);
     }
@@ -407,7 +434,7 @@ mod tests {
     #[test]
     fn same_input_output_is_checked_after_options() {
         let error = parse(["-ofile.vcl", "file.vcl"]).unwrap_err();
-        assert_eq!(error.message, "can't have infile==outfile\n");
+        assert!(*error.message() == CliMessage::SameInputAndOutput);
         assert_eq!(error.output.as_deref(), Some("file.vcl"));
         assert!(error.os_initialized);
     }

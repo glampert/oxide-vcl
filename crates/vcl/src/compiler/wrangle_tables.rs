@@ -701,7 +701,7 @@ pub(super) fn build_wrangle_table_span(
                             }
                         }));
             if std::env::var_os("VCL_ALIAS_TRACE").is_some() && kind == 2 {
-                eprintln!(
+                crate::trace!(
                     "alias {i} {:?} vs {j} {:?} -> {alias} timid {timid}",
                     ea,
                     address(live[j])
@@ -768,9 +768,9 @@ pub(super) fn build_wrangle_table_span(
     // ACC/I producer links and ACC chain starts.
     link_accumulators(&mut problem);
     if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-        eprintln!("problem block {block_id}");
+        crate::trace!("problem block {block_id}");
         for (index, register) in problem.registers.iter().enumerate() {
-            eprintln!(
+            crate::trace!(
                 "  reg {index} {:?} through {} phys {:?}",
                 keys.iter().find(|&(_, &v)| v == index).map(|(k, _)| k),
                 register.through,
@@ -778,7 +778,7 @@ pub(super) fn build_wrangle_table_span(
             );
         }
         for (index, insn) in problem.instructions.iter().enumerate() {
-            eprintln!(
+            crate::trace!(
                 "insn {index} {} pipes {} min {} end {} forced {:?}",
                 region.instructions[live[index]].instruction.mnemonic,
                 insn.pipes,
@@ -787,7 +787,7 @@ pub(super) fn build_wrangle_table_span(
                 insn.forced_predecessors
             );
             for operand in &insn.operands {
-                eprintln!(
+                crate::trace!(
                     "    {:?} {:?}",
                     operand,
                     keys.iter()

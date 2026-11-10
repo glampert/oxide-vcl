@@ -221,7 +221,7 @@ pub(super) fn reduce_generated_rows(
         .collect();
     let reduced =
         crate::scheduler::linear_cleanup::reduce(&cleanup, &local_rows, &sinks, minimum_rows)
-            .map_err(|e| error(0, e.to_string()))?
+            .map_err(|e| internal(0, e))?
             .iter()
             .map(|pair| pair.map(|id| id.map(|id| live[id])))
             .collect();

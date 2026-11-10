@@ -244,7 +244,7 @@ pub(super) fn finish_rows_planned(
                 // The replay is a conservative model (stall annotations and
                 // validation only); the original layout stands without it.
                 if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    eprintln!("plan replay failed: {failure:?}");
+                    crate::trace!("plan replay failed: {failure:?}");
                 }
                 let count = kept.len();
                 return Ok(FinishedRows {
@@ -275,7 +275,7 @@ pub(super) fn finish_rows_planned(
             Ok(replay) => replay,
             Err(failure) if kernel => {
                 if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    eprintln!("kernel replay failed: {failure:?}");
+                    crate::trace!("kernel replay failed: {failure:?}");
                 }
                 let count = timed.len();
                 timing::Replay {
@@ -298,14 +298,14 @@ pub(super) fn finish_rows_planned(
                         let located = &region.instructions[id];
                         format!("{} line {}", located.instruction.mnemonic, located.line)
                     };
-                    eprintln!(
+                    crate::trace!(
                         "replay mismatch: {} expected {:?} observed {:?}",
                         describe(*operation),
                         expected.map(describe),
                         observed.map(describe)
                     );
                 }
-                return Err(error(0, failure.to_string()));
+                return Err(internal(0, failure));
             }
         };
         return Ok(FinishedRows {
@@ -316,7 +316,7 @@ pub(super) fn finish_rows_planned(
         });
     }
     let compressed =
-        timing::compress(&timed, &operations, &[], true).map_err(|e| error(0, e.to_string()))?;
+        timing::compress(&timed, &operations, &[], true).map_err(|e| internal(0, e))?;
     let mut origins = vec![0; compressed.rows.len()];
     for (old, new) in compressed.row_map.iter().enumerate() {
         if let Some(new) = new {
@@ -357,7 +357,7 @@ pub(super) fn render_synchronization(
             ..Default::default()
         },
     )
-    .map_err(|errors| error(0, format!("failed to construct flag interlock: {errors:?}")))?;
+    .map_err(|errors| internal(0, format!("failed to construct flag interlock: {errors:?}")))?;
     let cap = parsed
         .statements
         .iter()
@@ -365,9 +365,9 @@ pub(super) fn render_synchronization(
             StatementKind::Instruction(instruction) => Some(instruction),
             _ => None,
         })
-        .ok_or_else(|| error(0, "flag interlock has no instruction"))?;
+        .ok_or_else(|| internal(0, "flag interlock has no instruction"))?;
     crate::emit::instruction(cap, &vec![None; cap.operands.len()], modifiers)
-        .map_err(|e| error(0, e.to_string()))
+        .map_err(|e| internal(0, e))
 }
 
 /// Issue layout of a fixed table for flow analysis. Q, P and the flags are

@@ -189,6 +189,7 @@ fn exhausted_external_pool_rejects_before_local_schedule_retries() {
     assert!(errors.iter().any(|error| {
         error
             .message
+            .to_string()
             .contains("external register assignment failed")
     }));
     assert!(errors.iter().all(|error| error.exit_status() == 255));
@@ -354,9 +355,8 @@ fn continuation_cannot_overwrite_an_exit_end_kind() {
     let source = &evidence::text("inputs/flow-cont-invalid-end.vcl");
     let errors = vcl::compile(source, "flow.vcl", &vcl::Options::default()).unwrap_err();
     assert!(
-        errors
-            .iter()
-            .any(|error| error.message == "synthetic instruction in invalid enter/exit context")
+        errors.iter().any(|error| error.message.to_string()
+            == "synthetic instruction in invalid enter/exit context")
     );
 }
 
@@ -442,7 +442,7 @@ fn scalar_memory_base_must_still_be_defined() {
     assert!(
         errors
             .iter()
-            .any(|error| error.message == "base.x used before set")
+            .any(|error| error.message.to_string() == "base.x used before set")
     );
 }
 
@@ -871,7 +871,12 @@ fn zero_copy_destination_is_a_library_error_but_preserves_legacy_cli_status_zero
     let source = std::fs::read_to_string(root.join("input.vcl")).unwrap();
     let errors = vcl::compile(&source, "copy.vcl", &vcl::Options::default()).unwrap_err();
     assert_eq!(errors[0].exit_status(), 0);
-    assert!(errors[0].message.contains("const zero register"));
+    assert!(
+        errors[0]
+            .message
+            .to_string()
+            .contains("const zero register")
+    );
     let run = std::process::Command::new(env!("CARGO_BIN_EXE_oxide-vcl"))
         .args(["-t1", "-uCOPY"])
         .arg(root.join("input.vcl"))
@@ -1112,17 +1117,29 @@ fn invalid_loop_hints_warn_and_compile() {
     };
     let pipelined = |assembly: &str| assembly.contains("_MAIN_LOOP");
     let count_zero = compile("--LoopCS 0,0").unwrap();
-    assert!(count_zero.warnings[0].contains("minimum known count (arg 1)"));
+    assert!(
+        count_zero.warnings[0]
+            .to_string()
+            .contains("minimum known count (arg 1)")
+    );
     assert!(!pipelined(&count_zero.assembly), "{}", count_zero.assembly);
     let safe_negative = compile("--LoopCS 4,-1").unwrap();
-    assert!(safe_negative.warnings[0].contains("minimum safe count (arg 2)"));
+    assert!(
+        safe_negative.warnings[0]
+            .to_string()
+            .contains("minimum safe count (arg 2)")
+    );
     assert!(pipelined(&safe_negative.assembly));
     let abs_two = compile(
         "--LoopCS 4,0\n\
                            --LoopAbs 2",
     )
     .unwrap();
-    assert!(abs_two.warnings[0].contains("--LoopAbs. value must be >=2"));
+    assert!(
+        abs_two.warnings[0]
+            .to_string()
+            .contains("--LoopAbs. value must be >=2")
+    );
     assert_eq!(
         abs_two.assembly,
         compile("--LoopCS 4,0").unwrap().assembly,
@@ -1133,7 +1150,12 @@ fn invalid_loop_hints_warn_and_compile() {
                          --LoopExtra -1",
     )
     .unwrap_err();
-    assert!(extra[0].message.contains("--LoopExtra. value must be >=0"));
+    assert!(
+        extra[0]
+            .message
+            .to_string()
+            .contains("--LoopExtra. value must be >=0")
+    );
 }
 
 /// Running out of registers names the register type and the directive that
@@ -1143,7 +1165,7 @@ fn allocation_failures_say_which_directive_helps() {
     let message = |source: &str| {
         vcl::compile(source, "alloc.vcl", &vcl::Options::default()).unwrap_err()[0]
             .message
-            .clone()
+            .to_string()
     };
     let empty = message(
         "--enter\n\

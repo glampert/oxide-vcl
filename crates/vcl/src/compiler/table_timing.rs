@@ -101,7 +101,7 @@ impl<'a> TimingContext<'a> {
                         ("write", &analysis.hazard_writes),
                     ] {
                         for &(block, register, part) in set {
-                            eprintln!(
+                            crate::trace!(
                                 "hazard {kind} block {block} {:?} {} part {part}",
                                 region.blocks[block].labels,
                                 program.registers.named(register).name
@@ -294,7 +294,7 @@ impl<'a> TimingContext<'a> {
                                     - (distance + to_end)
                                     - 1;
                                 if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                    eprintln!(
+                                    crate::trace!(
                                         "  read {id} {} in {block} setter {setter} {} block {setter_block} to_end {to_end} distance {distance} value {value}",
                                         self.region.instructions[id].instruction.mnemonic,
                                         self.region.instructions[*setter].instruction.mnemonic
@@ -305,7 +305,7 @@ impl<'a> TimingContext<'a> {
                         }
                         WDirection::Write => {
                             if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                eprintln!(
+                                crate::trace!(
                                     "timing write {id} reg {register} part {part} users {:?}",
                                     self.users.get(&(id, register, part))
                                 );
@@ -324,7 +324,9 @@ impl<'a> TimingContext<'a> {
                                 }
                                 let Some((row, _)) = placed(user) else {
                                     if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                        eprintln!("  user {user} block {user_block} not placed");
+                                        crate::trace!(
+                                            "  user {user} block {user_block} not placed"
+                                        );
                                     }
                                     continue;
                                 };
@@ -337,7 +339,7 @@ impl<'a> TimingContext<'a> {
                                     - (distance + row as i32)
                                     - 1;
                                 if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                    eprintln!(
+                                    crate::trace!(
                                         "  user {user} block {user_block} row {row} distance {distance} value {value}"
                                     );
                                 }

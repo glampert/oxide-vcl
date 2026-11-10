@@ -11,7 +11,7 @@ use std::path::Path;
 fn compile(source: &str) -> Result<String, String> {
     vcl::compile(source, "scopes.vcl", &vcl::Options::default())
         .map(|compiled| compiled.assembly)
-        .map_err(|errors| errors[0].message.clone())
+        .map_err(|errors| errors[0].message.to_string())
 }
 
 /// Instruction rows of the output, with whitespace collapsed.

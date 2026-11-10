@@ -1,26 +1,24 @@
 //! `oxide-vcl`: the command-line driver. It parses the original's command line,
 //! runs the optional preprocessors, compiles with the `vcl` crate and writes
 //! the results, keeping the original's diagnostics and exit statuses.
+//!
+//! Everything it prints goes through [`vcl::diagnostics::Reporter`], in the
+//! mode `--mode=` selects (vcl when absent).
 
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::Command;
-use vcl_cli::{self as cli, Arguments, DiagnosticKind, NoticeLevel};
-
-fn notices(notices: &[cli::Notice]) {
-    for notice in notices {
-        let prefix = match notice.level {
-            NoticeLevel::Info => "INFO: ",
-            NoticeLevel::Warning => "WARNING: ",
-        };
-        eprint!("{prefix}{}", notice.message);
-    }
-}
+use vcl::diagnostics::{Diagnostic, DriverMessage, ErrorStyle, Reporter};
+use vcl_cli::{self as cli, Arguments};
 
 /// The original's preprocessing stages, in the order it runs them: the C
 /// preprocessor (`-G`), gasp (`-g`) and gasp with its alternate syntax (`-g+`).
 /// Each enabled stage reads the previous stage's output.
-fn preprocess(mut source: Vec<u8>, arguments: &Arguments) -> Result<Vec<u8>, String> {
+fn preprocess(
+    mut source: Vec<u8>,
+    arguments: &Arguments,
+    reporter: &mut Reporter,
+) -> Result<Vec<u8>, DriverMessage> {
     if arguments.skip_preprocessing {
         return Ok(source);
     }
@@ -39,7 +37,7 @@ fn preprocess(mut source: Vec<u8>, arguments: &Arguments) -> Result<Vec<u8>, Str
     ];
     for (stage, (enabled, program, switches)) in stages.into_iter().enumerate() {
         if enabled {
-            source = run_stage(stage, program, switches, &source, arguments)?;
+            source = run_stage(stage, program, switches, &source, arguments, reporter)?;
         }
     }
     Ok(source)
@@ -53,31 +51,49 @@ fn run_stage(
     switches: &[&str],
     source: &[u8],
     arguments: &Arguments,
-) -> Result<Vec<u8>, String> {
+    reporter: &mut Reporter,
+) -> Result<Vec<u8>, DriverMessage> {
     let temporary = |kind: &str| -> PathBuf {
         std::env::temp_dir().join(format!("vcl{kind}_{}_{stage}", std::process::id()))
     };
     let (input, output) = (temporary("i"), temporary("o"));
-    std::fs::write(&input, source)
-        .map_err(|e| format!("failed to write '{}': {e}", input.display()))?;
+    let display = |path: &PathBuf| path.display().to_string();
+    std::fs::write(&input, source).map_err(|e| DriverMessage::WriteTemporary {
+        path: display(&input),
+        error: e.to_string(),
+    })?;
     let result = (|| {
-        let file = std::fs::File::create(&output)
-            .map_err(|e| format!("failed to create '{}': {e}", output.display()))?;
+        let file = std::fs::File::create(&output).map_err(|e| DriverMessage::CreateTemporary {
+            path: display(&output),
+            error: e.to_string(),
+        })?;
         let status = Command::new(program)
             .args(switches)
             .args(&arguments.preprocessor_arguments)
             .arg(&input)
             .stdout(file)
             .status()
-            .map_err(|e| format!("failed to start {program}: {e}"))?;
+            .map_err(|e| DriverMessage::StartPreprocessor {
+                program: program.into(),
+                error: e.to_string(),
+            })?;
         if !status.success() {
-            return Err(format!("{program} failed: {status}"));
+            return Err(DriverMessage::PreprocessorFailed {
+                program: program.into(),
+                status: status.to_string(),
+            });
         }
-        std::fs::read(&output).map_err(|e| format!("failed to read '{}': {e}", output.display()))
+        std::fs::read(&output).map_err(|e| DriverMessage::ReadTemporary {
+            path: display(&output),
+            error: e.to_string(),
+        })
     })();
     if arguments.keep_temps {
         if !arguments.quiet {
-            eprintln!("INFO: kept {} and {}", input.display(), output.display());
+            reporter.notice(&Diagnostic::info(DriverMessage::KeptTemporaries {
+                input: display(&input),
+                output: display(&output),
+            }));
         }
     } else {
         let _ = std::fs::remove_file(&input);
@@ -86,95 +102,112 @@ fn run_stage(
     result
 }
 
+/// Why a run stopped.
 enum RunError {
-    Standard(String),
-    LegacyCopy(String),
+    /// A file, stream or preprocessor failure.
+    Driver(DriverMessage),
+    /// The program did not compile.
+    Compile(Vec<vcl::CompileError>),
 }
 
-impl From<String> for RunError {
-    fn from(message: String) -> Self {
-        Self::Standard(message)
+impl From<DriverMessage> for RunError {
+    fn from(message: DriverMessage) -> Self {
+        Self::Driver(message)
     }
 }
 
-fn run(arguments: &Arguments) -> Result<(), RunError> {
+fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
     let source = if let Some(path) = &arguments.input {
-        std::fs::read(path).map_err(|e| format!("failed to open file '{path}': {e}"))?
+        std::fs::read(path).map_err(|e| DriverMessage::OpenInput {
+            path: path.clone(),
+            error: e.to_string(),
+        })?
     } else {
         let mut source = Vec::new();
         io::stdin()
             .read_to_end(&mut source)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| DriverMessage::ReadInput {
+                error: e.to_string(),
+            })?;
         source
     };
-    let source = preprocess(source, arguments)?;
-    let source = String::from_utf8(source).map_err(|_| "source is not valid UTF-8".to_string())?;
+    let source = preprocess(source, arguments, reporter)?;
+    let source = String::from_utf8(source).map_err(|_| DriverMessage::NotUtf8)?;
     let filename = arguments.input.as_deref().unwrap_or("_stdin_");
-    let output = vcl::compile(&source, filename, &arguments.compile).map_err(|errors| {
-        if let Some(error) = errors.iter().find(|error| error.exit_status() == 0) {
-            return RunError::LegacyCopy(format!("INFO: OS_Init(Linux)\nERROR: {}\nERROR: failed to detect moves!\nERROR: failed to do basic operation processing", error.message));
-        }
-        RunError::Standard(errors
-            .into_iter()
-            .map(|e| {
-                if arguments.ms_diagnostics {
-                    format!("{filename}({}): error: {}", e.line, e.message)
-                } else {
-                    e.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n"))
-    })?;
-    for warning in output.warnings {
-        eprintln!("WARNING: {warning}");
+    let output = vcl::compile(&source, filename, &arguments.compile).map_err(RunError::Compile)?;
+    for warning in &output.warnings {
+        reporter.notice(warning);
     }
     if let Some(path) = &arguments.output {
-        std::fs::write(path, output.assembly.as_bytes())
-            .map_err(|e| format!("failed to write '{path}': {e}"))?;
+        std::fs::write(path, output.assembly.as_bytes()).map_err(|e| {
+            DriverMessage::WriteOutput {
+                path: path.clone(),
+                error: e.to_string(),
+            }
+        })?;
     } else {
-        io::stdout()
-            .write_all(output.assembly.as_bytes())
-            .map_err(|e| e.to_string())?;
+        reporter
+            .assembly(&output.assembly)
+            .map_err(|e| DriverMessage::WriteStandardOutput {
+                error: e.to_string(),
+            })?;
     }
     if let Some(path) = &arguments.header {
-        std::fs::write(path, output.header.as_bytes())
-            .map_err(|e| format!("failed to write '{path}': {e}"))?;
+        std::fs::write(path, output.header.as_bytes()).map_err(|e| DriverMessage::WriteOutput {
+            path: path.clone(),
+            error: e.to_string(),
+        })?;
     }
     Ok(())
 }
 
 fn main() {
+    let mut reporter = Reporter::stdio(vcl::Mode::default());
     let arguments = match cli::parse(std::env::args().skip(1)) {
         Ok(arguments) => arguments,
         Err(error) => {
-            notices(&error.notices);
-            let prefix = match error.kind {
-                DiagnosticKind::Error => "ERROR: ",
-                DiagnosticKind::User => "USER: ",
-                DiagnosticKind::Plain => "",
-            };
-            eprintln!("{prefix}{}", error.message);
-            println!("ERROR: something went wrong, vcl's outta here.");
+            reporter.set_mode(error.mode);
+            for notice in &error.notices {
+                reporter.notice(notice);
+            }
+            reporter.command_line_error(&error.diagnostic);
             std::process::exit(i32::from(error.exit_status()));
         }
     };
+    reporter.set_mode(arguments.mode());
 
-    notices(&arguments.notices);
+    for notice in &arguments.notices {
+        reporter.notice(notice);
+    }
 
     if arguments.help {
         if !arguments.quiet {
-            eprint!("{}", cli::help());
+            reporter.help(&cli::help());
         }
         return;
     }
 
-    match run(&arguments) {
+    match run(&arguments, &mut reporter) {
         Ok(()) => {}
-        Err(RunError::LegacyCopy(diagnostic)) => eprintln!("{diagnostic}"),
-        Err(RunError::Standard(error)) => {
-            eprintln!("ERROR: {error}");
-            println!("ERROR: something went wrong, vcl's outta here.");
+        Err(RunError::Compile(errors)) => {
+            // vcl's copy detector fails with an error but exits with status 0.
+            if let Some(error) = errors.iter().find(|error| error.exit_status() == 0) {
+                reporter.copy_detection_failure(&error.diagnostic());
+                return;
+            }
+            let diagnostics: Vec<Diagnostic> = errors.iter().map(|e| e.diagnostic()).collect();
+            let style = if arguments.ms_diagnostics {
+                ErrorStyle::Microsoft {
+                    file: arguments.input.as_deref().unwrap_or("_stdin_"),
+                }
+            } else {
+                ErrorStyle::Lines
+            };
+            reporter.compile_errors(&diagnostics, style);
+            std::process::exit(255);
+        }
+        Err(RunError::Driver(message)) => {
+            reporter.failure(&Diagnostic::error(message));
             std::process::exit(255);
         }
     }
