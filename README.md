@@ -22,6 +22,22 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
 - Defects of the original that the port reproduces, and proposed opt-in
   fixes, are in [VCL_BUGS.md](docs/VCL_BUGS.md).
 
+## Performance against openvcl
+
+On eleven public corpus programs (quake2-ps2, doom3-bfg-ps2, ps2gl, tyra and
+openvcl's own), scored by openvcl's own static cost analyzer, openvcl 0.4.0's
+code needs 1.33x to 1.75x the estimated cycles of oxide-vcl's in eight, and
+the smallest, a 6-cycle pass-through, is level. In the other two the totals
+favour openvcl only because they count each wind-down copy of oxide-vcl's
+software-pipelined loops once; the loop that repeats per vertex is 1.95x to
+3.4x shorter per pass in oxide-vcl across all the pipelined loops. Most of the
+gain comes from pairing lower-pipe loads, stores and integer updates with
+upper-pipe arithmetic and from filling latencies with independent work,
+where openvcl issues mostly one pipe at a time and pads with `nop` rows.
+openvcl also drops the `clipw` instructions from both tyra programs. Method,
+tables and the tool that reproduces them:
+[OPENVCL_COMPARISON.md](docs/OPENVCL_COMPARISON.md).
+
 ## Original artifact (not included here)
 
 - `vcl` (SHA-256 `83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274`).
@@ -86,6 +102,7 @@ Using the compiler:
 - [VCL reference](docs/VCL_REFERENCE.md): language, annotations, directives, command line
 - [Compatibility and known limitations](docs/COMPATIBILITY.md)
 - [Original defects and proposed fixes](docs/VCL_BUGS.md)
+- [Code generation compared with openvcl](docs/OPENVCL_COMPARISON.md)
 
 How vcl 1.4beta7 works, and how the port reproduces it:
 

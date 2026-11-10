@@ -24,7 +24,8 @@ untracked notes are in `CLAUDE.local.md` when present.
   behaviour, with the original's recorded runs.
 - `tools/`: Python tools: corpus comparison, listing conversion, and the
   oracle runner and its setup (`setup_oracle.py`, `run_oracle.py`,
-  `replay_oracle.py`, `run_native.py`).
+  `replay_oracle.py`, `run_native.py`), and `compare_openvcl.py`, which
+  scores oxide-vcl against openvcl (`docs/OPENVCL_COMPARISON.md`).
 - `docs/`: one chapter per mechanism; `LANGUAGE.md` is the implementer's
   view of the source language.
 - `local/` (gitignored, **no git backup**): the original binary, its runs and
