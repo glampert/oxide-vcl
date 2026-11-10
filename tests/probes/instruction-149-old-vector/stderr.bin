@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_INSTRUCTION_4 STAT_ALU.0
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register STAT_ALU is used before set at instruction(s) :
+INFO:    implicit operand 'STAT_ALU'
+  ---> [***{fsand}***] {vi04},{0xc00} 
+INFO: OS_End(Linux)

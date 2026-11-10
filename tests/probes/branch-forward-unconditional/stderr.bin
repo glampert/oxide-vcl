@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+INFO: prune inaccessible stream __v_ORACLE_5
+INFO: REMOVE INST:   ---> [***{sub}***] {b},{a},{a} 
+INFO: remove branch..
+INFO: Opt::Linear     __v_ORACLE_4  1/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: in RAW decode mode, there weren't 2 instructions on line : 
+  ---> {nop} 
+INFO: OS_End(Linux)

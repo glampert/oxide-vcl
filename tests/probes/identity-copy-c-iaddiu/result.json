@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uP",
+    "/work/c_iaddiu.vcl"
+  ],
+  "input_sha256": "9d10b54c200724326d1137eb1fd4c19fdadd363ca06e7d0e3451dfa26482e5a5",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.18588091700803488,
+  "cpu_seconds": 0.21289299999999997,
+  "stdout_sha256": "d004f0ab07e89667990b61d8fc35b7dd0acf3192ec5eb75939846037acc0cf37",
+  "stderr_sha256": "8037b6170f9ef89a6e77feea762cb618e08a8136fa10dcde421b71d6d5da3e75",
+  "stdout_bytes": 1343,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

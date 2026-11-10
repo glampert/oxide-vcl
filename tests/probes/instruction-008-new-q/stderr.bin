@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+ERROR: failed to find derived instruction type 'maxq'
+ERROR: oDecode:: iBuildHook failed to patch instruction
+USER: couldn't decode instruction .. problem is at:
+  ---> {max} {vf04},{vf01},{Q} 
+USER: expected format is: max.[xyzw]	vf_reg,vf_reg,Q
+INFO: OS_End(Linux)

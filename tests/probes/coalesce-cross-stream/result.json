@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCOPY",
+    "/work/coalesce-cross-stream.vcl"
+  ],
+  "input_sha256": "2a2a6664189f6e044f63ba152e66a1cf8fcc88bda1b995e0b296dfb1dbff65e6",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 30.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.19130749997566454,
+  "cpu_seconds": 0.21472,
+  "stdout_sha256": "3e23e5be128377b14b25703ace98b59336ab9715ddf7452e0c6c15401db51c86",
+  "stderr_sha256": "c3f5e08cc35aedcd3be31fb8279143289c98c2d1e1d33be2ab44c89160f39f3d",
+  "stdout_bytes": 898,
+  "stderr_bytes": 195,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 2,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

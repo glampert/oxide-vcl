@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER: failed to decode operand
+USER: couldn't decode instruction .. problem is at:
+  ---> {in_hw_clip} 
+USER: expected format is: in_hw_clip	
+INFO: OS_End(Linux)

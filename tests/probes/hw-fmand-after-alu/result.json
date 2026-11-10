@@ -1,0 +1,29 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/hw-fmand-after-alu.vcl"
+  ],
+  "input_sha256": "d0c9fc4d4e100c698184483d6e87922d930961097da17ac3f074937a4729be48",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "wall_seconds": 0.18532191612757742,
+  "cpu_seconds": 0.20920199999999997,
+  "stdout_sha256": "7232263be2c0941404489111dd55f164c7a4a2504a1f452f0ad8a34b8cc29229",
+  "stderr_sha256": "6f199637514b43e0fb0e18baf7dc4da38f2f5a5467bf071a5991ba9e1a719dc2",
+  "stdout_bytes": 808,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

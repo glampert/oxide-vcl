@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+ERROR: incompatible lnktypes for IFT_REG...src=BTYPE_REG_LINK
+ERROR: failed to fixup a branch to register
+ERROR: failed to fixup a branch-to-register instruction
+ERROR: failed to resolve branches after constructing streams
+ERROR: flow: failed to split parser stream
+ERROR: failed to build flow from parser!
+INFO: OS_End(Linux)

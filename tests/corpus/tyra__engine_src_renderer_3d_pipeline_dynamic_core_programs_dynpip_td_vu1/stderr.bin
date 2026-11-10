@@ -1,0 +1,14 @@
+INFO: OS_Init(Linux)
+INFO: prune inaccessible stream __v_CORPUS_11
+INFO: REMOVE INST: operand -1 modbits ffffffff..
+INFO: Opt::Linear     __v_CORPUS_4  9/9
+INFO: Opt::Linear            begin  22/22
+WARN: time out..
+WARN:  WARNING: failed to another via vertexLoop
+WARN: time out..
+WARN:  WARNING: failed to ldumb via vertexLoop
+INFO: Opt::Linear       vertexLoop  134/105
+INFO: Opt::Linear     __v_CORPUS_7  1/1
+INFO: Opt::Linear     __v_CORPUS_8  2/0
+INFO: Opt::Linear     __v_CORPUS_9  2/2
+INFO: OS_End(Linux)

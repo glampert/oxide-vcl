@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: failed to find a directive from line : 
+  ---> {.bogus} 
+INFO: OS_End(Linux)

@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/qp-efu-mfp.vcl"
+  ],
+  "input_sha256": "8b9e9950fa4e7825c3c6dfde83c3b83f140aac9f620a285c899c373cf8a0eec6",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.15790583309717476,
+  "cpu_seconds": 0.185376,
+  "stdout_sha256": "7c85017f98a16b303fca60632a5d9448843b467ab33f0672c9fd5ade5098e02c",
+  "stderr_sha256": "cfa76fa2dcdbd044c62dc486cb1174096da33ecfc03d3dbdb87cc0517226b785",
+  "stdout_bytes": 929,
+  "stderr_bytes": 135,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

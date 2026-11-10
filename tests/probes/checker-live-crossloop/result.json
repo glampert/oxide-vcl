@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFIX",
+    "/work/checker-live-crossloop.vcl"
+  ],
+  "input_sha256": "ba57c5a957ae51b2ba71e5488d5222b7c86329e100c7e4bb2cd42c4e7b3af352",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.4803062079590745,
+  "cpu_seconds": 0.482494,
+  "stdout_sha256": "72bf65e8f59e09d7ab33f38ad5d7336f391c898b8e772b9b70c9cc1ec7ef1d5f",
+  "stderr_sha256": "59fdb593dbca9df8d385c7dfd876cf96e948fd74dfcdb89965c88b497c2437e9",
+  "stdout_bytes": 3383,
+  "stderr_bytes": 163,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 3,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

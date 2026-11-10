@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+USER: can't use '#' in the name of a register : 'a#note'
+USER: can't use a#note as a name for one of the VU User floating point
+USER: oDecode: not find register 'a#note' from VU User floating point
+USER: couldn't decode instruction .. problem is at:
+  ---> {add} {b},{a},[***{a}***] {#} {note} 
+USER: expected format is: add.[xyzw]	vf_reg[xyzw],vf_reg[xyzw],vf_reg[xyzw]
+INFO: OS_End(Linux)

@@ -1,0 +1,1287 @@
+//! Source-to-assembly orchestration for the reconstructed scheduler.
+//!
+//! This owned IR deliberately separates source, data flow,
+//! schedule positions, allocation, and emission. Coverage differences from the
+//! original optimizer are recorded in `docs/COMPATIBILITY.md`.
+
+use crate::Options;
+use crate::allocator::allocation::{Allocator, VirtualRegister};
+use crate::analysis::flow::{self, Access, Definition};
+use crate::isa::instruction::{self, Direction, RegisterFamily, Syntax};
+use crate::parser::{self, Directive, Instruction, ParseMode, StatementKind, Synthetic};
+use crate::scheduler::schedule::{
+    self, Dependency, Operation, RegisterAccess, ScheduleOptions, SchedulingProblem,
+};
+use crate::scheduler::timing::{
+    self, Synchronization, TimedRow, TimingOperation, TimingRead, TimingWrite,
+};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fmt;
+
+mod external_assignment;
+mod flow_graph;
+mod generated_rows;
+mod raw_reduction;
+mod region;
+mod rows;
+mod software_loops;
+mod source_passes;
+mod table_planning;
+mod table_timing;
+mod wrangle_tables;
+
+use flow_graph::*;
+use generated_rows::*;
+use region::*;
+use rows::*;
+use software_loops::*;
+use source_passes::*;
+use table_planning::*;
+use table_timing::*;
+use wrangle_tables::*;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CompileError {
+    pub line: usize,
+    pub message: String,
+    kind: CompileErrorKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CompileErrorKind {
+    General,
+    Allocation,
+    ZeroCopyDestination,
+}
+
+impl CompileError {
+    /// The original copy-detector abort can return status zero despite an
+    /// ERROR diagnostic and no assembly. Keep library failure distinct.
+    pub fn exit_status(&self) -> u8 {
+        if self.kind == CompileErrorKind::ZeroCopyDestination {
+            0
+        } else {
+            255
+        }
+    }
+}
+
+impl fmt::Display for CompileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.line == 0 {
+            f.write_str(&self.message)
+        } else {
+            write!(f, "line {}: {}", self.line, self.message)
+        }
+    }
+}
+
+impl std::error::Error for CompileError {}
+
+#[derive(Clone, Debug, Default)]
+pub struct Compiled {
+    pub assembly: String,
+    pub header: String,
+    pub instruction_pairs: usize,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Family {
+    Vector,
+    Integer,
+    Hardware,
+}
+
+#[derive(Clone, Debug)]
+struct Register {
+    name: String,
+    family: Family,
+    physical: Option<usize>,
+}
+
+#[derive(Clone, Default)]
+struct Registers {
+    ids: BTreeMap<(Family, String), usize>,
+    values: Vec<Register>,
+}
+
+impl Registers {
+    fn get(&mut self, name: &str, family: Family) -> usize {
+        let physical = if family == Family::Hardware {
+            None
+        } else {
+            physical(name, family)
+        };
+        let name = if family == Family::Hardware {
+            name.to_ascii_uppercase()
+        } else {
+            physical.map_or_else(|| name.to_string(), |id| physical_name(family, id))
+        };
+        let key = (family, name.to_ascii_lowercase());
+        if let Some(&id) = self.ids.get(&key) {
+            return id;
+        }
+        let id = self.values.len();
+        self.values.push(Register {
+            name,
+            family,
+            physical,
+        });
+        self.ids.insert(key, id);
+        id
+    }
+    fn named(&self, id: usize) -> &Register {
+        &self.values[id]
+    }
+}
+
+fn physical(name: &str, family: Family) -> Option<usize> {
+    let name = name.to_ascii_lowercase();
+    let (prefix, limit) = match family {
+        Family::Vector => ("vf", 32),
+        Family::Integer => ("vi", 16),
+        Family::Hardware => return Some(0),
+    };
+    let digits = name.strip_prefix(prefix)?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<usize>().ok().filter(|&id| id < limit)
+}
+
+fn physical_name(family: Family, id: usize) -> String {
+    match family {
+        Family::Vector => format!("VF{id:02}"),
+        Family::Integer => format!("VI{id:02}"),
+        Family::Hardware => String::new(),
+    }
+}
+
+fn family(class: u8) -> Option<Family> {
+    match instruction::register_family(class) {
+        RegisterFamily::Vector => Some(Family::Vector),
+        RegisterFamily::Integer => Some(Family::Integer),
+        RegisterFamily::Hardware => Some(Family::Hardware),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Located {
+    line: usize,
+    instruction: Instruction,
+    operands: Vec<Option<usize>>,
+    effects: Effects,
+}
+
+#[derive(Clone, Debug, Default)]
+struct Effects {
+    reads: Vec<Access>,
+    writes: Vec<Access>,
+    latencies: BTreeMap<usize, u16>,
+    side_effect: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+enum End {
+    #[default]
+    Fallthrough,
+    Continue,
+    Branch {
+        target: Option<String>,
+        tags: Vec<String>,
+        conditional: bool,
+        call: bool,
+    },
+    Exit {
+        macro_text: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Default)]
+struct LoopHints {
+    minimum: Option<u32>,
+    safe: u32,
+    extra: u16,
+    absolute: Option<u16>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TableMode {
+    Fixed,
+    Linear,
+    /// Reorderable raw debris is reduced after physical assignment. Synthetic
+    /// endpoints remain protected until their full boundary lifecycle is ported.
+    RawLinear,
+}
+
+#[derive(Clone, Debug)]
+struct SelectedTable {
+    rows: Vec<[Option<usize>; 2]>,
+    mode: TableMode,
+    /// A prologue/epilogue part installed from the loop optimizer: its rows
+    /// are kept (no strategy search) and go through the late raw reduction.
+    installed: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+struct Block {
+    labels: Vec<String>,
+    operations: Vec<usize>,
+    outputs: Vec<Access>,
+    /// Physical base an EXIT binds an output to (register ID to physical
+    /// number). `Region::forced` holds a name's first binding; an output in
+    /// another register is a separate web (`regweb`), so its
+    /// own base stays with the exit.
+    output_forced: BTreeMap<usize, usize>,
+    end: End,
+    loop_hints: LoopHints,
+    start_fence: bool,
+    end_fence: bool,
+    debug_top: u8,
+    debug_end: u8,
+    /// Selected issue slots establish paired-read ownership during flow. Only
+    /// linear generated parts admit subsequent extent/empty-row reduction.
+    selected_table: Option<SelectedTable>,
+}
+
+#[derive(Clone, Default)]
+struct Region {
+    instructions: Vec<Located>,
+    blocks: Vec<Block>,
+    inputs: Vec<Access>,
+    forced: BTreeMap<usize, usize>,
+    raw_text: Vec<String>,
+    /// Physical register (as a register ID) bound to one access of an
+    /// instruction: (instruction, write, register). Set on installed loop
+    /// kernels, whose registers come from loop local allocation.
+    pinned: BTreeMap<(usize, bool, usize), usize>,
+    /// Flow UID of the region's first code entry, which names an unlabeled
+    /// first stream `__v_<unique>_<uid>`. None when the
+    /// region has no code, whose stream the original leaves unnamed.
+    stream: Option<u16>,
+    /// Source register each `__web_N` register was formed from, for
+    /// diagnostics.
+    web_sources: BTreeMap<usize, usize>,
+}
+
+impl Region {
+    fn block(&mut self) -> &mut Block {
+        if self.blocks.is_empty() {
+            self.blocks.push(Block::default());
+        }
+        self.blocks.last_mut().unwrap()
+    }
+    fn split(&mut self) {
+        if !self.block().operations.is_empty() || !matches!(self.block().end, End::Fallthrough) {
+            self.blocks.push(Block::default());
+        }
+    }
+    fn nonempty(&self) -> bool {
+        !self.inputs.is_empty()
+            || !self.instructions.is_empty()
+            || self
+                .blocks
+                .iter()
+                .any(|b| matches!(b.end, End::Exit { .. }))
+    }
+}
+
+/// An open `.show`/`.hide` scope and its file-wide number.
+#[derive(Clone, Debug)]
+struct Visibility {
+    show: bool,
+    names: Vec<String>,
+    number: u32,
+}
+
+#[derive(Clone)]
+struct Source {
+    registers: Registers,
+    /// Open visibility scopes, innermost last, and how many have been opened.
+    visibility: Vec<Visibility>,
+    scopes_opened: u32,
+    regions: Vec<Region>,
+    allowed_vf: Vec<u8>,
+    allowed_vi: Vec<u8>,
+    name: Option<String>,
+    globals: BTreeSet<String>,
+    syntax: Syntax,
+    align: bool,
+    /// The original's `.vu` directive handler sets this flag.
+    vu_directive: bool,
+    end_bit: bool,
+    mpg: Option<String>,
+    unique_labels: bool,
+    unique_prefix: Option<String>,
+    warnings: Vec<String>,
+    /// Each name's current base binding (register ID to physical number),
+    /// the register's binding in the original decoder. Every
+    /// mapped IN/OUT operand replaces it; an unmapped one takes it. It
+    /// survives regions.
+    bindings: BTreeMap<usize, usize>,
+}
+
+/// The original's global flow UIDs, one per source statement
+/// (zero for statements that are not code). Entries with one UID form one
+/// stream. The counter starts at 1 and advances for a change of parse mode or
+/// raw submode, for a passthrough block and again after it, for a flagged
+/// label, on entering or leaving a raw loop (each `.vsmloop` has its own
+/// ordinal), for a branch target or indirect tag, at an ENTER, EXIT, exit
+/// macro or barrier (which start the new stream), after an ENDENTER, ENDEXIT
+/// or CONT, and after a branch (in raw code, after its delay pair).
+fn flow_uids(statements: &[parser::Statement], targets: &BTreeSet<String>) -> Vec<u16> {
+    let mut uids = vec![0; statements.len()];
+    let mut counter: u16 = 1;
+    let mut mode = (0u8, false);
+    let (mut loops, mut raw_loop, mut flow) = (0u16, 0u16, 0u16);
+    let mut delay = 0u8;
+    let mut previous_pass = false;
+    let (mut flagged, mut target) = (false, false);
+    let mut index = 0;
+    while index < statements.len() {
+        let statement = &statements[index];
+        let first = match &statement.kind {
+            StatementKind::Label(label) => {
+                flagged |= label.modifiers != 0;
+                target |= targets.contains(&label.name.to_ascii_lowercase());
+                index += 1;
+                continue;
+            }
+            StatementKind::Directive(directive) => {
+                match directive {
+                    Directive::RawLoop { .. } => {
+                        loops += 1;
+                        raw_loop = loops;
+                    }
+                    Directive::EndRawLoop => raw_loop = 0,
+                    _ => {}
+                }
+                index += 1;
+                continue;
+            }
+            StatementKind::RawText(_) => {
+                // A passthrough block is one entry.
+                if !previous_pass {
+                    counter += 1;
+                    previous_pass = true;
+                }
+                index += 1;
+                continue;
+            }
+            StatementKind::Instruction(instruction) => instruction,
+        };
+        // One source line is one entry, with up to two instructions.
+        let end = statements[index..]
+            .iter()
+            .position(|other| {
+                other.line != statement.line || !matches!(other.kind, StatementKind::Instruction(_))
+            })
+            .map_or(statements.len(), |count| index + count);
+        let raw = first.mode == ParseMode::Raw;
+        let entry = (if raw { 3 } else { 1 }, raw && first.raw_reorder);
+        if entry != mode {
+            counter += 1;
+            mode = entry;
+        }
+        if std::mem::take(&mut previous_pass) {
+            counter += 1;
+        }
+        if std::mem::take(&mut flagged) {
+            counter += 1;
+        }
+        if raw_loop == 0 {
+            if flow > 0 {
+                flow = 0;
+                counter += 1;
+            }
+        } else if raw_loop != flow {
+            counter += 1;
+            flow = raw_loop;
+        }
+        if std::mem::take(&mut target) {
+            counter += 1;
+        }
+        let mut uid = counter;
+        for statement in &statements[index..end] {
+            let StatementKind::Instruction(instruction) = &statement.kind else {
+                continue;
+            };
+            match instruction.synthetic() {
+                Some(
+                    Synthetic::Enter | Synthetic::Exit | Synthetic::Barrier | Synthetic::ExitMacro,
+                ) => {
+                    counter += 1;
+                    uid += 1;
+                }
+                Some(Synthetic::EndEnter | Synthetic::EndExit | Synthetic::Continue) => {
+                    counter += 1
+                }
+                Some(_) => {}
+                None if instruction.metadata.is_branch() => delay = if raw { 2 } else { 1 },
+                None => {}
+            }
+        }
+        if delay != 0 {
+            if delay == 1 {
+                counter += 1;
+            }
+            delay -= 1;
+        }
+        uids[index..end].fill(uid);
+        index = end;
+    }
+    uids
+}
+
+impl Source {
+    fn new(options: &Options) -> Self {
+        let mut registers = Registers::default();
+        for id in 0..32 {
+            registers.get(&physical_name(Family::Vector, id), Family::Vector);
+        }
+        for id in 0..16 {
+            registers.get(&physical_name(Family::Integer, id), Family::Integer);
+        }
+        Self {
+            registers,
+            regions: Vec::new(),
+            allowed_vf: vec![0; 32],
+            allowed_vi: vec![0; 16],
+            name: None,
+            globals: BTreeSet::new(),
+            syntax: if options.new_syntax {
+                Syntax::New
+            } else {
+                Syntax::Old
+            },
+            align: !options.disable_alignment,
+            vu_directive: false,
+            // The historical -e byte is consulted only by the empty-NOP
+            // emitter. Real upper instructions still receive their E bit.
+            end_bit: true,
+            mpg: options.mpg.filter(|&n| n >= 0).map(|n| n.to_string()),
+            unique_labels: options.unique_labels,
+            unique_prefix: None,
+            visibility: Vec::new(),
+            scopes_opened: 0,
+            warnings: Vec::new(),
+            bindings: BTreeMap::new(),
+        }
+    }
+
+    /// The name a symbolic register has inside the open visibility scopes
+    /// (observed from vcl 1.4beta7, `visibility-*`). The innermost scope that
+    /// makes the name local renames it to `<scope number><name>`: a `.hide`
+    /// scope that lists it, or a `.show` scope that does not. Otherwise the
+    /// next scope outward decides. Lists match case-sensitively; physical
+    /// registers, hardware registers and names starting with `_` are never
+    /// renamed.
+    fn qualify(&self, name: &str, family: Family) -> Option<String> {
+        if family == Family::Hardware || name.starts_with('_') || physical(name, family).is_some() {
+            return None;
+        }
+        self.visibility.iter().rev().find_map(|scope| {
+            let listed = scope.names.iter().any(|listed| listed == name);
+            (listed != scope.show).then(|| format!("{}{name}", scope.number))
+        })
+    }
+
+    fn lower(
+        &mut self,
+        mut instruction: Instruction,
+        line: usize,
+    ) -> Result<Located, CompileError> {
+        // Symbolic names may not be spelled like a hardware resource
+        // (observed from vcl 1.4beta7): every resource is reserved for VF
+        // names, and all but the scalar I, Q, P and R for VI names.
+        for operand in &instruction.operands {
+            let (Some(name), Some(family @ (Family::Vector | Family::Integer))) =
+                (&operand.register, family(operand.class))
+            else {
+                continue;
+            };
+            let scalar = matches!(name.to_ascii_uppercase().as_str(), "I" | "Q" | "P" | "R");
+            if source_passes::hardware_register(name).is_some()
+                && !(family == Family::Integer && scalar)
+            {
+                let kind = if family == Family::Vector {
+                    "VU User floating point"
+                } else {
+                    "VU User integer"
+                };
+                return Err(error(
+                    line,
+                    format!("can't use {name} as a name for one of the {kind}"),
+                ));
+            }
+        }
+        if !self.visibility.is_empty() {
+            for operand in &mut instruction.operands {
+                if let (Some(name), Some(family)) = (&operand.register, family(operand.class))
+                    && let Some(local) = self.qualify(name, family)
+                {
+                    operand.register = Some(local);
+                }
+            }
+        }
+        let mut operands = Vec::with_capacity(instruction.operands.len());
+        for operand in &instruction.operands {
+            let id = if let Some(name) = &operand.register {
+                if let Some(family) = family(operand.class) {
+                    Some(self.registers.get(name, family))
+                } else if matches!(operand.class, 22..=25 | 55) {
+                    None
+                } else {
+                    return Err(error(
+                        line,
+                        "operand register pool is not implemented for this target",
+                    ));
+                }
+            } else {
+                None
+            };
+            operands.push(id);
+        }
+        // Memory tags get a register identity for the loop tables, which
+        // model them as resources (`add_memory_tag_resources`). They are not
+        // data-flow effects.
+        if instruction.metadata.is_memory() {
+            for operand in &instruction.operands {
+                if (28..=33).contains(&operand.class) {
+                    for tag in &operand.tags {
+                        self.registers.get(&format!(":{tag}"), Family::Hardware);
+                    }
+                }
+            }
+        }
+        let expanded = crate::analysis::prune::expand(&instruction);
+        let mut effects = Effects::default();
+        for operand in &expanded.operands {
+            let (Some(name), Some(family)) = (&operand.register, family(operand.class)) else {
+                continue;
+            };
+            let register = self.registers.get(name, family);
+            let access = Access {
+                register,
+                mask: operand.mask,
+            };
+            match operand.direction {
+                Direction::Read => effects.reads.push(access),
+                Direction::Write => {
+                    effects.writes.push(access);
+                    effects
+                        .latencies
+                        .insert(register, operand.latency.max(0) as u16);
+                }
+                Direction::Unknown => {}
+            }
+            if matches!(operand.class, 32 | 33) {
+                effects.writes.push(access);
+                effects.latencies.insert(register, 1);
+            }
+        }
+        effects.side_effect = instruction.metadata.is_branch()
+            || (instruction.metadata.is_memory() && instruction.metadata.subtype == 2)
+            // XGKICK starts a transfer; XTOP/XITOP only read VIF state and
+            // are pruned when unused (`can_prune`, as in the original).
+            || (instruction.metadata.unit_mask & 128 != 0
+                && !crate::analysis::prune::can_prune(&instruction))
+            || instruction.modifiers != 0
+            || instruction.mode == ParseMode::Raw;
+        Ok(Located {
+            line,
+            instruction,
+            operands,
+            effects,
+        })
+    }
+
+    fn parse_program(&mut self, program: parser::Program) -> Result<(), CompileError> {
+        let mut current = Region::default();
+        let mut binding = None;
+        let mut raw_delay: Option<(usize, u8)> = None;
+        // Only a branch target or indirect tag starts a stream at its label;
+        // immediates and `.global` exports do not (verified on the original).
+        let branch_labels: BTreeSet<String> = program
+            .statements
+            .iter()
+            .filter_map(|statement| match &statement.kind {
+                StatementKind::Instruction(instruction)
+                    if instruction.synthetic().is_none() && instruction.metadata.is_branch() =>
+                {
+                    Some(instruction)
+                }
+                _ => None,
+            })
+            .flat_map(|instruction| {
+                let target = instruction
+                    .operands
+                    .iter()
+                    .rev()
+                    .find_map(|o| o.immediate.clone());
+                target
+                    .into_iter()
+                    .chain(instruction.operands.iter().flat_map(|o| o.tags.clone()))
+            })
+            .map(|label| label.to_ascii_lowercase())
+            .collect();
+        let uids = flow_uids(&program.statements, &branch_labels);
+        for (index, statement) in program.statements.into_iter().enumerate() {
+            let line = statement.line;
+            if raw_delay.is_some()
+                && !matches!(&statement.kind, StatementKind::Instruction(instruction)
+                    if instruction.mode == ParseMode::Raw && instruction.synthetic().is_none())
+            {
+                return Err(error(
+                    line,
+                    "raw branch requires one explicit delay pair before a boundary",
+                ));
+            }
+            match statement.kind {
+                StatementKind::Directive(directive) => match directive {
+                    Directive::Vu => self.vu_directive = true,
+                    Directive::Name(name) => self.name = Some(name),
+                    Directive::Global(name) => {
+                        self.globals.insert(name);
+                    }
+                    Directive::Syntax(syntax) => self.syntax = syntax,
+                    Directive::NoAligns => self.align = false,
+                    // The original's no-ebits directive handler writes the same byte as no_aligns.
+                    Directive::NoEbits => self.align = false,
+                    Directive::Mpg(address) => self.mpg = Some(address),
+                    Directive::InitAll { vector } => {
+                        let (allowed, mask) = if vector {
+                            (&mut self.allowed_vf, 15)
+                        } else {
+                            (&mut self.allowed_vi, 1)
+                        };
+                        allowed[1..].fill(mask);
+                    }
+                    Directive::InitRegisters {
+                        vector,
+                        enable,
+                        names,
+                    } => {
+                        let family = if vector {
+                            Family::Vector
+                        } else {
+                            Family::Integer
+                        };
+                        let allowed = if vector {
+                            &mut self.allowed_vf
+                        } else {
+                            &mut self.allowed_vi
+                        };
+                        for name in names {
+                            let (base, suffix) = name.split_once('.').unwrap_or((&name, ""));
+                            let (first, last) = if let Some((first, last)) = base.split_once('-') {
+                                (physical(first, family), physical(last, family))
+                            } else {
+                                let id = physical(base, family);
+                                (id, id)
+                            };
+                            let first = first.ok_or_else(|| {
+                                error(line, format!("invalid physical register {name}"))
+                            })?;
+                            let last = last.ok_or_else(|| {
+                                error(line, format!("invalid physical register {name}"))
+                            })?;
+                            let mask = if vector {
+                                if suffix.is_empty() {
+                                    15
+                                } else {
+                                    instruction::Mask::parse(suffix)
+                                        .ok_or_else(|| error(line, "invalid component mask"))?
+                                        .0
+                                }
+                            } else {
+                                1
+                            };
+                            for (id, allowed) in allowed
+                                .iter_mut()
+                                .enumerate()
+                                .take(first.max(last) + 1)
+                                .skip(first.min(last))
+                            {
+                                if id != 0 {
+                                    if enable {
+                                        *allowed |= mask;
+                                    } else {
+                                        *allowed &= !mask;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Directive::Align(_) => {} // Output boundaries carry the original default alignment.
+                    Directive::Raw { .. }
+                    | Directive::EndRaw
+                    | Directive::RawLoop { .. }
+                    | Directive::EndRawLoop => current.split(),
+                    Directive::Visibility { show, names } => {
+                        self.scopes_opened += 1;
+                        self.visibility.push(Visibility {
+                            show,
+                            names,
+                            number: self.scopes_opened,
+                        });
+                    }
+                    // The parser has already rejected a scope closed with the
+                    // other kind; an unmatched close only warns.
+                    Directive::EndVisibility { .. } => {
+                        self.visibility.pop();
+                    }
+                    Directive::Unique(prefix) => {
+                        self.unique_labels = true;
+                        if prefix.is_some() {
+                            self.unique_prefix = prefix;
+                        }
+                    }
+                    Directive::WorkArea {
+                        device,
+                        address,
+                        size,
+                    } => {
+                        let request = crate::analysis::memory::WorkAreaRequest::from_parsed(
+                            &device, address, size,
+                        )
+                        .map_err(|e| error(line, e.to_string()))?;
+                        crate::analysis::memory::activate_marigold(&request)
+                            .map_err(|e| error(line, e.to_string()))?;
+                    }
+                },
+                StatementKind::Label(label) => {
+                    if label.modifiers != 0
+                        || branch_labels.contains(&label.name.to_ascii_lowercase())
+                    {
+                        current.split();
+                    } else if !current.block().operations.is_empty()
+                        || !matches!(current.block().end, End::Fallthrough)
+                    {
+                        // An unreferenced label inside a stream is discarded.
+                        continue;
+                    }
+                    current.block().debug_top |= label.modifiers;
+                    current.block().labels.push(label.name);
+                }
+                StatementKind::RawText(text) => {
+                    current.raw_text.push(text);
+                }
+                StatementKind::Instruction(instruction) => {
+                    if let Some(synthetic) = instruction.synthetic() {
+                        match synthetic {
+                            Synthetic::Enter => {
+                                if current.nonempty() {
+                                    self.regions.push(current);
+                                    current = Region::default();
+                                }
+                                binding = Some(true);
+                                // The original's dependency binder adds these two
+                                // inherited sticky values at every ENTER.
+                                // This declares incoming state, not a zero value.
+                                for resource in crate::analysis::status::implicit_entry_inputs() {
+                                    let register =
+                                        self.registers.get(resource.name(), Family::Hardware);
+                                    current.inputs.push(Access { register, mask: 1 });
+                                }
+                                // It also declares the external-unit resource
+                                // that XGKICK reads and writes (inferred from
+                                // vcl 1.4beta7), so each kick depends on the
+                                // previous one.
+                                let register = self.registers.get("EXT", Family::Hardware);
+                                current.inputs.push(Access { register, mask: 1 });
+                            }
+                            Synthetic::EndEnter => binding = None,
+                            Synthetic::Exit => {
+                                current.block().end = End::Exit { macro_text: None };
+                                binding = Some(false);
+                            }
+                            Synthetic::ExitMacro => {
+                                let text = instruction
+                                    .operands
+                                    .iter()
+                                    .find_map(|o| o.immediate.as_ref())
+                                    .cloned()
+                                    .unwrap_or_default();
+                                current.block().end = End::Exit {
+                                    macro_text: Some(text.trim_matches('"').to_string()),
+                                };
+                                binding = Some(false);
+                            }
+                            Synthetic::EndExit => binding = None,
+                            Synthetic::Input | Synthetic::Output => {
+                                if instruction.mnemonic.eq_ignore_ascii_case("in_hw_mac") {
+                                    return Err(error(
+                                        line,
+                                        "explicit mac register - but I'm writing ASTATUS here??",
+                                    ));
+                                }
+                                let located = self.lower(instruction, line)?;
+                                for (operand, id) in
+                                    located.instruction.operands.iter().zip(&located.operands)
+                                {
+                                    let Some(id) = *id else { continue };
+                                    let family = self.registers.named(id).family;
+                                    let name = self.registers.named(id).name.clone();
+                                    let named = family != Family::Hardware
+                                        && self.registers.named(id).physical.is_none();
+                                    // The original decoder gives every interface operand
+                                    // its own base: an explicit mapping, which
+                                    // also rebinds the name, or else the
+                                    // name's current binding. A fresh name
+                                    // with neither is an error, at ENTER and
+                                    // EXIT alike.
+                                    let base = match &operand.forced_register {
+                                        Some(text) => {
+                                            let physical = physical(text, family);
+                                            if let Some(physical) = physical
+                                                && let Some(previous) =
+                                                    self.bindings.insert(id, physical)
+                                                    && previous != physical {
+                                                        self.warnings.push(format!(
+                                                            "changing binding for {name} from {} to {}",
+                                                            physical_name(family, previous),
+                                                            physical_name(family, physical),
+                                                        ));
+                                                    }
+                                            physical
+                                        }
+                                        None if named && binding.is_some() => {
+                                            Some(self.bindings.get(&id).copied().ok_or_else(
+                                                || {
+                                                    error(
+                                                        line,
+                                                        format!(
+                                                            "can't figure out which base register to map {name} to"
+                                                        ),
+                                                    )
+                                                },
+                                            )?)
+                                        }
+                                        None => None,
+                                    };
+                                    let access = Access {
+                                        register: id,
+                                        mask: operand.mask.0,
+                                    };
+                                    if binding == Some(true) {
+                                        current.inputs.push(access);
+                                        // Repeated ENTER bindings of a name
+                                        // are one value: the last one wins.
+                                        if let Some(base) = base {
+                                            current.forced.insert(id, base);
+                                        }
+                                    } else {
+                                        let block = current.block();
+                                        block.outputs.push(access);
+                                        if let Some(base) = base {
+                                            // One EXIT reads one value, so two
+                                            // bases are one web split in two.
+                                            if let Some(previous) =
+                                                block.output_forced.insert(id, base)
+                                                && previous != base
+                                            {
+                                                return Err(error(
+                                                    line,
+                                                    format!(
+                                                        "regweb:: set map - can't map to different base registers.. try to map both {} and {}",
+                                                        physical_name(family, base),
+                                                        physical_name(family, previous),
+                                                    ),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Synthetic::Barrier => {
+                                current.split();
+                                current.block().start_fence = true;
+                            }
+                            Synthetic::Continue => {
+                                if !matches!(current.block().end, End::Fallthrough) {
+                                    return Err(error(
+                                        line,
+                                        "CONT directive encountered - but end mode isn't null",
+                                    ));
+                                }
+                                current.block().end = End::Continue;
+                                current.split();
+                            }
+                            // An invalid loop hint argument is reported and the
+                            // compile goes on (observed from vcl 1.4beta7): the
+                            // arguments are applied in order up to the bad one,
+                            // so `--LoopCS 0,0` sets nothing and `--LoopCS 1,-1`
+                            // keeps the count. The messages are the original's,
+                            // including `--LoopAbs`'s ">=2" for a minimum of 3.
+                            Synthetic::LoopCount => {
+                                let minimum = immediate_i32(&instruction, 0, line)?;
+                                let safe = immediate_i32(&instruction, 1, line)?;
+                                if minimum < 1 {
+                                    self.warnings.push(format!(
+                                        "line {line}: for --LoopCS, the minimum known count (arg 1) must be must be >0"
+                                    ));
+                                    continue;
+                                }
+                                current.block().loop_hints.minimum = Some(minimum as u32);
+                                if safe < 0 {
+                                    self.warnings.push(format!(
+                                        "line {line}: for --LoopCS, the minimum safe count (arg 2) must be must be >=0"
+                                    ));
+                                    continue;
+                                }
+                                current.block().loop_hints.safe = safe as u32;
+                            }
+                            Synthetic::LoopAbsolute => {
+                                let value = immediate_i32(&instruction, 0, line)?;
+                                if value < 3 {
+                                    self.warnings.push(format!(
+                                        "line {line}: failed to get immediate field 0 (extra loop count) while processing --LoopAbs. value must be >=2"
+                                    ));
+                                    continue;
+                                }
+                                let value = u16::try_from(value).map_err(|_| {
+                                    error(line, "loop period exceeds supported schedule range")
+                                })?;
+                                current.block().loop_hints.absolute = Some(value);
+                            }
+                            // A negative extra period is reported too, but the
+                            // original then fails in loop scheduling (exit 255).
+                            Synthetic::LoopExtra => {
+                                let value = immediate_i32(&instruction, 0, line)?;
+                                if value < 0 {
+                                    return Err(error(
+                                        line,
+                                        "failed to get immediate field 0 (extra loop count) while processing --LoopExtra. value must be >=0",
+                                    ));
+                                }
+                                let value = u16::try_from(value).map_err(|_| {
+                                    error(line, "loop period exceeds supported schedule range")
+                                })?;
+                                current.block().loop_hints.extra = value;
+                            }
+                            Synthetic::Unknown => {
+                                return Err(error(line, "unknown synthetic instruction"));
+                            }
+                        }
+                        continue;
+                    }
+                    let located = self.lower(instruction, line)?;
+                    let is_branch = located.instruction.metadata.is_branch();
+                    if is_branch {
+                        if raw_delay.is_some() {
+                            return Err(error(line, "branch inside a raw branch delay slot"));
+                        }
+                        let metadata = located.instruction.metadata;
+                        let target = located
+                            .instruction
+                            .operands
+                            .iter()
+                            .rev()
+                            .find_map(|o| o.immediate.clone());
+                        let tags = located
+                            .instruction
+                            .operands
+                            .iter()
+                            .flat_map(|o| o.tags.iter().cloned())
+                            .collect();
+                        current.block().end = End::Branch {
+                            target,
+                            tags,
+                            conditional: metadata.subtype == 5,
+                            call: metadata.subtype & 8 != 0,
+                        };
+                    }
+                    let id = current.instructions.len();
+                    current.instructions.push(located);
+                    current.block().operations.push(id);
+                    current.stream.get_or_insert(uids[index]);
+                    if is_branch {
+                        if current.instructions[id].instruction.mode == ParseMode::Raw {
+                            raw_delay = Some((line, 0));
+                        } else {
+                            current.blocks.push(Block::default());
+                        }
+                    } else if let Some((branch_line, count)) = &mut raw_delay
+                        && line != *branch_line
+                    {
+                        *count += 1;
+                        if *count == 2 {
+                            current.blocks.push(Block::default());
+                            raw_delay = None;
+                        }
+                    }
+                }
+            }
+        }
+        if raw_delay.is_some() {
+            return Err(error(0, "raw branch requires one explicit delay pair"));
+        }
+        if current.nonempty() {
+            self.regions.push(current);
+        }
+        // A synthetic exit can fold into its immediately preceding code
+        // stream; the original performs this during stream merging.
+        for region in &mut self.regions {
+            let mut id = 1;
+            while id < region.blocks.len() {
+                if region.blocks[id].labels.is_empty()
+                    && region.blocks[id].operations.is_empty()
+                    && matches!(region.blocks[id].end, End::Exit { .. })
+                    && matches!(region.blocks[id - 1].end, End::Fallthrough)
+                {
+                    let exit = region.blocks.remove(id);
+                    region.blocks[id - 1].end = exit.end;
+                    region.blocks[id - 1].outputs.extend(exit.outputs);
+                    region.blocks[id - 1]
+                        .output_forced
+                        .extend(exit.output_forced);
+                } else {
+                    id += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn immediate_i32(
+    instruction: &Instruction,
+    index: usize,
+    line: usize,
+) -> Result<i32, CompileError> {
+    let text = instruction
+        .operands
+        .get(index)
+        .and_then(|operand| operand.immediate.as_deref())
+        .ok_or_else(|| error(line, "missing loop hint operand"))?;
+    crate::parser::expression::evaluate(text)
+        .ok()
+        .and_then(|value| value.number())
+        .map(|value| value.to_i32())
+        .ok_or_else(|| error(line, "loop hint must be a numeric constant"))
+}
+fn error(line: usize, message: impl Into<String>) -> CompileError {
+    CompileError {
+        line,
+        message: message.into(),
+        kind: CompileErrorKind::General,
+    }
+}
+
+fn allocation_error(failure: crate::allocator::allocation::AllocationError) -> CompileError {
+    let mut result = error(0, failure.to_string());
+    if matches!(
+        failure,
+        crate::allocator::allocation::AllocationError::NoFit { .. }
+            | crate::allocator::allocation::AllocationError::ForcedConflict { .. }
+    ) {
+        result.kind = CompileErrorKind::Allocation;
+    }
+    result
+}
+
+/// Compile a complete VCL source. Parsing and allocation errors retain source
+/// line numbers. The caller decides where output files and diagnostics go.
+pub fn compile(
+    source: &str,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Vec<CompileError>> {
+    let parsed = parser::parse_with_options(
+        source,
+        parser::ParserOptions {
+            syntax: if options.new_syntax {
+                Syntax::New
+            } else {
+                Syntax::Old
+            },
+            allow_incomplete: false,
+        },
+    )
+    .map_err(|errors| {
+        errors
+            .into_iter()
+            .map(|e| error(e.line, e.message))
+            .collect::<Vec<_>>()
+    })?;
+    let mut program = Source::new(options);
+    program.parse_program(parsed).map_err(|e| vec![e])?;
+    let mut output = Compiled::default();
+    output.warnings.append(&mut program.warnings);
+    output
+        .assembly
+        .push_str("; flowMon::Emit() Rust reconstruction\n");
+    // Prologue: old syntax or an explicit `.vu`, unless MPG output.
+    if (program.syntax == Syntax::Old || program.vu_directive) && program.mpg.is_none() {
+        output.assembly.push_str("\t\t.vu\n");
+    }
+    if program.align {
+        output.assembly.push_str("\t\t.align 4\n");
+    }
+    // `.name`'s labels come first, whatever the source order (observed from
+    // vcl 1.4beta7, `audit-header-visibility`).
+    if let Some(name) = &program.name {
+        output.assembly.push_str(&format!(
+            "\t\t.global\t{name}_CodeStart\n\t\t.global\t{name}_CodeEnd\n"
+        ));
+    }
+    for global in &program.globals {
+        output
+            .assembly
+            .push_str(&format!("\t\t.global\t{global}\n"));
+    }
+    if let Some(address) = &program.mpg {
+        output.assembly.push_str(&format!(
+            "\t\tDMAret\t*\n\t\tvifnop\n\t\tvifnop\n\t\tvifnop\n\t\tMPG\t{address},*\n"
+        ));
+    }
+    if let Some(name) = &program.name {
+        output.assembly.push_str(&format!("{name}_CodeStart:\n"));
+    }
+    let unique = program
+        .unique_prefix
+        .as_deref()
+        .or(options.unique.as_deref())
+        .unwrap_or(filename)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if program.unique_labels {
+        let rename = |name: &str| {
+            if program
+                .globals
+                .iter()
+                .any(|global| global.eq_ignore_ascii_case(name))
+            {
+                name.to_string()
+            } else {
+                format!("{unique}_{name}")
+            }
+        };
+        for region in &mut program.regions {
+            for block in &mut region.blocks {
+                for label in &mut block.labels {
+                    *label = rename(label);
+                }
+                if let End::Branch { target, tags, .. } = &mut block.end {
+                    if let Some(target) = target {
+                        *target = rename(target);
+                    }
+                    for tag in tags {
+                        *tag = rename(tag);
+                    }
+                }
+            }
+            for located in &mut region.instructions {
+                if located.instruction.metadata.is_branch() {
+                    for operand in &mut located.instruction.operands {
+                        if let Some(value) = &mut operand.immediate {
+                            *value = rename(value);
+                            operand.text = value.clone();
+                        }
+                        for tag in &mut operand.tags {
+                            *tag = rename(tag);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for region in &program.regions {
+        compile_region(&program, region, &unique, options, &mut output).map_err(|e| vec![e])?;
+    }
+    if program.align {
+        output.assembly.push_str("\t\t.align 4\n");
+    }
+    if let Some(name) = &program.name {
+        output.assembly.push_str(&format!("{name}_CodeEnd:\n"));
+    }
+    if program.mpg.is_some() {
+        output.assembly.push_str("\t.EndMPG\n\t.EndDmaData\n");
+    }
+    output
+        .assembly
+        .push_str(&format!(";\tiCount={}\n", output.instruction_pairs));
+    Ok(output)
+}
+
+// ----------------------------------------------
+// Unit tests
+// ----------------------------------------------
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::*;
+
+    fn scopes(open: &[(bool, &[&str])]) -> Source {
+        let mut source = Source::new(&Options::default());
+        for &(show, names) in open {
+            source.scopes_opened += 1;
+            source.visibility.push(Visibility {
+                show,
+                names: names.iter().map(|name| name.to_string()).collect(),
+                number: source.scopes_opened,
+            });
+        }
+        source
+    }
+
+    fn name(source: &Source, name: &str) -> String {
+        source
+            .qualify(name, Family::Vector)
+            .unwrap_or_else(|| name.to_string())
+    }
+
+    #[test]
+    fn hide_makes_only_its_names_local() {
+        let source = scopes(&[(false, &["t"])]);
+        assert_eq!(name(&source, "t"), "1t");
+        assert_eq!(name(&source, "a"), "a");
+    }
+
+    #[test]
+    fn show_makes_every_other_name_local() {
+        let source = scopes(&[(true, &["a", "b"])]);
+        assert_eq!(name(&source, "a"), "a");
+        assert_eq!(name(&source, "t"), "1t");
+    }
+
+    #[test]
+    fn the_innermost_scope_that_localizes_a_name_numbers_it() {
+        // `.show a, b` then `.hide u`: `u` is the inner scope's, `t` the
+        // outer scope's, and `a` stays visible through both.
+        let source = scopes(&[(true, &["a", "b"]), (false, &["u"])]);
+        assert_eq!(name(&source, "u"), "2u");
+        assert_eq!(name(&source, "t"), "1t");
+        assert_eq!(name(&source, "a"), "a");
+        // `.show a, b, t` then `.show t, b`: `t` passes both lists.
+        let source = scopes(&[(true, &["a", "b", "t"]), (true, &["t", "b"])]);
+        assert_eq!(name(&source, "t"), "t");
+        assert_eq!(name(&source, "u"), "2u");
+        assert_eq!(name(&source, "a"), "2a");
+    }
+
+    #[test]
+    fn physical_hardware_and_underscore_names_are_never_renamed() {
+        let source = scopes(&[(false, &["vf01", "_a", "acc"])]);
+        assert_eq!(source.qualify("vf01", Family::Vector), None);
+        assert_eq!(source.qualify("_a", Family::Vector), None);
+        assert_eq!(source.qualify("acc", Family::Hardware), None);
+    }
+
+    #[test]
+    fn scope_lists_match_names_case_sensitively() {
+        let source = scopes(&[(false, &["T"])]);
+        assert_eq!(name(&source, "t"), "t");
+        assert_eq!(name(&source, "T"), "1T");
+    }
+}

@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+ERROR: work: core cpu work area.. not yet
+USER: a directive parser failed at line:
+  ---> {.vu_work_area} {core},{0},{4} 
+INFO: OS_End(Linux)

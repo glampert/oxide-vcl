@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER: for --LoopCS, the minimum known count (arg 1) must be must be >0
+  ---> [***{--LoopCS}***] {0},{0} 
+USER: failed to process an instruction
+INFO: Opt::Linear             loop  4/4
+INFO: OS_End(Linux)

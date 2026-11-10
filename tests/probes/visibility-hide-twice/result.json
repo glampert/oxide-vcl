@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uDEMO",
+    "/work/hide-twice.vcl"
+  ],
+  "input_sha256": "8c90e0d1b91bbe5f043a594c0c5c22e9ecf262d3d970298deb229b3ccc0b3ca5",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.934891292010434,
+  "cpu_seconds": 0.497227,
+  "stdout_sha256": "ecd109c0d3912e79a43975543f8b1a05ec3c5ab2aca0581bfd47c6d003a06784",
+  "stderr_sha256": "115bda19a99e15a595f2b63ba08318079f712ee4edbf96bdfc1d68f33e2f1d92",
+  "stdout_bytes": 1094,
+  "stderr_bytes": 135,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,47 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	vsmReproAdc_CodeStart
+		.global	vsmReproAdc_CodeEnd
+vsmReproAdc_CodeStart:
+main_loop_lid:
+; _LNOPT_w=[ another ] 19 [21 0] 23   [main_loop_lid]
+         NOP                                                        lq            VF01,1(VI00)                        
+         NOP                                                        lq.xyz        VF02,0(VI00)                        
+         clipw.xyz     VF01xyz,VF01w                                NOP                                                      ;	STALL_LATENCY ?2
+         mul.xyz       VF02,VF01,VF02                               NOP                                               
+         clipw.xyz     VF01xyz,VF01w                                NOP                                               
+         clipw.xyz     VF01xyz,VF01w                                NOP                                               
+         clipw.xyz     VF01xyz,VF01w                                NOP                                               
+         opmula.xyz    ACCxyz,VF01xyz,VF02xyz                       NOP                                               
+         opmsub.xyz    VF03xyz,VF02xyz,VF01xyz                      iaddiu        VI02,VI00,0x00007fff                
+         NOP                                                        lq.xyz        VF01,3(VI00)                        
+         NOP                                                        fcand         VI01,16777215                       
+         NOP                                                        iand          VI01,VI01,VI01                      
+         abs.xyz       VF00,VF03                                    fmand         VI02,VI02                           
+         NOP                                                        ior           VI01,VI01,VI02                      
+         NOP                                                        iaddiu        VI01,VI01,0x00007fff                
+         NOP                                                        mfir.w        VF01,VI01                           
+         NOP                                                        xtop          VI01                                
+         NOP[E]                                                     sq            VF01,0(VI01)                               ;	STALL_LATENCY ?2
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_FIX_6]
+         NOP                                                        b             main_loop_lid                       
+         NOP                                                        NOP                                               
+		.align 4
+vsmReproAdc_CodeEnd:
+;	iCount=21
+; register stats:
+;   3 VU User integer
+;   4 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

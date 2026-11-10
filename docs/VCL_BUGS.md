@@ -1,0 +1,459 @@
+# Original VCL defects and an opt-in fix mode
+
+[vu-checker](https://github.com/glampert/vu-checker) (`check_vu_code.py`)
+guards a VCL build against six kinds of silent failure:
+
+- `crossloop`, `regalloc` and `loopvar`: liveness.
+- `immediates`: field widths.
+- `latency`: unpadded flag, Q and branch-condition reads.
+- `branches`: wrapped branch offsets.
+
+Its author found them with OpenVCL. A second set of minimal repros from
+the same work sits in the public corpus as `repro__*` and
+`*test_repro_quad_adc_bug`.
+
+Every one of those categories was tested against vcl 1.4beta7 ("the
+original" below) with synthetic probes. The results fall into three groups:
+
+- defects the original shares, which the port reproduces by default;
+- OpenVCL-only defects, which the original does not have;
+- problems outside VCL.
+
+An opt-in fix mode for the shared defects is proposed below. It is not
+implemented: the port has no `--fix` switch.
+
+Ground rules for the proposal:
+
+- **Compatibility stays the default.** Without the switch, output stays
+  identical to the original's, defects included.
+- **One switch, named fixes.** The proposal is `--fix` (all fixes) or
+  `--fix=imm,alias,clip,end` (selected fixes). The original's argument
+  parser rejects every argument whose second byte is `-` with
+  `bad args '…', try -h for help` (see `cli::parse`), so no valid original
+  command line changes meaning.
+- **Fixes are not optimizations.** They change output only where the
+  original's output is wrong, or where it rejects a valid program. The
+  `--improve` mode of [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) should
+  imply `--fix`.
+
+## 1. Method
+
+Each probe is an independently written source under `local/evidence/inputs/`.
+Its original-binary run (`tools/run_oracle.py`, alarm scale 1) is stored
+under `local/evidence/oracle/<name>/` (local, not tracked). The two affine-repair probes use scale
+0.1, like the `immediate-scheduled-*` probes they extend.
+
+- The 26 accepted `checker-*` probes all equal the port line for line, with
+  comments and whitespace ignored.
+- `checker-parse-*` probes record parser behaviour (section 5).
+- The `repro__*` programs and their original outputs are in
+  the public corpus (`tests/corpus`), and the port matches all of them.
+
+[crates/oxide-vcl/tests/vcl_bugs.rs](../crates/oxide-vcl/tests/vcl_bugs.rs) pins the evidence:
+
+- the line-for-line equality;
+- every out-of-field immediate the original emits, found by a field-width
+  checker modelled on vu-checker's;
+- the alias defects, by running both outputs in the test VU model
+  (`crates/oxide-vcl/tests/support/vu_model.rs`) and comparing against sequential
+  semantics;
+- the clip-history rejections;
+- the liveness probes, executed against a reference computed in the test.
+
+Field widths and latencies come from the VU User's Manual 6.0 at
+`~/Repos/GitHub/PS2Docs/markdown`:
+
+- §3.4.8 (branch conditions);
+- §3.4.4 and Figures 3-16/3-17 (flag timing);
+- the instruction reference for each field width.
+
+## 2. Findings
+
+| vu-checker category / repro | In the original? | Evidence | Fix |
+| --- | --- | --- | --- |
+| `immediates`: source values | **Yes** | `checker-imm-*-source`, `openvcl__repros_immediates_out_of_range`, `openvcl__test_repro_quad_adc_bug_fjtrujy` | F1 |
+| `immediates`: introduced by affine repair | **Yes** | `checker-imm-repair-add`, `checker-imm-repair-subtract` | F1 |
+| `immediates`: IADDI | No: normalized to IADDIU/ISUBIU | `checker-imm-iaddi-normal`, `checker-imm-iaddi-raw` | — |
+| Store/load and store/store through different bases | **Yes** | `openvcl__repros_store_load_alias`, `openvcl__repros_store_store_alias`, `checker-mem-copied-base` | F2 |
+| Clip programs without `in_hw_clip` | **Yes**, valid programs are rejected | `openvcl__repros_clip_join`, `openvcl__repros_clip_loop_entry`, `openvcl__repros_clipw_implicit_w`, both `quad_adc_bug` | F3 |
+| Exit rows losing the E bit | **Yes** (already known) | `external-vf-two`; one `--cont` stream in the local corpus | F4 |
+| `crossloop`, `regalloc`, `loopvar` | No | `checker-live-*`, `openvcl__repros_crossloop_4regs`, `openvcl__repros_loop_pointer` | — |
+| `latency`: clip, MAC, status, Q, branch condition across joins, back edges and calls | No | `checker-lat-*`, `openvcl__repros_mac_join`, `openvcl__repros_ilw_branch_label` | — |
+| `openvcl__repros_masked_write_branch`, `openvcl__repros_seed_store_order` | No | corpus outputs are correct | — |
+| `-c` schedules differently | No | identical pairs with and without `-c`: 3 corpus programs on the original, 49 on the port | — |
+| `branches`: wrapped offsets | Outside VCL | VCL emits labels; dvp-as encodes | optional warning (F5) |
+
+## 3. Defects the original shares
+
+### F1. Immediates outside their field
+
+**What the original does.** It passes numeric immediates through to the
+output without checking any field width. dvp-as then keeps the low bits
+without a diagnostic. Two sources produce such values.
+
+*Source values* (`checker-imm-memory-source`, `-iaddiu-source`,
+`-flags-source`, `openvcl__repros_immediates_out_of_range`):
+
+| Field | Width | Original output | After dvp-as |
+| --- | --- | --- | --- |
+| IADDIU, ISUBIU | 15 bits unsigned | `iaddiu VI02,VI01,0x00009c40` (40000), `isubiu …,0x00011170` (70000) | 7232, 4464 |
+| IADDIU, ISUBIU, negative | | `isubiu VI01,VI01,0xffffffff` (source `-1`) | subtracts 32767 instead of adding 1 |
+| LQ, SQ, ILW, ISW | 11 bits signed | `lq …,1024(VI01)`, `sq …,-1025(VI01)`, `ilw.x …,2047(VI01)`, `isw.x …,-2000(VI00)` | -1024, 1023, -1, 48 |
+| FCAND, FCOR, FCEQ, FCSET | 24 bits | `fcand VI01,16777217`, `fcset 16777218` | 1, 2 |
+| FSAND, FSOR, FSEQ, FSSET | 12 bits | `fsand VI02,0x00001001` | 1 |
+
+The two public quad-ADC repros differ in one line. One has
+`iaddiu vi05,vi00,0xffff` and the other `0x7fff`. The first is exactly
+this defect: 0xffff becomes 0x7fff.
+
+*Affine displacement repair* (`checker-imm-repair-add`, `-subtract`):
+
+- When the scheduler moves a load across its pointer update, the repair
+  step adjusts the offset ([IMMEDIATES.md](IMMEDIATES.md)).
+- It does the arithmetic in 32 bits and never checks the field.
+- So `lq c,1022(p)` after `iaddiu p,p,3` is emitted as
+  `lq VF03,1025(VI02)`, and `-1023` after `isubiu` as `-1026`.
+- The source is in range, and the user never sees the bad value unless
+  they read the listing.
+
+*Not affected:*
+
+- **IADDI.** Numeric IADDI is always rewritten to IADDIU or ISUBIU by
+  the original's scalar collapsing, raw blocks included: `iaddi …,-18` → `isubiu …,18`.
+- **The general coalescer.** It range-checks every rewrite
+  ([INDUCTION.md](INDUCTION.md)).
+- **Symbolic immediates.** These are still unresolved at emission, for
+  example `iaddi vi2,vi1,SYMBOL+1`. Only the assembler knows the value.
+
+*Memory offsets and wraparound.* The manual defines the address as
+`(Imm11 + VI[is]) × 16` and does not say what happens past the end of
+data memory. If the hardware wraps modulo the memory size (1024 qwords
+on VU1, 256 on VU0), an offset truncated modulo 2048 would hit the same
+qword. Nothing we have establishes that, so the plan treats a truncated
+offset as a defect.
+
+**Fix (`--fix=imm`).**
+
+1. *Field check at emission.* Every numeric immediate is checked against
+   its encoding field. The widths come from the manual: IADDI 5 bits
+   signed, IADDIU/ISUBIU 15 bits unsigned, LQ/SQ/ILW/ISW 11 bits signed,
+   FC* 24 bits, FS* 12 bits. They are kept in one table next to the
+   instruction descriptors. A value that cannot be legalized (steps 2–4)
+   is a `USER:` error that names the source line, as the original's
+   decode errors do.
+2. *Exact legalization of VI arithmetic.*
+   - VI registers are 16 bits (manual §3.2), so IADDIU/ISUBIU arithmetic
+     is modulo 65536.
+   - Reduce the signed immediate modulo 65536. Emit IADDIU if the result is
+     at most 32767; otherwise emit the opposite opcode with
+     `65536 - value`.
+   - Every 16-bit constant then has an exact encoding. The original
+     already does the same for IADDI:
+     - `iaddiu …,0xffff` → `isubiu …,1`
+     - `isubiu …,-1` → `iaddiu …,1`
+     - `iaddiu …,40000` → `isubiu …,25536`
+     - `isubiu …,70000` → `isubiu …,4464`
+3. *Flag masks.*
+   - FCAND/FCOR/FSAND/FSOR: the bits past the flag's width do not exist,
+     so the hardware result equals the truncated mask's. Give a warning,
+     not an error.
+   - FCEQ/FSEQ/FCSET/FSSET: the value means something else after
+     truncation. Error.
+4. *Memory offsets in source.* These are errors. Legalizing one needs a
+   second base register, and allocation runs before emission; this is not
+   worth an allocator interaction.
+5. *Affine repair.*
+   - Check the repaired offset where it is computed. If it leaves the
+     field, the loop candidate fails.
+   - Then the existing transactional retry runs again with that consumer's
+     affine annotation removed. The memory operation keeps its ordinary
+     dependency on the update and cannot cross it, so its offset is never
+     repaired.
+   - If the retry also fails, the loop falls back to linear code, as any
+     failed candidate does now.
+   - The retry order must be deterministic. `checker-imm-repair-*` then
+     emits offsets 1022 and -1023.
+6. *Symbolic immediates in narrow fields* (IADDI, memory offsets): give a
+   warning, since only the assembler can check them.
+
+### F2. Memory order through different base registers
+
+**What the original does.** The memory-order pass orders
+two accesses whose fields intersect only in three cases
+([MEMORY.md](MEMORY.md)):
+
+- timid mode `-M` is on;
+- their tags match;
+- their effective addresses are equal by the original's address comparison, which needs the same
+  register identity, the same external-input state, the same reaching
+  setter and the same immediate.
+
+Two different registers holding the same address are assumed not to alias:
+
+- `openvcl__repros_store_load_alias`:
+  - `iWalk = 900`, then `sq fC,1(iWalk)` and `lq fD,901(vi00)`.
+  - The original hoists the load above the store, so qword 5 receives the
+    stale contents of 901.
+  - The coalescer has already turned `iWalk` into `iaddiu VI01,VI00,0`
+    with offset 901. Both addresses are then visibly `901 + 0`, through
+    different registers.
+- `openvcl__repros_store_store_alias`: the two stores to 901 are swapped, so the
+  product, not `fA`, lands last.
+- `checker-mem-copied-base`: `iCopy = base + 0`. A load through `iCopy`
+  moves above a store through `base` at the same offset.
+- `checker-mem-same-base`: the same accesses through one register are
+  ordered.
+- With `-M` (`checker-mem-store-*-timid`), the original orders the pairs
+  and the results are correct.
+
+This is the original's documented optimistic model: VCL expects tags or
+`-M` where pointers alias. It is a defect only where the compiler can see
+that two addresses are equal. That is the case in all three probes.
+
+**Fix (`--fix=alias`).**
+
+1. *A symbolic address for each memory access.* Write it as `root + c`.
+   - `root` is one of: a VI value at a specific reaching definition, an
+     entry input, or `VI00` (absolute).
+   - Propagate through IADDIU/ISUBIU/IADDI, IADD/ISUB with `VI00`, the
+     coalescer's zero-immediate copies, and LQI/SQI/LQD/SQD steps.
+   - Merge at joins only when every incoming value agrees.
+   - The flow analysis already provides the reaching definitions.
+2. *An additional ordering predicate.* It sits beside the original's three
+   cases.
+   - Same root: order if the constants are equal, with fields
+     intersecting. Different constants never alias.
+   - Both absolute: order if the constants are equal.
+   - Otherwise: keep the original's no-alias assumption. Treating unknown
+     pairs as aliasing is what `-M` already does (section 3.1 measures
+     it), and VCL's model is built for renderers that read one buffer and
+     write another.
+3. *Loop-carried pairs.* For a root that is a loop induction with stride
+   `s`, offsets `c1` and `c2` alias across iterations when
+   `c1 − c2 = k·s`. The modulo scheduler needs those edges at distance `k`.
+   The original's cross-iteration memory dependencies are not yet
+   observed. A probe pair (same buffer, read at `+s` and written at `0`)
+   must establish them before this step is designed. Until then the fix
+   is intra-iteration only.
+4. *Optional warning.* `--fix=alias` could also warn for pairs it cannot
+   resolve and the original leaves unordered. That would be noisy on real
+   renderers, so make it a separate opt-in, `--fix=alias-warn`.
+
+#### 3.1 The cost of `-M`
+
+The port compiled each of the 44 accepted corpus programs twice, with and
+without `-M`, and counted emitted rows. Rows measure static size, not
+cycles. The port's `-M` output has been checked against the original only
+on the two `-timid` probes.
+
+| Measure | Default | `-M` |
+| --- | ---: | ---: |
+| Rows, 44 programs | 9,076 | 9,164 (+1.0%) |
+| Programs that grow | | 16 |
+| Largest growth | | `tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1` 155 → 173 (+12%); `tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1` 80 → 92 (+15%) |
+| Programs that shrink | | 6, by 1–3 rows (search variation) |
+
+So ordering every pair costs little in code size on most programs, but
+up to 15% on the Tyra dynamic pipelines. Its cycle cost in loop kernels
+is not measured. Step 2 keeps the original's assumption for unresolved
+pairs, so `--fix=alias` changes only provably wrong output. `-M` stays
+the switch for full safety.
+
+### F3. Clip history counted as read
+
+**What the original does.**
+
+- CLIPW shifts the earlier clip judgments up by six bits, so the original
+  counts it as a read of the history register `CLIPa` (`implicit operand
+  'CLIPa'`).
+- Any program that runs CLIPW without declaring `in_hw_clip` is rejected
+  with "register CLIPa is used before set". That holds even when the
+  program never looks at the history.
+- Five corpus programs fail this way. The smallest,
+  `openvcl__repros_clipw_implicit_w`, tests only the current judgment
+  (`fcand vi01,0x3f`).
+
+With the history declared (`checker-lat-*-declared`), the same programs
+compile, and the original pads the clip-flag reads correctly across the
+join and the loop entry.
+
+**Fix (`--fix=clip`).**
+
+1. *Track how many judgments are defined.* On each path, count the CLIPW
+   instructions since entry, capped at 4, and take the minimum at joins.
+   Judgment `j` occupies bits `6j…6j+5`.
+2. *Report only observed garbage.* A clip-flag read is used before set
+   only if its mask reaches a judgment `j ≥ k`, where `k` is that count.
+   - FCAND/FCOR use their immediate as the mask.
+   - FCEQ and `out_hw_clip` see all 24 bits.
+   - FCGET sees the low 12 bits.
+3. *Otherwise* bind the history as an implicit entry input, as if the
+   source declared `in_hw_clip`. Scheduling is then unchanged from the
+   declared program.
+4. *Tests.* With `--fix=clip`, each `repro__clip*` program must equal its
+   `checker-lat-*-declared` counterpart. A program that reads undefined
+   history must still fail. An example is FCAND `0xffffff` after one
+   CLIPW. An FCAND with that mask after four CLIPWs is the quad-ADC
+   pattern, which is legitimately defined.
+
+### F4. Exit rows without an E bit
+
+Already documented as O9 in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
+The original's final compression can delete the row that carries the E
+bit:
+
+- `external-vf-two` is printed without any E bit;
+- so is one `--cont` stream in the local corpus.
+
+The VU then runs past the end of the program.
+
+**Fix (`--fix=end`).**
+
+- After final compression, every exit and `--cont` path must reach a row
+  with E set, followed by its delay row.
+- If compression removed it, keep the last row of that path, or add an
+  empty one, and mark it.
+- This is a correctness rule only. Filling the E delay slot belongs to
+  O9 in `--improve`.
+
+### F5. Program size (optional)
+
+VU branch offsets are 11-bit signed: ±1023 instructions. VU1 micro memory
+holds 2048 instructions, and the PC wraps modulo 2048, so a wrapped
+offset lands correctly. That depends on the program's load address and
+on what else shares micro memory, and VCL knows neither.
+
+Under `--fix`, a warning when one program exceeds 1024 rows (some branch
+may need the wrap) or 2048 rows (it cannot fit) costs nothing. The real
+check stays in vu-checker's object-level `branches` pass.
+
+## 4. OpenVCL-only defects (absent from the original)
+
+| Probe | Shape | Original behaviour |
+| --- | --- | --- |
+| `checker-live-crossloop`, `openvcl__repros_crossloop_4regs` | VI set in one loop, read in a later sibling loop that does not set it | The register stays reserved through the second loop; `openvcl__repros_crossloop_4regs` keeps `iVal` in VI02 with only 4 VI registers |
+| `checker-live-backedge`, `openvcl__repros_loop_pointer` | Value last written mid-loop, read above that write on the next iteration | Reused only between its last read and its redefinition |
+| `checker-live-nested` | Outer counter live through an inner loop of temporaries | VI01 kept across the inner loop |
+| `checker-lat-clip-join`, `-clip-join-declared`, `-clip-loop-declared`, `-quad-adc-declared` | CLIPW → FCAND across a join, a loop entry and back edge, four CLIPWs | ≥ 4 cycles on every path |
+| `checker-lat-mac-join`, `checker-lat-mac-return`, `openvcl__repros_mac_join` | FMAC → FMAND across a join and across a subroutine return | ≥ 4 cycles on every path, padded at the return site |
+| `checker-lat-status-loop` | FMAC at a loop's bottom → FSAND at its top | ≥ 4 cycles around the back edge |
+| `checker-lat-q-join`, `checker-lat-q-loop`, `checker-lat-q-call` | DIV → MULQ across a join, a back edge and a call | ≥ 7 cycles on every path |
+| `checker-lat-branch-join`, `checker-lat-branch-loop`, `openvcl__repros_ilw_branch_label` | Integer setter → conditional branch across a label or a back edge | One row between them on every path (§3.4.8) |
+
+The liveness probes are executed in `crates/oxide-vcl/tests/vcl_bugs.rs`; the latency
+probes are pinned by line equality. Within a block the original also
+forces flag reads with a dummy upper `abs VF00,VFxx`. That instruction
+reads the FMAC's destination, stalls until the result lands, and so
+delays the flag check paired with it (`hw-fsand-after-alu`). Figures
+3-16 and 3-17 of the manual confirm that flag checks see results by time,
+including stalls, so the trick is sound.
+
+The original also places FCSET one row before an FCAND that must still
+read the old flags (`checker-imm-flags-source`). This is correct: FCSET
+writes at the S stage, with latency 4.
+
+## 5. Parser and stream behaviour the port matches
+
+The port matches the original on the following parser, stream-label and
+binding behaviours. They are default-mode behaviour, not opt-in fixes.
+
+1. **Short memory operands.**
+   - A base named `p` or `q` is not read as the P or Q register: `ilw.x
+     t,0(p)`, `isw.x t,0(p)` and `ilw.x t,0(q)` fail with "failed to decode
+     operand" because of the operand's length, while `0(ptr)` works.
+   - The original's token decoder has a minimum length for each memory form
+     (inferred from vcl 1.4beta7):
+     - 3 bytes for `(reg)` and `off(reg)` (LQ/SQ), which must end in `)`.
+     - 4 bytes for `(reg)mask` (ILWR/ISWR), which must start with `(`.
+     - 5 bytes for `off(reg)mask` (ILW/ISW), `(reg++)` and `(--reg)`.
+   - The lengths count the trailing mask. They are taken after the
+     `:tag` suffix is removed.
+   - So any one-letter base with a one-character displacement fails:
+     `0(a)`, `9(p)`, `(pq)`, `0(p):tag`, and `ilwr.x t,(p)`. Meanwhile
+     `10(p)`, `0(p)x`, `(pqr)` and `ilwr.x t,(pq)` decode.
+     `checker-imm-memory-source` passes only because `2047(p)` is long
+     enough.
+   - Only lowercase `x`, `y`, `z` and `w` may follow the `)` (`0(p)X`
+     fails). Nothing may follow an LQ/SQ operand (`0(p)x` fails). The
+     increment forms must start with `(` (`x(p++)` fails).
+   - The port applies the same rules (`memory_operand` in
+     `crates/vcl/src/parser/mod.rs`). `memory_operand_shapes_match_the_original` checks
+     the 16 `checker-parse-*` probes: the port accepts exactly the cases
+     the original accepts, with equal output.
+2. **Generated stream labels.**
+   - An unlabeled region start is named `__v_<unique>_<uid>`. The number is
+     a flow UID, not a region index: three straight-line regions are
+     `__v_FIX_4`, `__v_FIX_8` and `__v_FIX_12`, and a raw program starts at
+     `__v_FIX_5` (`checker-imm-iaddi-raw`).
+   - Inferred from vcl 1.4beta7: each source entry (one line, with up to two
+     instructions) gets a UID from one counter for the whole program.
+     Entries with one UID form a stream, and a stream without a label is
+     named after its UID. The counter starts at 1 and advances:
+     - when the parse mode or raw submode changes (`label-raw-submode`,
+       `label-raw-split`);
+     - for a passthrough block, and again after it
+       (`label-passthrough`);
+     - for a label with D/T/M flags (`label-flagged`), but not for a
+       plain label nothing names (`label-unreferenced`);
+     - on entering or leaving a raw loop, each `.vsmloop` having its own
+       ordinal (`label-raw-loop`);
+     - for a branch target or indirect tag (`label-end-label`,
+       `label-tag`);
+     - at ENTER, EXIT, an exit macro and a barrier, which start the new
+       stream (`label-exitm`, `label-barrier`);
+     - after ENDENTER, ENDEXIT and CONT (`label-cont`);
+     - after a branch, or in raw code after its delay pair
+       (`label-raw-branch`).
+   - A region with no code has no named stream (`label-empty`,
+     `sched-empty`), and a region that starts with a label keeps it
+     (`label-target-first`).
+   - The port computes the same UIDs (`flow_uids` in
+     `crates/vcl/src/compiler/mod.rs`). `crates/oxide-vcl/tests/stream_labels.rs` checks the 14 `label-*`
+     probes and the stream labels of every accepted probe;
+     `checker_probes_match_the_original`,
+     `crates/oxide-vcl/tests/interface_bindings.rs` and `crates/oxide-vcl/tests/oracle_pipeline.rs`
+     compare labels too. They also match on the corpus and the local corpus.
+3. **Interface bindings across webs.**
+   - `in_vi t(vi02)`, then `ilw.x t,10(p)`, then `out_vi t(vi03)` compiles
+     in the original, with "changing binding for t from VI02 to VI03".
+   - How the original binds (inferred from vcl 1.4beta7):
+     - It keeps one current base per name, which survives regions.
+     - A mapped `in_vi`/`out_vi` operand replaces that base and warns
+       when it changes.
+     - An unmapped operand takes the current base. A name that has no
+       base is an error, at ENTER and at EXIT
+       (`binding-unbound-output`).
+     - Each interface operand keeps the base it saw. A web that reaches
+       two different bases is rejected ("can't map to different base
+       registers"): an unchanged input
+       (`binding-same-web`), a redefinition on one path only
+       (`binding-one-path`), one value leaving two exits in different
+       registers (`binding-two-exits-same-web`), or one exit naming it
+       twice (`binding-same-exit-twice`).
+     - Repeated ENTER bindings of one name are one input, and the last
+       one wins (`binding-two-inputs`).
+   - The port does the same. The current bindings live in
+     `Source::bindings`. Inputs record their base in `Region::forced`,
+     outputs in `Block::output_forced`, and the web builder pins each
+     interface strand to its own base.
+   - `crates/oxide-vcl/tests/interface_bindings.rs` checks the 16 `binding-*` probes.
+     Acceptance, output and the rejection reason all match the original.
+
+## 6. Testing the proposed fixes
+
+Fix-mode expectations go into `crates/oxide-vcl/tests/vcl_bugs.rs` beside the
+defect they repair, so each defect stays pinned in both modes. Default-mode
+suites (oracle pipeline, public corpus, local corpus) must stay unchanged.
+Per fix:
+
+- F1: `checker-imm-*-source` and `openvcl__repros_immediates_out_of_range`
+  under `--fix=imm` leave no out-of-field immediate (`out_of_field` in
+  `crates/oxide-vcl/tests/vcl_bugs.rs`), and the legalized values execute equal
+  in the VU model. `checker-imm-repair-*` keep offsets 1022 and -1023, and the
+  repaired loop still executes correctly.
+- F3: `repro__clip*` equal their `-declared` counterparts; a new rejection
+  control covers unobserved-history reads.
+- F2: the three alias programs execute to the sequential result;
+  `checker-mem-same-base` and the corpus are unchanged where no pair
+  resolves. Loop-carried pairs need new `checker-mem-loop-*` probes first.
+- F4: `external-vf-two` keeps an E row under `--fix=end`.

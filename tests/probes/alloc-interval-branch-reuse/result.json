@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/alloc-interval-branch-reuse.vcl"
+  ],
+  "input_sha256": "d0d959e4e683cc34d5a1fcda7a547b8346b4c7765283e3d20e0f7f029a038f4c",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 20.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.28549137499067,
+  "cpu_seconds": 0.308576,
+  "stdout_sha256": "4d33af22c0c25e38e0192af714a0dd733e24e24d0188f90a58f0ad33d7b7d19d",
+  "stderr_sha256": "588bfa126def079b65ea146b0cb13960353b1fe4f219356ade46ab1a907c327a",
+  "stdout_bytes": 1528,
+  "stderr_bytes": 213,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 3,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

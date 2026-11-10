@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+WARN: vcl thinks it found problem(s) in the input source:
+INFO: VCL thinks the following instructions caused stalls:
+INFO: STALL_LATENCY(3) maxVal 3  inter-stream
+INFO:     setter is : (field(s) : XYZW)   ---> {add} [***{vf02}***],{vf01},{vf01} {nop} 
+INFO:     user is   : (field(s) : XYZW)   ---> {add} {vf03},[***{vf02}***],{vf01} {nop} 
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

@@ -1,0 +1,32 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	AUDIT_CodeStart
+		.global	AUDIT_CodeEnd
+		.global	live
+AUDIT_CodeStart:
+live:
+; _LNOPT_w=[ normal2 ] 1 [4 0] 1   [live]
+         mul           VF03,VF01,VF01                               NOP                                               
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_AUDIT_5]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     NOP                                               
+         add           VF02,VF03,VF01                               NOP                                               
+		.align 4
+AUDIT_CodeEnd:
+;	iCount=5
+; register stats:
+;   0 VU User integer
+;   3 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

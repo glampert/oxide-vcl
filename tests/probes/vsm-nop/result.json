@@ -1,0 +1,28 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "/work/vsm-nop.vcl"
+  ],
+  "input_sha256": "c63fe273e4eeb75f5182840b90b03be730b429a856cee2dd34b736d355ab3250",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 4294967295,
+  "wall_seconds": 0.056264250073581934,
+  "cpu_seconds": 0.05496799999999999,
+  "stdout_sha256": "c7650eaaaa621b80c48197851423f5cce526925e64c726069779ea6f55c1b4f3",
+  "stderr_sha256": "a945ac23c8469d7c73ebe0a729e4b15652b1a198a9b49422c75340c9bc6f92e0",
+  "stdout_bytes": 47,
+  "stderr_bytes": 121,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 0,
+    "fired": 0,
+    "unhandled": 0
+  },
+  "exit_status": 255
+}

@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: vcl: instruction 'waitq' is unsupported, except in RAW mode.
+  ---> [***{waitq}***] 
+INFO: OS_End(Linux)

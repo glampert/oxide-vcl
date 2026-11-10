@@ -1,0 +1,31 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_store_store_alias_CodeStart
+		.global	Repro_store_store_alias_CodeEnd
+Repro_store_store_alias_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 6 [9 0] 11   [__v_CORPUS_4]
+         NOP                                                        lq            VF01,1(VI00)                        
+         NOP                                                        lq            VF02,2(VI00)                        
+         mul           VF01,VF01,VF02                               sq            VF01,901(VI00)                             ;	STALL_LATENCY ?3
+         NOP                                                        iaddiu        VI01,VI00,0                         
+         NOP[E]                                                     sq            VF01,901(VI01)                             ;	STALL_LATENCY ?2
+         NOP                                                        NOP                                               
+		.align 4
+Repro_store_store_alias_CodeEnd:
+;	iCount=6
+; register stats:
+;   2 VU User integer
+;   2 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

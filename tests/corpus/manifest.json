@@ -1,0 +1,780 @@
+[
+ {
+  "name": "quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles",
+  "repository": "https://github.com/glampert/quake2-ps2",
+  "commit": "12f2f9a83ea431267f1313a320518736bd3777aa",
+  "path": "src/ps2/renderer/vu1progs/textured_triangles.vcl",
+  "produced": "vclpp -I src/ps2/renderer/vu1progs -Wundef -Werror -j",
+  "license": "GPL-2.0",
+  "source_sha256": "efba82ce6da260be513cc423b6f40c7aa7af168bf280d6b4878fafc9e9eb2d47",
+  "input_sha256": "ad01153a00e8b82b53e55f36c8df8bef02858128154daff4875b1f8aeff7013d",
+  "also_in": [
+   {
+    "repository": "https://github.com/glampert/quake-ps2",
+    "commit": "ac62ce964123eee2b750f026c10de0d92d7031ac",
+    "path": "src/ps2/renderer/vu1progs/textured_triangles.vcl"
+   }
+  ]
+ },
+ {
+  "name": "quake2-ps2__src_ps2_renderer_vu1progs_particles",
+  "repository": "https://github.com/glampert/quake2-ps2",
+  "commit": "12f2f9a83ea431267f1313a320518736bd3777aa",
+  "path": "src/ps2/renderer/vu1progs/particles.vcl",
+  "produced": "vclpp -I src/ps2/renderer/vu1progs -Wundef -Werror -j",
+  "license": "GPL-2.0",
+  "source_sha256": "0a53fee21e5677625b7b7731e88b290258aa90b0a7d6652c6f24440d0cb33b5c",
+  "input_sha256": "db18c4a019555e86c9534a52822cc96dcfc7a32b4d77807b9b6fca3793fab8cd",
+  "also_in": [
+   {
+    "repository": "https://github.com/glampert/quake-ps2",
+    "commit": "ac62ce964123eee2b750f026c10de0d92d7031ac",
+    "path": "src/ps2/renderer/vu1progs/particles.vcl"
+   }
+  ]
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/dynamic/core/programs/dynpip_c_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "ee89110d687dc7afeb0482bdfb9e25571f65dc71b9ac208854375aa5c9978c11",
+  "input_sha256": "b0111323d181b0b095f940e39bebf721592bdc15eee70037f587125683097dfc",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_d_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/dynamic/core/programs/dynpip_d_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "aa9059bd426041cf18fcd00e2b912b76361d35d447061820706d499ed224c303",
+  "input_sha256": "6253affc787b93191977c23227a08d545a9cb5152be5c2dbeaa140de197ba844",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_tc_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/dynamic/core/programs/dynpip_tc_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "a472a241eceb5ebef95763ec565e513187d6965f44e829aafc3a2682deb15336",
+  "input_sha256": "53c96841044cf551defa8ed96b88b4e26e2fec5250ff2e0a2c5f4e541debbd15",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/dynamic/core/programs/dynpip_td_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "fe922b3dc8ca148289635f15484b51d039e85127c924fa1f5a082eb6f82a8a96",
+  "input_sha256": "3d01c5f3d5d3a12be59b343d67c79a8716088c5b694dd16496613ae5e69157f8",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/minecraft/programs/as_is/mcpip_as_is_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "fe34658a5f6e11d84b36ba88eb4b885cf015c77cf57dfe1f4a656c92af828e5f",
+  "input_sha256": "0c44afe6cecd60d6b4daabd34d18d0d3ee6657b61460a5d06e91dc7fc55fad0c",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/minecraft/programs/cull/mcpip_cull_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "906889f76492777900d8762dab8630250d3c45ba6039ef10b4b6b341ff4795a2",
+  "input_sha256": "77c0abbb864c275acbe5aaf315fcab4e2cd09c78ea811489f42a1e0f0b754796",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_c_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/as_is/stapip_as_is_c_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "14d34223f8567f55501a997adfd77d673b43ff4477465664b6a31146871c64a7",
+  "input_sha256": "1733ded5ec462b52b21cea580abb863f478978a69713927c9ae58e94286678c6",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_d_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/as_is/stapip_as_is_d_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "63cee4f63e069778840c36a05661fdd4e68598744d248448dde027a8c62465d0",
+  "input_sha256": "0a71ae90534e67d9b2979c754015a3221e280e2006564ecdd0fe5aae72af4cc1",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_tc_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/as_is/stapip_as_is_tc_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "b1f5a2ce82ceefc3f6c12da0598451cb6c394384eb8a376e81288640bc671338",
+  "input_sha256": "0d5d4b2deab074b2a54356bf1adeb79710574514b171e2f2ce6d7e1356119349",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_td_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/as_is/stapip_as_is_td_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "90c7c528aea665db9be1288c47e7cbe9af4f31aced684cac089df18730b1c70f",
+  "input_sha256": "33dc8b9cd9383fcaebc235f512c6eda5e20c08082e9bfe053e6e0de8e93dcc66",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_c_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/cull/stapip_cull_c_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "35fe77c28958814e8dd3e67aaef9af374c0e9dcf9eb83758c4bb283850e8e4d2",
+  "input_sha256": "b82b11c7f655c28091210c97676c8e2b296b8042a7addf6c45dac0aceb9eb392",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_d_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/cull/stapip_cull_d_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "60f75479cf74cb125c887db81c0310989b47faf86325c216361fafdbfb09ee6c",
+  "input_sha256": "96a3221a1cf5a2465bde19d2b977176a5b0520628d05065d7de4f681a00cece7",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_tc_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/cull/stapip_cull_tc_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "05cd1d333d050d04a45d74bb4f6c193f9971b8fb10e7b6081b6d05773a6107d2",
+  "input_sha256": "8567aa7bbcf83254201ce5141ff28745ee2d3a0a8e02ba9df9becd9f9e6c9c31",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_td_vu1",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/3d/pipeline/static/core/programs/cull/stapip_cull_td_vu1.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "e5263e782402a586e5d3b7e00401eed1895245825baf2f793b6f83047ca85bde",
+  "input_sha256": "795b47cba7f5bc1155be1305dfb0fd77bfff904f355101724b05a0bf1eb6f8b0",
+  "also_in": []
+ },
+ {
+  "name": "tyra__engine_src_renderer_core_paths_path1_draw_finish",
+  "repository": "https://github.com/h4570/tyra",
+  "commit": "c59f406af134713b62656114846ac8d588c6247c",
+  "path": "engine/src/renderer/core/paths/path1/draw_finish.vclpp",
+  "produced": "vclpp, run from engine/",
+  "license": "Apache-2.0",
+  "source_sha256": "6154e0244a34c159780f3c23583c801f494ed46684cde962680a46f64ddde392",
+  "input_sha256": "440642f9d97bdfaf205b819fc9ef181e50ec50ef327bf07b84f480d63b0c9df3",
+  "also_in": []
+ },
+ {
+  "name": "ps2gl__vu1_scei",
+  "repository": "https://github.com/glampert/ps2gl",
+  "commit": "794bedc3923a6853a2e7cbebdb7622dd309dc474",
+  "path": "vu1/scei.vcl",
+  "produced": "vclpp -m -x -f -I vu1 -I include",
+  "license": "LGPL-2.1",
+  "source_sha256": "ca0c842ec6f403e5e57a04d20753c354a257cc9f141351fd5ec8b72160fb745b",
+  "input_sha256": "7a1e868e442aa9461bd763631826996dbdd19483a1eec2187ea0f2fdae99b57e",
+  "also_in": []
+ },
+ {
+  "name": "ps2gl__examples_tricked_out_billboard_renderer",
+  "repository": "https://github.com/glampert/ps2gl",
+  "commit": "794bedc3923a6853a2e7cbebdb7622dd309dc474",
+  "path": "examples/tricked_out/billboard_renderer.vcl",
+  "produced": "vclpp -m -x -f -I examples/tricked_out -I vu1 -I include",
+  "license": "LGPL-2.1",
+  "source_sha256": "b6fd3f1c24d2c94f8d4de36aeb0c4233ec7e4b8da351782bf14d12f6b567231f",
+  "input_sha256": "4cf813948189f4cfae0183bea733c915a2157275e2c0e63eb8ea176eec4d1f65",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__test_fixtures_fast",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/fast.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "997b4d2557cf2ec02c7443db532b45d56eba92dc07d56bcb1b008469969302ba",
+  "input_sha256": "d34e8823c9e8f2bf990e0ea1990b3a9f46b896dc88ab27fc35f3862c03ad2a9f",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "fast.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/fast.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_fast_nolights",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/fast_nolights.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "824325b3e6b1ba7c4a8914a9913c949a91c5b0e1528cfb9e8617aa4b44c13f65",
+  "input_sha256": "7f19eba4d1a9be68fc022edef472aac654850ab899fad470cc16ac61d7e32987",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "fast_nolights.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/fast_nolights.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "4e676dfbebb6ed90222f35dff25d0dee1bf648f29719f497053b388910d5dc23",
+  "input_sha256": "51439307250c51d0a55f011807f91b8ecb666199677992fbf81b0d01f07e12f4",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_nospec",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_nospec.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "1af31e8a923e38cf21228fe443f9847b6ba72c8fa0641328edbb57197cd4fa28",
+  "input_sha256": "5c14fc332ee15efc2650f08b4c2e2608fe558b83e590e030df678e381850797c",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_nospec.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_nospec.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_nospec_quad",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_nospec_quad.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "7d656281c5db68b6357d7fd08ccdf75536234427e64e3a912db91f4eb7cd652c",
+  "input_sha256": "04609f9afaa4626e33aeaff28bf22352a16efdcb663517721dfd3cf5f0d37b28",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_nospec_quad.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_nospec_quad.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_nospec_tri",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_nospec_tri.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "91707fc3635e114dc98842085965a69a82b1b429f400a5870ceb31934f45ff0f",
+  "input_sha256": "2ce849baf56c8287ea444c792c8bb2b60b889c4448db809a5ac48f3ce62dfc2f",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_nospec_tri.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_nospec_tri.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_pv_diff",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_pv_diff.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "b461424ab55c8c838f56fc36c4c47d7e638770191c03435ccd14848d15c61ffd",
+  "input_sha256": "0e9f6d44999883ca60e7be95de00509b7ec1f907f0508d6584159422925da59a",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_pv_diff.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_pv_diff.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_pv_diff_quad",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_pv_diff_quad.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "99d82390f5e3d56549bdc85790bdc791ed9dc2ac87926b97e908bc95e6d1f504",
+  "input_sha256": "570e09f68e4a774b956cb09dc6166c8d2fabbdd70715bb91fa751b7030131c8c",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_pv_diff_quad.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_pv_diff_quad.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_pv_diff_tri",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_pv_diff_tri.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "451126b723d746fe44b29e286d5041c70c801626d489f1af01e234f6d17ec64e",
+  "input_sha256": "61f1cddf511923e2c27f79534baedf6bab531e39d6e799d5350b6ac623be0f65",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_pv_diff_tri.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_pv_diff_tri.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_quad",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_quad.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "bfc74b2e0c1fac9ef4be6faa86e882682675cadafd7aab43889fa98ed0382c71",
+  "input_sha256": "a86f125f8b6078eea47650c50bfb0a7141d2a784c7a3bad9601c717b5eadd42e",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_quad.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_quad.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_general_tri",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/general_tri.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "c7a58bb7bbc511f17d222ff8a723e0ca567873c6aa27e5371a332e18ea880b0a",
+  "input_sha256": "31621607004a6d84ccaa4d9540eac202c09520d09c93e665aefc2e9419f6b8d7",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "general_tri.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/general_tri.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_fixtures_indexed",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/fixtures/indexed.vcl",
+  "produced": "copied unchanged",
+  "license": "LGPL-2.1",
+  "source_sha256": "afa644f114b298a974700b0c7748a1e6a1f7d3752f7a9ad7a3e3d1aa3e70c160",
+  "input_sha256": "6795e28efbdaac67d7da06333996fe2235987c24baa593c250659e28e8936632",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "indexed.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/fixtures/indexed.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_repro_quad_adc_bug",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "test/repro/quad_adc_bug.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "d1bf9ddd5743524af466f371edefaa652fb048cb7f2a82d3a4bf7f7087494383",
+  "input_sha256": "8d89f98fe3fa658988bf91bc33d34a501baa703d5097f4b78db8c2a2692c03bd",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__examples_sprite_vu1Sprite",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "examples/sprite/vu1Sprite.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "c6eadcbc7a416f4616bb6f1bca272ad1f58961bf1636510f3027b5695c096fa7",
+  "input_sha256": "0c185fa97d69ca44b881bd0f8c91002e0b07e765d1656930a1e9ab691b3a8f7d",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "examples/sprite/vu1Sprite.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "examples/sprite/vu1Sprite.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__examples_triangle_vu1Triangle",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "examples/triangle/vu1Triangle.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "74a2ceece5732108d29a3d918d542fa7313c300bfe28b2f11e9e92f6ce4d6fab",
+  "input_sha256": "e614f44906238fd12a45af7513b8a90d531a79133f898ee0e1bb3f2d6167ca57",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "examples/triangle/vu1Triangle.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "examples/triangle/vu1Triangle.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__examples_triangle-gasp_vu1Triangle",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "examples/triangle-gasp/vu1Triangle.vcl",
+  "produced": "preprocessed by masp (vcl -g --gasp); the masp source is source.vcl",
+  "license": "AFL-2.0",
+  "source_sha256": "bbe011e4a7330da847b81c80abec0b5d7bac46024e8280fb4e0c34923b278736",
+  "input_sha256": "ba6601ff05a8570045d9981d05690ed8f45bfa9f41c7e19f148041deea94e447",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "examples/triangle-gasp/vu1Triangle.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "examples/triangle-gasp/vu1Triangle.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__examples_triangle_strip_vu1TriangleStrip",
+  "repository": "https://github.com/glampert/openvcl",
+  "commit": "6f8607ba75c9ef7d86e30123b5ec1e83c1a8e8c1",
+  "path": "examples/triangle_strip/vu1TriangleStrip.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "4c3c8701161cfe55822fed5e3e69275c41a9779daf1b341c09a370454dfa4b16",
+  "input_sha256": "5f0dff7cea2daf95c937790f9b077487456c3c389ebb222d47d999cd189c1420",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+    "path": "examples/triangle_strip/vu1TriangleStrip.vcl"
+   },
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "examples/triangle_strip/vu1TriangleStrip.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__test_repro_quad_adc_bug_fjtrujy",
+  "repository": "https://github.com/fjtrujy/openvcl",
+  "commit": "aa5e59450b0bb1515a3304d2c3f7cb5558d00347",
+  "path": "test/repro/quad_adc_bug.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "02c3d383526a2249c31564d7f6e1e3d14946b5669ac4b48a37d7974c6e8019e4",
+  "input_sha256": "0fafaa5c114f4bbbe53cfb4696dbc611a8470ff2772a45982d1a50ed85338628",
+  "also_in": [
+   {
+    "repository": "https://github.com/fjtrujy/openvcl",
+    "commit": "3e6ac4fabd8729bcdfda56e04212ec311b7c1aed",
+    "path": "test/repro/quad_adc_bug.vcl"
+   }
+  ]
+ },
+ {
+  "name": "openvcl__repros_clip_join",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/clip_join.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "a86a3d4511cf502386083adf579edb08ce4940740453c0f41ebf2f0de736d77f",
+  "input_sha256": "2029d321954f4b65d328492cb52c694d49b6573632edf8e6c29d2df0ef5de86d",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_clip_loop_entry",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/clip_loop_entry.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "2b8424d9e59fb54120f7b4ddd5dc297e42760b3940bf4364ad48bf9c2ac59068",
+  "input_sha256": "6f8f573d88aac77a25142bc527aa3b76bf33b4f0339014098bb4861948f029f1",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_clipw_implicit_w",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/clipw_implicit_w.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "01bd8ea91642c0cd7eedeff375a6505103feb3aac7557ba7f8e0f93345e9f977",
+  "input_sha256": "26078e9e2404d7b29aa5c7b3e23168b0c9eed21519996fc42f9491ff5e00607e",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_crossloop_4regs",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/crossloop_4regs.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "6666e4081eb7b0b3ceb59c6de68712cd111b16bda2c8005eeebcd55e83b7d891",
+  "input_sha256": "a8ecf8de984cb2c8a92fa0fdc40f44a16b76710787e55d494adae638b9bc1622",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_ilw_branch_label",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/ilw_branch_label.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "c44c9c99b51ba940846bf5599dee20708745022c264ca8d391800b7aff74dbce",
+  "input_sha256": "def216166c1ed3a593dc44b4020855f721c0cd0dcd76cf0a8fe647d12db0cbcb",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_immediates_out_of_range",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/immediates_out_of_range.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "c514ee515bd17195eb429319290d4eda4313b2af75c7b89097a0e196b3a51265",
+  "input_sha256": "a65f81bd1301d40e56775508e9195aa316af714bc39cf244ffa7e036c6327073",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_loop_pointer",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/loop_pointer.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "e4c7448190458f66509e172c4e59dc469b9fdfdc1761d49df11e3ae632a89433",
+  "input_sha256": "82d7dddf2692e0bea3cbff06e69b8883ff0dc1ad3a1452afdfeb0b205a9a43cb",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_mac_join",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/mac_join.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "973661c05987052f0bcb7816458a7c99aa89820d72cb0cf6c03a2e8e0b230d0e",
+  "input_sha256": "8edd10256ee846fdab125ac6a322f58e08cdf5ec9cbc62cb4d2b27d5a6833872",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_masked_write_branch",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/masked_write_branch.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "ab475f6ab58ad6a444317b10fbbdb0173ae618001e7149d0e296b4ee1f692923",
+  "input_sha256": "90f41c60d7e12f6b26fa3cb5adad2fe3f6a895ad56bd135dc6bb3c81a48526f4",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_seed_store_order",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/seed_store_order.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "f9f7f3f0eef1e99a3ea741a235bcf54912a7989b6e4d39464d8dddd60df76784",
+  "input_sha256": "8ccf4a5cf7d84f029c7950555ca5ee1d77a58e15069bf1e230839439cb6cad52",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_store_load_alias",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/store_load_alias.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "35541482ecd1052f0034dc45fb49102753d3bf437e286db54c2e7980baaa97f5",
+  "input_sha256": "d452b60b523fa8c281f4ea04a356b098666f27ac323357ebfccb156af470c2f8",
+  "also_in": []
+ },
+ {
+  "name": "openvcl__repros_store_store_alias",
+  "repository": "https://github.com/glampert/openvcl",
+  "branch": "test/local-corpus",
+  "commit": "5729d1f",
+  "path": "repros/store_store_alias.vcl",
+  "produced": "copied unchanged",
+  "license": "AFL-2.0",
+  "source_sha256": "02b0c3751a5c9d3b8557692f7cf51689dc0c5d5ddd3da55ab82bca68bbf5ecab",
+  "input_sha256": "312933a62b58468ad93f730b19ddfcfa885e3895fbe6fbb0fc8aec85976a7a2a",
+  "also_in": []
+ },
+ {
+  "name": "doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm",
+  "repository": "https://github.com/glampert/doom3-bfg-ps2",
+  "commit": "adc427db4efc4e1566748e0d1d5f46609f6ce1c6",
+  "path": "src/ps2/renderer/vu1progs/world_lm.vcl",
+  "produced": "vclpp -I src/ps2/renderer/vu1progs -Wundef -Werror -j (vclpp 95911cd)",
+  "license": "GPL-3.0-or-later",
+  "source_sha256": "68b451d8be35b9db80b3df5d61c98b7cf5bfc4fdc8f2627715b160798fa9063a",
+  "input_sha256": "a73bd97e4d002eacced937a89e653404c1b95104544e1568c3be40deb71999a0",
+  "also_in": []
+ },
+ {
+  "name": "doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips",
+  "repository": "https://github.com/glampert/doom3-bfg-ps2",
+  "commit": "adc427db4efc4e1566748e0d1d5f46609f6ce1c6",
+  "path": "src/ps2/renderer/vu1progs/world_strips.vcl",
+  "produced": "vclpp -I src/ps2/renderer/vu1progs -Wundef -Werror -j (vclpp 95911cd)",
+  "license": "GPL-3.0-or-later",
+  "source_sha256": "f4c30caea018250d564303924a6481dd10507f94aee89e007ee4dd2cd05e8fec",
+  "input_sha256": "dff93ebe26049076a56c18e283d6cc6258053ecc4ba89b376720f93643ce8fd4",
+  "also_in": []
+ },
+ {
+  "name": "doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough",
+  "repository": "https://github.com/glampert/doom3-bfg-ps2",
+  "commit": "adc427db4efc4e1566748e0d1d5f46609f6ce1c6",
+  "path": "src/ps2/renderer/vu1progs/passthrough.vcl",
+  "produced": "vclpp -I src/ps2/renderer/vu1progs -Wundef -Werror -j (vclpp 95911cd)",
+  "license": "GPL-3.0-or-later",
+  "source_sha256": "1d30d7021ad687dc43d61030e007aa98a952820b2cbade5a8042691baba6cc7a",
+  "input_sha256": "7abb08d0ea877ee90e082bbc995403a0ae6f613650602fe029d4d15cc73a06ae",
+  "also_in": []
+ }
+]

@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER:  can't figure out which base register to map t to
+USER: couldn't decode instruction .. problem is at:
+  ---> {out_vi} [***{t}***] 
+USER: expected format is: out_vi	vi_reg[(base_reg)]
+INFO: OS_End(Linux)

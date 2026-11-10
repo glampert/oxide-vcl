@@ -1,0 +1,88 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	VU1Prog_Particles_CodeStart
+		.global	VU1Prog_Particles_CodeEnd
+VU1Prog_Particles_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 32 [32 0] 32   [__v_CORPUS_4]
+         NOP                                                        fcset         0                                   
+         NOP                                                        lq            VF01,0(VI00)                        
+         NOP                                                        lq            VF02,1(VI00)                        
+         NOP                                                        lq            VF03,2(VI00)                        
+         NOP                                                        lq            VF04,3(VI00)                        
+         NOP                                                        xtop          VI07                                
+         NOP                                                        ilw.w         VI03,0(VI07)                        
+         NOP                                                        lq.xyz        VF05,4(VI00)                        
+         NOP                                                        lq.xyz        VF06,5(VI00)                        
+         NOP                                                        lq.xyz        VF07,6(VI00)                        
+         NOP                                                        iaddiu        VI04,VI07,0x0000000b                
+         NOP                                                        iadd          VI05,VI04,VI03                      
+         NOP                                                        iaddiu        VI02,VI07,0x00000004                
+         NOP                                                        iaddiu        VI06,VI05,0                         
+         NOP                                                        lqi           VF14,(VI02++)                       
+         NOP                                                        lqi           VF13,(VI02++)                       
+         NOP                                                        lqi           VF12,(VI02++)                       
+         NOP                                                        lqi           VF10,(VI02++)                       
+         NOP                                                        lqi           VF09,(VI02++)                       
+         NOP                                                        lqi           VF08,(VI02++)                       
+         NOP                                                        lqi           VF11,(VI02++)                       
+         NOP                                                        sqi           VF14,(VI06++)                       
+         NOP                                                        sqi           VF13,(VI06++)                       
+         NOP                                                        sqi           VF12,(VI06++)                       
+         NOP                                                        sqi           VF10,(VI06++)                       
+         NOP                                                        sqi           VF09,(VI06++)                       
+         NOP                                                        sqi           VF08,(VI06++)                       
+         NOP                                                        iaddiu        VI02,VI00,0x00000001                
+         NOP                                                        lq            VF08,1(VI07)                        
+         NOP                                                        lq            VF09,2(VI07)                        
+         NOP                                                        lq            VF10,3(VI07)                        
+         NOP                                                        sqi           VF11,(VI06++)                       
+lParticleLoop:
+; _LNOPT_w=[ another ] 25 [40 19] 40   [lParticleLoop]
+         NOP                                                        lq            VF11,0(VI04)                        
+         mulay         ACC,VF01,VF11y                               sq            VF10,3(VI06)                               ;	STALL_LATENCY ?3
+         maddaz        ACC,VF02,VF11z                               iaddiu        VI04,VI04,0x00000001                
+         maddaw        ACC,VF03,VF11w                               NOP                                               
+         maddw         VF11,VF04,VF00w                              sq.x          VF11,0(VI06)                        
+         mulw.w        VF05,VF11,VF08w                              div           Q,VF00w,VF11w                              ;	STALL_LATENCY ?3
+         mul.xyz       VF12,VF11,VF07                               NOP                                               
+         addw.w        VF05,VF05,VF00w                              NOP                                                      ;	STALL_LATENCY ?2
+         clipw.xyz     VF12xyz,VF11w                                NOP                                               
+         mulq.w        VF11,VF05,Q                                  waitq                                                    ;	STALL_LATENCY ?2
+         mulq.xyz      VF11,VF11,Q                                  NOP                                               
+         mulw.xyz      VF13,VF08,VF11w                              NOP                                                      ;	STALL_LATENCY ?2
+         mulaw.xyz     ACC,VF06,VF00w                               NOP                                               
+         madd.xyz      VF12,VF11,VF05                               isw.z         VI02,0(VI06)                        
+         add.xyz       VF11,VF11,VF13                               sq            VF09,1(VI06)                               ;	STALL_LATENCY ?1
+         mulaw.xyz     ACC,VF06,VF00w                               iaddiu        VI06,VI06,0x00000005                
+         madd.xyz      VF11,VF11,VF05                               isubiu        VI03,VI03,1                                ;	STALL_LATENCY ?2
+         addq.y        VF14,VF00,Q                                  fcand         VI01,63                             
+         ftoi4.xyz     VF12,VF12                                    iaddiu        VI07,VI01,0x00007fff                
+         NOP                                                        isw.w         VI07,-3(VI06)                       
+         ftoi4.xyz     VF11,VF11                                    isw.w         VI07,-1(VI06)                       
+         NOP                                                        sq.y          VF14,-5(VI06)                       
+         NOP                                                        sq.xyz        VF12,-3(VI06)                       
+         NOP                                                        ibgtz         VI03,lParticleLoop                  
+         NOP                                                        sq.xyz        VF11,-1(VI06)                       
+; _LNOPT_w=[ normal2 ] 3 [1 0] 3   [__v_CORPUS_7]
+         NOP                                                        xgkick        VI05                                
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+VU1Prog_Particles_CodeEnd:
+;	iCount=60
+; register stats:
+;   8 VU User integer
+;  15 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

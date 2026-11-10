@@ -1,0 +1,29 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_P_4:
+; _LNOPT_w=[ normal2 ] 8 [6 0] 8   [__v_P_4]
+         NOP                                                        iaddiu        VI01,VI02,0x000000e1                
+         NOP                                                        lq            VF01,99(VI00)                       
+         NOP                                                        lq            VF02,100(VI00)                      
+         NOP                                                        lq            VF03,101(VI00)                      
+         NOP                                                        lq            VF04,102(VI00)                      
+         NOP                                                        xgkick        VI01                                
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=8
+; register stats:
+;   3 VU User integer
+;   4 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

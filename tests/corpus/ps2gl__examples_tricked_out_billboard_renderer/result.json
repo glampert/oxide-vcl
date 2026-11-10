@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/ps2gl__examples_tricked_out_billboard_renderer.vcl"
+  ],
+  "input_sha256": "4cf813948189f4cfae0183bea733c915a2157275e2c0e63eb8ea176eec4d1f65",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 120.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 17.177816375013208,
+  "cpu_seconds": 24.37344,
+  "stdout_sha256": "372c234252d7efdc9703c52e765ff7d4ac3ae8ac2f9def21da3e8a6f2b009636",
+  "stderr_sha256": "4bb591858482499028cea22a3b97314f99d96f4c426184f4e178815323549a28",
+  "stdout_bytes": 17333,
+  "stderr_bytes": 1665,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 25,
+    "fired": 4,
+    "unhandled": 0
+  }
+}

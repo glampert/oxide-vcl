@@ -1,0 +1,32 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-M",
+    "-uFIX",
+    "/work/checker-mem-store-load-timid.vcl"
+  ],
+  "input_sha256": "d452b60b523fa8c281f4ea04a356b098666f27ac323357ebfccb156af470c2f8",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.25396741600707173,
+  "cpu_seconds": 0.294535,
+  "stdout_sha256": "a6029a608f745d80e12690765ad104d016c2a4173bd58d72fb954eb5597a3ea6",
+  "stderr_sha256": "d6fe099591abceed7232e189c1101244018bb2e6f61036c7a80922b2c25092af",
+  "stdout_bytes": 1598,
+  "stderr_bytes": 173,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 6,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

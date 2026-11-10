@@ -1,0 +1,5 @@
+WARN:  disabled immediate fixups - this option is now deprecated and removed
+INFO: OS_Init(Linux)
+INFO: Opt::Linear __v__work_sched_add_symbol_vcl_4  1/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

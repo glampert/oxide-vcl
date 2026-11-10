@@ -1,0 +1,1125 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	world_lm_CodeStart
+		.global	world_lm_CodeEnd
+world_lm_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 22 [22 0] 22   [__v_CORPUS_4]
+         NOP                                                        fcset         0                                   
+         NOP                                                        lq            VF01,0(VI00)                        
+         NOP                                                        lq            VF02,1(VI00)                        
+         NOP                                                        lq            VF03,2(VI00)                        
+         NOP                                                        lq            VF04,3(VI00)                        
+         NOP                                                        xtop          VI02                                
+         NOP                                                        lq            VF05,4(VI00)                        
+         NOP                                                        lq            VF06,5(VI00)                        
+         NOP                                                        lq            VF10,1(VI02)                        
+         NOP                                                        ilw.w         VI04,0(VI02)                        
+         NOP                                                        iaddiu        VI05,VI02,0x00000129                
+         NOP                                                        lq.xyz        VF07,6(VI00)                        
+         NOP                                                        mr32.yz       VF08,VF10                           
+         NOP                                                        iaddiu        VI06,VI02,0x00000002                
+         NOP                                                        xitop         VI03                                
+         NOP                                                        iaddiu        VI07,VI00,0x00007fff                
+         NOP                                                        lq.xyz        VF09,0(VI02)                        
+         NOP                                                        xgkick        VI05                                
+         NOP                                                        mr32.xy       VF11,VF08                           
+         NOP                                                        iadd          VI04,VI06,VI04                      
+         NOP                                                        iaddiu        VI05,VI07,0x00000001                
+         subw.x        VF08,VF00,VF00w                              iaddiu        VI06,VI00,0                         
+lTransform:
+; _LNOPT_w=[ normal2 ] 27 [43 21] 43   [lTransform]
+         NOP                                                        lq.xyz        VF13,0(VI04)                        
+         itof0.xyz     VF13,VF13                                    NOP                                                      ;	STALL_LATENCY ?3
+         mulx.xyz      VF13,VF13,VF10x                              NOP                                                      ;	STALL_LATENCY ?3
+         add.xyz       VF13,VF13,VF09                               NOP                                                      ;	STALL_LATENCY ?3
+         mulax         ACC,VF01,VF13x                               lq            VF12,1(VI04)                               ;	STALL_LATENCY ?3
+         madday        ACC,VF02,VF13y                               NOP                                               
+         maddaz        ACC,VF03,VF13z                               NOP                                               
+         maddw         VF13,VF04,VF00w                              NOP                                               
+         itof0.xy      VF12,VF12                                    NOP                                               
+         mul.xyz       VF14,VF13,VF07                               div           Q,VF00w,VF13w                              ;	STALL_LATENCY ?2
+         muly.xy       VF12,VF12,VF10y                              NOP                                               
+         itof12.zw     VF12,VF12                                    NOP                                               
+         add.xy        VF12,VF12,VF11                               NOP                                                      ;	STALL_LATENCY ?2
+         clipw.xyz     VF14xyz,VF13w                                NOP                                               
+         mulq.xyz      VF13,VF13,Q                                  sq.xyz        VF13,0(VI04)                        
+         mulaw.xyz     ACC,VF06,VF00w                               NOP                                               
+         mulq.zw       VF10,VF12,Q                                  iaddiu        VI04,VI04,0x00000004                
+         mulq.xy       VF12,VF12,Q                                  isubiu        VI03,VI03,1                         
+         madd.xyz      VF13,VF13,VF05                               fcand         VI01,63                             
+         addq.z        VF12,VF00,Q                                  iaddiu        VI07,VI01,0x00007fff                
+         mulz.w        VF12,VF00,VF10z                              iand          VI07,VI07,VI05                      
+         NOP                                                        ior           VI06,VI06,VI07                      
+         ftoi4.xyz     VF13,VF13                                    sq.w          VF10,-4(VI04)                       
+         NOP                                                        isw.w         VI07,-3(VI04)                       
+         NOP                                                        sq            VF12,-1(VI04)                       
+         NOP                                                        ibgtz         VI03,lTransform                     
+         NOP                                                        sq.xyz        VF13,-3(VI04)                       
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_6]
+         NOP                                                        ibne          VI06,VI00,lListPath                 
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [__v_CORPUS_7]
+         NOP                                                        xtop          VI03                                
+         NOP                                                        lq            VF01,304(VI03)                      
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        iaddiu        VI04,VI00,0x00000032                
+         NOP                                                        iaddiu        VI05,VI02,0x00000002                
+         NOP                                                        ilw.w         VI06,0(VI02)                        
+         NOP                                                        sqi           VF01,(VI03++)                       
+lStripQword:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lStripQword]
+         NOP                                                        isubiu        VI07,VI04,4                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI07,lStripRoom                     
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_9]
+         NOP                                                        iaddiu        VI03,VI00,0x00000032                
+         NOP                                                        isub          VI03,VI03,VI04                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI03,VI00,lStripFull                
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_10]
+         NOP                                                        ilw.x         VI04,7(VI00)                        
+         NOP                                                        iaddiu        VI03,VI03,0x00007fff                
+         NOP                                                        iaddiu        VI03,VI03,0x00000001                
+         NOP                                                        ilw.y         VI07,7(VI00)                        
+         NOP                                                        isw.x         VI03,0(VI04)                        
+; _LNOPT_w=[ normal2 ] 6 [5 0] 6   [__v_CORPUS_11]
+         NOP                                                        NOP                                               
+         NOP                                                        iaddiu        VI03,VI04,0                         
+         NOP                                                        iadd          VI04,VI04,VI07                      
+         NOP                                                        isub          VI07,VI00,VI07                      
+         NOP                                                        isw.x         VI04,7(VI00)                        
+         NOP                                                        isw.y         VI07,7(VI00)                        
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_12]
+         NOP                                                        xgkick        VI03                                
+lStripFull:
+; _LNOPT_w=[ normal2 ] 35 [35 0] 35   [lStripFull]
+         NOP                                                        xtop          VI08                                
+         NOP                                                        iaddiu        VI04,VI00,0                         
+         NOP                                                        ilw.z         VI09,-1(VI05)                       
+         NOP                                                        iaddiu        VI07,VI00,0x00007fff                
+         NOP                                                        lq            VF01,304(VI08)                      
+         NOP                                                        ilw.w         VI10,-1(VI05)                       
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iaddiu        VI08,VI00,0x00007fff                
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        iaddiu        VI12,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI11,VI00,0x00007fff                
+         NOP                                                        iand          VI09,VI09,VI12                      
+         NOP                                                        iand          VI10,VI10,VI11                      
+         NOP                                                        sqi           VF01,(VI03++)                       
+         NOP                                                        iadd          VI11,VI02,VI09                      
+         NOP                                                        iaddiu        VI09,VI07,0x00000001                
+         NOP                                                        iaddiu        VI07,VI03,0                         
+         NOP                                                        iadd          VI10,VI02,VI10                      
+         NOP                                                        lq            VF06,3(VI11)                        
+         NOP                                                        lq            VF05,2(VI11)                        
+         NOP                                                        lq.xyz        VF04,1(VI11)                        
+         NOP                                                        iaddiu        VI08,VI08,0x00000001                
+         NOP                                                        lq            VF03,3(VI10)                        
+         NOP                                                        lq            VF02,2(VI10)                        
+         NOP                                                        lq.xyz        VF01,1(VI10)                        
+         NOP                                                        sq            VF06,0(VI03)                        
+         NOP                                                        sq            VF05,1(VI03)                        
+         NOP                                                        sq.xyz        VF04,2(VI03)                        
+         NOP                                                        isw.w         VI09,2(VI03)                        
+         NOP                                                        sq            VF03,3(VI07)                        
+         NOP                                                        sq            VF02,4(VI07)                        
+         NOP                                                        sq.xyz        VF01,5(VI07)                        
+         NOP                                                        isw.w         VI08,5(VI07)                        
+         NOP                                                        iaddiu        VI03,VI07,0x00000006                
+         NOP                                                        iaddiu        VI04,VI04,48                        
+lStripRoom:
+; _LNOPT_w=[ ldumb ] 59 [59 0] 59   [lStripRoom]
+         NOP                                                        ilw.x         VI08,0(VI05)                        
+         NOP                                                        iaddiu        VI09,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI07,VI03,0                         
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iand          VI09,VI08,VI09                      
+         NOP                                                        isub          VI08,VI08,VI09                      
+         NOP                                                        iadd          VI09,VI02,VI09                      
+         NOP                                                        lq            VF03,3(VI09)                        
+         NOP                                                        lq            VF02,2(VI09)                        
+         NOP                                                        lq.xyz        VF01,1(VI09)                        
+         NOP                                                        isw.w         VI08,2(VI03)                        
+         NOP                                                        sq            VF03,0(VI03)                        
+         NOP                                                        sq            VF02,1(VI03)                        
+         NOP                                                        sq.xyz        VF01,2(VI03)                        
+         NOP                                                        ilw.y         VI08,0(VI05)                        
+         NOP                                                        iaddiu        VI09,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI03,VI07,0                         
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iand          VI09,VI08,VI09                      
+         NOP                                                        isub          VI08,VI08,VI09                      
+         NOP                                                        iadd          VI09,VI02,VI09                      
+         NOP                                                        lq            VF02,3(VI09)                        
+         NOP                                                        lq            VF01,2(VI09)                        
+         NOP                                                        lq.xyz        VF03,1(VI09)                        
+         NOP                                                        isw.w         VI08,5(VI07)                        
+         NOP                                                        sq            VF02,3(VI07)                        
+         NOP                                                        sq            VF01,4(VI07)                        
+         NOP                                                        sq.xyz        VF03,5(VI07)                        
+         NOP                                                        ilw.z         VI08,0(VI05)                        
+         NOP                                                        iaddiu        VI09,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI07,VI03,0                         
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iand          VI09,VI08,VI09                      
+         NOP                                                        isub          VI08,VI08,VI09                      
+         NOP                                                        iadd          VI09,VI02,VI09                      
+         NOP                                                        lq            VF01,3(VI09)                        
+         NOP                                                        lq            VF03,2(VI09)                        
+         NOP                                                        lq.xyz        VF02,1(VI09)                        
+         NOP                                                        isw.w         VI08,8(VI03)                        
+         NOP                                                        sq            VF01,6(VI03)                        
+         NOP                                                        sq            VF03,7(VI03)                        
+         NOP                                                        sq.xyz        VF02,8(VI03)                        
+         NOP                                                        ilw.w         VI08,0(VI05)                        
+         NOP                                                        iaddiu        VI09,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI03,VI07,0x0000000c                
+         NOP                                                        isubiu        VI04,VI04,4                         
+         NOP                                                        iand          VI09,VI08,VI09                      
+         NOP                                                        isub          VI08,VI08,VI09                      
+         NOP                                                        iadd          VI09,VI02,VI09                      
+         NOP                                                        lq            VF03,3(VI09)                        
+         NOP                                                        lq            VF02,2(VI09)                        
+         NOP                                                        lq.xyz        VF01,1(VI09)                        
+         NOP                                                        isw.w         VI08,11(VI07)                       
+         NOP                                                        sq            VF03,9(VI07)                        
+         NOP                                                        sq            VF02,10(VI07)                       
+         NOP                                                        isubiu        VI06,VI06,1                         
+         NOP                                                        sq.xyz        VF01,11(VI07)                       
+         NOP                                                        ibgtz         VI06,lStripQword                    
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_15]
+         NOP                                                        iaddiu        VI03,VI00,0x00000032                
+         NOP                                                        isub          VI03,VI03,VI04                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI03,VI00,lStripLast                
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_16]
+         NOP                                                        ilw.x         VI04,7(VI00)                        
+         NOP                                                        iaddiu        VI03,VI03,0x00007fff                
+         NOP                                                        iaddiu        VI03,VI03,0x00000001                
+         NOP                                                        ilw.y         VI05,7(VI00)                        
+         NOP                                                        isw.x         VI03,0(VI04)                        
+; _LNOPT_w=[ normal2 ] 6 [5 0] 6   [__v_CORPUS_17]
+         NOP                                                        NOP                                               
+         NOP                                                        iaddiu        VI03,VI04,0                         
+         NOP                                                        iadd          VI04,VI04,VI05                      
+         NOP                                                        isub          VI05,VI00,VI05                      
+         NOP                                                        isw.x         VI04,7(VI00)                        
+         NOP                                                        isw.y         VI05,7(VI00)                        
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_18]
+         NOP                                                        xgkick        VI03                                
+lStripLast:
+; _LNOPT_w=[ normal2 ] 3 [6 0] 6   [lStripLast]
+         NOP                                                        ilw.w         VI03,296(VI02)                      
+         NOP                                                        ibeq          VI03,VI00,lDone                            ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 8 [8 0] 8   [__v_CORPUS_20]
+         NOP                                                        iaddiu        VI04,VI02,0x00000127                
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        lq            VF01,11(VI00)                       
+         NOP                                                        xgkick        VI04                                
+         NOP                                                        iaddiu        VI04,VI00,0x00000032                
+         NOP                                                        iaddiu        VI05,VI02,0x00000002                
+         NOP                                                        sqi           VF01,(VI03++)                       
+         NOP                                                        ilw.w         VI06,0(VI02)                        
+lLightmapQword:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lLightmapQword]
+         NOP                                                        isubiu        VI07,VI04,4                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI07,lLightmapRoom                  
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_22]
+         NOP                                                        iaddiu        VI03,VI00,0x00000032                
+         NOP                                                        isub          VI03,VI03,VI04                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI03,VI00,lLightmapFull             
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_23]
+         NOP                                                        ilw.x         VI04,7(VI00)                        
+         NOP                                                        iaddiu        VI03,VI03,0x00007fff                
+         NOP                                                        iaddiu        VI03,VI03,0x00000001                
+         NOP                                                        ilw.y         VI07,7(VI00)                        
+         NOP                                                        isw.x         VI03,0(VI04)                        
+; _LNOPT_w=[ normal2 ] 6 [5 0] 6   [__v_CORPUS_24]
+         NOP                                                        NOP                                               
+         NOP                                                        iaddiu        VI03,VI04,0                         
+         NOP                                                        iadd          VI04,VI04,VI07                      
+         NOP                                                        isub          VI07,VI00,VI07                      
+         NOP                                                        isw.x         VI04,7(VI00)                        
+         NOP                                                        isw.y         VI07,7(VI00)                        
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_25]
+         NOP                                                        xgkick        VI03                                
+lLightmapFull:
+; _LNOPT_w=[ normal2 ] 36 [36 0] 36   [lLightmapFull]
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        lq            VF02,11(VI00)                       
+         NOP                                                        iaddiu        VI04,VI00,0                         
+         NOP                                                        ilw.z         VI09,-1(VI05)                       
+         NOP                                                        iaddiu        VI07,VI00,0x00007fff                
+         NOP                                                        ilw.w         VI10,-1(VI05)                       
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iaddiu        VI11,VI00,0x00007fff                
+         NOP                                                        sqi           VF02,(VI03++)                       
+         NOP                                                        iaddiu        VI12,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI08,VI07,0x00000001                
+         NOP                                                        iaddiu        VI13,VI00,0x00007fff                
+         NOP                                                        iaddiu        VI07,VI03,0                         
+         NOP                                                        iand          VI12,VI09,VI12                      
+         NOP                                                        iand          VI10,VI10,VI13                      
+         NOP                                                        iaddiu        VI09,VI11,0x00000001                
+         NOP                                                        iadd          VI11,VI02,VI12                      
+         NOP                                                        lq.zw         VF04,3(VI11)                        
+         NOP                                                        lq.w          VF01,0(VI11)                        
+         NOP                                                        lq            VF02,2(VI11)                        
+         NOP                                                        lq.xyz        VF01,1(VI11)                        
+         addw.x        VF06,VF00,VF04w                              iadd          VI10,VI02,VI10                      
+         addw.y        VF06,VF00,VF01w                              lq.zw         VF05,3(VI10)                        
+         max.z         VF06,VF04,VF04                               lq.w          VF01,0(VI10)                        
+         NOP                                                        lq            VF04,2(VI10)                        
+         NOP                                                        lq.xyz        VF03,1(VI10)                        
+         addw.x        VF02,VF00,VF05w                              sq            VF02,1(VI03)                        
+         addw.y        VF02,VF00,VF01w                              sq.xyz        VF06,0(VI03)                        
+         max.z         VF02,VF05,VF05                               sq.xyz        VF01,2(VI03)                        
+         NOP                                                        isw.w         VI08,2(VI03)                        
+         NOP                                                        sq            VF04,4(VI07)                        
+         NOP                                                        sq.xyz        VF03,5(VI07)                        
+         NOP                                                        sq.xyz        VF02,3(VI07)                        
+         NOP                                                        isw.w         VI09,5(VI07)                        
+         NOP                                                        iaddiu        VI03,VI07,0x00000006                
+         NOP                                                        iaddiu        VI04,VI04,48                        
+lLightmapRoom:
+; _LNOPT_w=[ vuta1 ] 63 [63 0] 63   [lLightmapRoom]
+         NOP                                                        ilw.x         VI09,0(VI05)                        
+         NOP                                                        ilw.y         VI07,0(VI05)                        
+         NOP                                                        ilw.z         VI08,0(VI05)                        
+         NOP                                                        iaddiu        VI10,VI00,0x00007fff                
+         NOP                                                        iand          VI10,VI09,VI10                      
+         NOP                                                        iadd          VI11,VI02,VI10                      
+         NOP                                                        lq.zw         VF01,3(VI11)                        
+         NOP                                                        lq.w          VF02,0(VI11)                        
+         NOP                                                        lq            VF05,2(VI11)                        
+         NOP                                                        lq.xyz        VF03,1(VI11)                        
+         addw.x        VF02,VF00,VF01w                              isub          VI09,VI09,VI10                      
+         max.z         VF02,VF01,VF01                               isw.w         VI09,2(VI03)                        
+         addw.y        VF02,VF00,VF02w                              sq            VF05,1(VI03)                        
+         NOP                                                        sq.xyz        VF03,2(VI03)                        
+         NOP                                                        ilw.w         VI09,0(VI05)                        
+         NOP                                                        iaddiu        VI10,VI00,0x00007fff                
+         NOP                                                        sq.xyz        VF02,0(VI03)                        
+         NOP                                                        iand          VI10,VI07,VI10                      
+         NOP                                                        iadd          VI11,VI02,VI10                      
+         NOP                                                        lq.zw         VF03,3(VI11)                        
+         NOP                                                        lq.w          VF01,0(VI11)                        
+         NOP                                                        lq            VF02,2(VI11)                        
+         NOP                                                        lq.xyz        VF01,1(VI11)                        
+         NOP                                                        isub          VI07,VI07,VI10                      
+         NOP                                                        iaddiu        VI10,VI00,0x00007fff                
+         NOP                                                        iand          VI10,VI08,VI10                      
+         NOP                                                        iadd          VI11,VI02,VI10                      
+         NOP                                                        lq.zw         VF07,3(VI11)                        
+         NOP                                                        lq.w          VF04,0(VI11)                        
+         NOP                                                        lq            VF05,2(VI11)                        
+         NOP                                                        lq.xyz        VF04,1(VI11)                        
+         NOP                                                        isub          VI10,VI08,VI10                      
+         NOP                                                        iaddiu        VI08,VI00,0x00007fff                
+         NOP                                                        iand          VI08,VI09,VI08                      
+         max.z         VF09,VF03,VF03                               iadd          VI11,VI02,VI08                      
+         addw.y        VF09,VF00,VF01w                              lq.zw         VF08,3(VI11)                        
+         addw.x        VF09,VF00,VF03w                              lq.w          VF01,0(VI11)                        
+         max.z         VF07,VF07,VF07                               lq            VF06,2(VI11)                        
+         addw.x        VF07,VF00,VF07w                              lq.xyz        VF03,1(VI11)                        
+         addw.y        VF07,VF00,VF04w                              isub          VI09,VI09,VI08                      
+         NOP                                                        iaddiu        VI08,VI03,0                         
+         NOP                                                        sq.xyz        VF09,3(VI08)                        
+         max.z         VF08,VF08,VF08                               iaddiu        VI03,VI08,0                         
+         addw.y        VF08,VF00,VF01w                              sq.xyz        VF07,6(VI03)                        
+         addw.x        VF08,VF00,VF08w                              sq            VF05,7(VI03)                        
+         NOP                                                        sq.xyz        VF04,8(VI03)                        
+         NOP                                                        isw.w         VI10,8(VI03)                        
+         NOP                                                        iaddiu        VI03,VI03,0                         
+         NOP                                                        sq.xyz        VF08,9(VI03)                        
+         NOP                                                        sq            VF06,10(VI03)                       
+         NOP                                                        sq.xyz        VF03,11(VI03)                       
+         NOP                                                        isw.w         VI09,11(VI03)                       
+         NOP                                                        iaddiu        VI03,VI03,0x0000000c                
+         NOP                                                        sq            VF02,4(VI08)                        
+         NOP                                                        sq.xyz        VF01,5(VI08)                        
+         NOP                                                        isw.w         VI07,5(VI08)                        
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        iaddiu        VI04,VI04,0                         
+         NOP                                                        isubiu        VI06,VI06,1                         
+         NOP                                                        isubiu        VI04,VI04,4                         
+         NOP                                                        ibgtz         VI06,lLightmapQword                 
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_28]
+         NOP                                                        iaddiu        VI02,VI00,0x00000032                
+         NOP                                                        isub          VI02,VI02,VI04                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI02,VI00,lLightmapLast             
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_29]
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        iaddiu        VI02,VI02,0x00007fff                
+         NOP                                                        iaddiu        VI02,VI02,0x00000001                
+         NOP                                                        ilw.y         VI04,7(VI00)                        
+         NOP                                                        isw.x         VI02,0(VI03)                        
+; _LNOPT_w=[ normal2 ] 6 [5 0] 6   [__v_CORPUS_30]
+         NOP                                                        NOP                                               
+         NOP                                                        iaddiu        VI02,VI03,0                         
+         NOP                                                        iadd          VI03,VI03,VI04                      
+         NOP                                                        isub          VI04,VI00,VI04                      
+         NOP                                                        isw.x         VI03,7(VI00)                        
+         NOP                                                        isw.y         VI04,7(VI00)                        
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_31]
+         NOP                                                        xgkick        VI02                                
+lLightmapLast:
+; _LNOPT_w=[ normal2 ] 2 [1 0] 2   [lLightmapLast]
+         NOP[E]                                                     nop                                               
+         NOP                                                        NOP                                               
+lListPath:
+; _LNOPT_w=[ normal2 ] 3 [3 0] 3   [lListPath]
+         NOP                                                        iaddiu        VI02,VI02,0x00000131                
+         NOP                                                        isw.y         VI02,955(VI00)                      
+         NOP                                                        isw.z         VI00,955(VI00)                      
+; _LNOPT_w=[ normal2 ] 0 [0 0] 0   [__v_CORPUS_35]
+lListPass:
+; _LNOPT_w=[ normal2 ] 13 [13 0] 13   [lListPass]
+         NOP                                                        ilw.y         VI02,955(VI00)                      
+         NOP                                                        xtop          VI04                                
+         NOP                                                        ilw.w         VI03,0(VI04)                        
+         NOP                                                        iaddiu        VI04,VI04,0x00000002                
+         NOP                                                        lq            VF01,0(VI02)                        
+         NOP                                                        ilw.x         VI02,7(VI00)                        
+         NOP                                                        iadd          VI03,VI03,VI03                      
+         NOP                                                        iadd          VI05,VI03,VI03                      
+         NOP                                                        iaddiu        VI03,VI00,0x00000032                
+         NOP                                                        sqi           VF01,(VI02++)                       
+         NOP                                                        isw.x         VI05,954(VI00)                      
+         NOP                                                        isw.y         VI04,954(VI00)                      
+         NOP                                                        isw.z         VI00,954(VI00)                      
+; _LNOPT_w=[ normal2 ] 0 [0 0] 0   [__v_CORPUS_37]
+lListEntry:
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [lListEntry]
+         NOP                                                        iaddiu        VI04,VI00,0x00000012                
+         NOP                                                        isub          VI04,VI03,VI04                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI04,lListRoom                      
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_39]
+         NOP                                                        iaddiu        VI02,VI00,0x00000032                
+         NOP                                                        isub          VI02,VI02,VI03                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI02,VI00,lListFull                 
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_40]
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        iaddiu        VI02,VI02,0x00007fff                
+         NOP                                                        iaddiu        VI02,VI02,0x00000001                
+         NOP                                                        ilw.y         VI04,7(VI00)                        
+         NOP                                                        isw.x         VI02,0(VI03)                        
+; _LNOPT_w=[ normal2 ] 6 [5 0] 6   [__v_CORPUS_41]
+         NOP                                                        NOP                                               
+         NOP                                                        iaddiu        VI02,VI03,0                         
+         NOP                                                        iadd          VI03,VI03,VI04                      
+         NOP                                                        isub          VI04,VI00,VI04                      
+         NOP                                                        isw.x         VI03,7(VI00)                        
+         NOP                                                        isw.y         VI04,7(VI00)                        
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_42]
+         NOP                                                        xgkick        VI02                                
+lListFull:
+; _LNOPT_w=[ normal2 ] 5 [9 0] 9   [lListFull]
+         NOP                                                        ilw.y         VI04,955(VI00)                      
+         NOP                                                        ilw.x         VI02,7(VI00)                        
+         NOP                                                        lq            VF01,0(VI04)                               ;	STALL_LATENCY ?2
+         NOP                                                        iaddiu        VI03,VI00,0x00000032                
+         NOP                                                        sqi           VF01,(VI02++)                              ;	STALL_LATENCY ?2
+lListRoom:
+; _LNOPT_w=[ normal2 ] 4 [6 0] 6   [lListRoom]
+         NOP                                                        ilw.z         VI04,954(VI00)                      
+         NOP                                                        lq            VF01,956(VI00)                      
+         NOP                                                        ibne          VI04,VI00,lListHaveLanes                   ;	STALL_LATENCY ?2
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [6 0] 7   [__v_CORPUS_45]
+         NOP                                                        ilw.y         VI05,954(VI00)                      
+         NOP                                                        iaddiu        VI04,VI00,0x00000004                
+         NOP                                                        iaddiu        VI06,VI05,0x00000001                       ;	STALL_LATENCY ?2
+         NOP                                                        lq            VF01,0(VI05)                        
+         NOP                                                        isw.y         VI06,954(VI00)                      
+lListHaveLanes:
+; _LNOPT_w=[ normal2 ] 10 [10 0] 10   [lListHaveLanes]
+         NOP                                                        iaddiu        VI08,VI00,0x00007fff                
+         NOP                                                        xtop          VI07                                
+         NOP                                                        mtir          VI06,VF01x                          
+         NOP                                                        iand          VI08,VI06,VI08                      
+         NOP                                                        mr32          VF02,VF01                           
+         NOP                                                        isubiu        VI05,VI04,1                         
+         NOP                                                        isub          VI06,VI06,VI08                      
+         NOP                                                        iadd          VI07,VI07,VI08                      
+         NOP                                                        ilw.w         VI08,954(VI00)                      
+         NOP                                                        ilw.x         VI09,955(VI00)                      
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_47]
+         NOP                                                        sq            VF02,956(VI00)                      
+         NOP                                                        isw.z         VI05,954(VI00)                      
+         NOP                                                        isw.x         VI08,955(VI00)                      
+         NOP                                                        ibne          VI06,VI00,lListNext                 
+         NOP                                                        isw.w         VI07,954(VI00)                      
+; _LNOPT_w=[ normal2 ] 8 [9 0] 10   [__v_CORPUS_48]
+         NOP                                                        ilw.w         VI04,1(VI09)                        
+         NOP                                                        ilw.w         VI06,1(VI08)                        
+         NOP                                                        ilw.w         VI05,1(VI07)                        
+         NOP                                                        ior           VI04,VI04,VI06                             ;	STALL_LATENCY ?2
+         NOP                                                        ior           VI04,VI04,VI05                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI04,VI00,lListClip                 
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 3 [6 0] 6   [__v_CORPUS_49]
+         NOP                                                        ilw.z         VI04,955(VI00)                      
+         NOP                                                        ibne          VI04,VI00,lListLightmapCorners             ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 19 [19 0] 19   [__v_CORPUS_50]
+         NOP                                                        lq            VF10,3(VI09)                        
+         NOP                                                        lq            VF09,2(VI09)                        
+         NOP                                                        lq            VF04,1(VI09)                        
+         NOP                                                        lq            VF03,3(VI08)                        
+         NOP                                                        lq            VF02,2(VI08)                        
+         NOP                                                        lq            VF01,1(VI08)                        
+         NOP                                                        sq            VF10,0(VI02)                        
+         NOP                                                        sq            VF09,1(VI02)                        
+         NOP                                                        lq            VF11,3(VI07)                        
+         NOP                                                        lq            VF10,2(VI07)                        
+         NOP                                                        lq            VF09,1(VI07)                        
+         NOP                                                        sq            VF04,2(VI02)                        
+         NOP                                                        sq            VF03,3(VI02)                        
+         NOP                                                        sq            VF02,4(VI02)                        
+         NOP                                                        sq            VF01,5(VI02)                        
+         NOP                                                        sq            VF11,6(VI02)                        
+         NOP                                                        sq            VF10,7(VI02)                        
+         NOP                                                        b             lListCornersDone                    
+         NOP                                                        sq            VF09,8(VI02)                        
+lListLightmapCorners:
+; _LNOPT_w=[ normal2 ] 21 [21 0] 21   [lListLightmapCorners]
+         NOP                                                        lq.zw         VF02,3(VI09)                        
+         NOP                                                        lq.w          VF07,0(VI09)                        
+         NOP                                                        lq            VF09,2(VI09)                        
+         NOP                                                        lq            VF01,1(VI09)                        
+         addw.x        VF10,VF00,VF02w                              lq.zw         VF04,3(VI08)                        
+         addw.y        VF10,VF00,VF07w                              lq.w          VF07,0(VI08)                        
+         max.z         VF10,VF02,VF02                               lq            VF03,2(VI08)                        
+         NOP                                                        lq            VF02,1(VI08)                        
+         NOP                                                        sq            VF09,1(VI02)                        
+         max.z         VF11,VF04,VF04                               lq.zw         VF09,3(VI07)                        
+         addw.y        VF11,VF00,VF07w                              sq.xyz        VF10,0(VI02)                        
+         addw.x        VF11,VF00,VF04w                              lq.w          VF07,0(VI07)                        
+         NOP                                                        lq            VF10,2(VI07)                        
+         addw.x        VF09,VF00,VF09w                              lq            VF04,1(VI07)                        
+         max.z         VF09,VF09,VF09                               sq            VF01,2(VI02)                        
+         addw.y        VF09,VF00,VF07w                              sq.xyz        VF11,3(VI02)                        
+         NOP                                                        sq            VF03,4(VI02)                        
+         NOP                                                        sq            VF02,5(VI02)                        
+         NOP                                                        sq            VF10,7(VI02)                        
+         NOP                                                        sq.xyz        VF09,6(VI02)                        
+         NOP                                                        sq            VF04,8(VI02)                        
+lListCornersDone:
+; _LNOPT_w=[ normal2 ] 3 [3 0] 3   [lListCornersDone]
+         NOP                                                        iaddiu        VI02,VI02,0x00000009                
+         NOP                                                        b             lListNext                           
+         NOP                                                        isubiu        VI03,VI03,3                         
+lListClip:
+; _LNOPT_w=[ vuta1 ] 36 [32 0] 36   [lListClip]
+         NOP                                                        lq            VF01,3(VI09)                        
+         NOP                                                        lq.z          VF02,955(VI00)                      
+         NOP                                                        lq            VF03,3(VI08)                        
+         NOP                                                        lq            VF09,0(VI09)                        
+         NOP                                                        div           Q,VF00w,VF01z                       
+         addw.x        VF14,VF00,VF01w                              lq            VF10,0(VI08)                        
+         itof0.z       VF08,VF02                                    lq            VF02,3(VI07)                        
+         addw.x        VF12,VF00,VF03w                              NOP                                               
+         addw.y        VF14,VF00,VF09w                              NOP                                               
+         addw.y        VF12,VF00,VF10w                              lq            VF13,2(VI09)                        
+         addw.x        VF11,VF00,VF02w                              lq            VF04,0(VI07)                        
+         mulq.w        VF09,VF00,Q                                  div           Q,VF00w,VF03z                       
+         sub.xy        VF15,VF14,VF01                               NOP                                               
+         sub.xy        VF14,VF12,VF03                               NOP                                               
+         addw.y        VF11,VF00,VF04w                              iaddiu        VI05,VI00,0x00000003                
+         itof0         VF13,VF13                                    isw.x         VI05,1008(VI00)                     
+         mulz.xy       VF15,VF15,VF08z                              lq            VF12,2(VI07)                        
+         mulz.xy       VF14,VF14,VF08z                              sq            VF09,957(VI00)                      
+         mulq.w        VF10,VF00,Q                                  sq            VF09,966(VI00)                      
+         sub.xy        VF09,VF11,VF02                               div           Q,VF00w,VF02z                       
+         add.xy        VF01,VF01,VF15                               ilw.x         VI04,1008(VI00)                     
+         add.xy        VF03,VF03,VF14                               sq            VF13,958(VI00)                      
+         itof0         VF13,VF12                                    sq            VF13,967(VI00)                      
+         mulz.xy       VF10,VF09,VF08z                              sq            VF10,960(VI00)                      
+         mulw.xy       VF01,VF01,VF09w                              iaddiu        VI05,VI00,0                         
+         mulw.xy       VF03,VF03,VF10w                              lq            VF09,2(VI08)                        
+         mulq.w        VF04,VF00,Q                                  isw.x         VI05,1008(VI00)                     
+         add.xy        VF02,VF02,VF10                               isubiu        VI08,VI04,3                         
+         NOP                                                        sq            VF13,964(VI00)                      
+         itof0         VF10,VF09                                    sq            VF01,959(VI00)                      
+         NOP                                                        sq            VF03,962(VI00)                      
+         mulw.xy       VF02,VF02,VF04w                              sq            VF01,968(VI00)                      
+         NOP                                                        sq            VF04,963(VI00)                      
+         NOP                                                        sq            VF10,961(VI00)                      
+         NOP                                                        ibltz         VI08,lNearOut                       
+         NOP                                                        sq            VF02,965(VI00)                      
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_56]
+         NOP                                                        iaddiu        VI06,VI00,0x000003bd                
+         NOP                                                        iaddiu        VI07,VI00,0x000003d5                
+lNearLoop:
+; _LNOPT_w=[ normal2 ] 25 [37 0] 40   [lNearLoop]
+         NOP                                                        lq            VF01,0(VI06)                        
+         NOP                                                        lq            VF04,3(VI06)                        
+         mul.z         VF11,VF01,VF07                               lq            VF02,1(VI06)                               ;	STALL_LATENCY ?2
+         mul.z         VF08,VF04,VF07                               lq            VF03,2(VI06)                        
+         addw.x        VF11,VF00,VF01w                              lq            VF10,5(VI06)                        
+         addw.x        VF12,VF00,VF04w                              NOP                                               
+         sub.z         VF11,VF00,VF11                               NOP                                               
+         sub.z         VF08,VF00,VF08                               NOP                                               
+         mulw.x        VF11,VF11,VF05w                              NOP                                               
+         mulw.x        VF12,VF12,VF05w                              NOP                                               
+         addz.x        VF11,VF11,VF11z                              NOP                                                      ;	STALL_LATENCY ?2
+         addz.x        VF12,VF12,VF08z                              NOP                                               
+         mulw.x        VF11,VF11,VF06w                              NOP                                                      ;	STALL_LATENCY ?2
+         mulw.x        VF12,VF12,VF06w                              NOP                                               
+         miniw.x       VF13,VF11,VF00w                              NOP                                                      ;	STALL_LATENCY ?2
+         mul.x         VF14,VF11,VF12                               NOP                                               
+         maxx.x        VF13,VF13,VF08x                              NOP                                                      ;	STALL_LATENCY ?2
+         miniw.x       VF14,VF14,VF00w                              NOP                                               
+         maxx.x        VF15,VF14,VF08x                              NOP                                                      ;	STALL_LATENCY ?3
+         ftoi4.x       VF14,VF13                                    NOP                                               
+         ftoi4.x       VF13,VF15                                    lq            VF09,4(VI06)                               ;	STALL_LATENCY ?2
+         NOP                                                        mtir          VI08,VF14x                          
+         NOP                                                        NOP                                               
+         NOP                                                        ibltz         VI08,lNearKept                      
+         NOP                                                        mtir          VI08,VF13x                          
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_58]
+         NOP                                                        sq            VF01,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF03,2(VI07)                        
+         NOP                                                        iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+lNearKept:
+; _LNOPT_w=[ normal2 ] 3 [2 0] 3   [lNearKept]
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI08,lNearNoCut                     
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 14 [24 0] 26   [__v_CORPUS_60]
+         sub.x         VF12,VF11,VF12                               iaddiu        VI05,VI05,0x00000001                
+         sub           VF04,VF04,VF01                               div           Q,VF11x,VF12x                              ;	STALL_LATENCY ?3
+         addq.x        VF11,VF00,Q                                  waitq                                                    ;	STALL_LATENCY ?6
+         sub           VF09,VF09,VF02                               NOP                                               
+         sub           VF10,VF10,VF03                               NOP                                               
+         mulx          VF04,VF04,VF11x                              NOP                                                      ;	STALL_LATENCY ?1
+         mulx          VF09,VF09,VF11x                              NOP                                               
+         mulx          VF10,VF10,VF11x                              NOP                                               
+         add           VF01,VF01,VF04                               NOP                                                      ;	STALL_LATENCY ?1
+         add           VF02,VF02,VF09                               NOP                                               
+         add           VF03,VF03,VF10                               iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        sq            VF01,-3(VI07)                              ;	STALL_LATENCY ?1
+         NOP                                                        sq            VF02,-2(VI07)                       
+         NOP                                                        sq            VF03,-1(VI07)                       
+lNearNoCut:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lNearNoCut]
+         NOP                                                        isubiu        VI04,VI04,1                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgtz         VI04,lNearLoop                      
+         NOP                                                        iaddiu        VI06,VI06,0x00000003                
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_CORPUS_62]
+         NOP                                                        isubiu        VI04,VI05,3                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI04,lNearWrap                      
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_63]
+         NOP                                                        iaddiu        VI05,VI00,0                         
+lNearWrap:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [lNearWrap]
+         NOP                                                        ibltz         VI04,lNearOut                       
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [__v_CORPUS_65]
+         NOP                                                        lq            VF03,981(VI00)                      
+         NOP                                                        lq            VF02,982(VI00)                      
+         NOP                                                        lq            VF01,983(VI00)                      
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+         NOP                                                        sq            VF03,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF01,2(VI07)                        
+lNearOut:
+; _LNOPT_w=[ normal2 ] 5 [8 0] 8   [lNearOut]
+         NOP                                                        ilw.x         VI04,1008(VI00)                     
+         NOP                                                        isubiu        VI06,VI04,3                                ;	STALL_LATENCY ?3
+         NOP                                                        iaddiu        VI05,VI00,0                         
+         NOP                                                        ibltz         VI06,lXlOut                         
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_67]
+         NOP                                                        iaddiu        VI06,VI00,0x000003d5                
+         NOP                                                        iaddiu        VI07,VI00,0x000003bd                
+lXlLoop:
+; _LNOPT_w=[ normal2 ] 25 [37 0] 40   [lXlLoop]
+         NOP                                                        lq            VF01,0(VI06)                        
+         NOP                                                        lq            VF04,3(VI06)                        
+         mul.x         VF12,VF01,VF07                               lq            VF02,1(VI06)                               ;	STALL_LATENCY ?2
+         mul.x         VF11,VF04,VF07                               lq            VF03,2(VI06)                        
+         addw.x        VF13,VF00,VF01w                              lq            VF10,5(VI06)                        
+         addw.x        VF14,VF00,VF04w                              NOP                                               
+         sub.x         VF12,VF00,VF12                               NOP                                               
+         sub.x         VF11,VF00,VF11                               NOP                                               
+         mulw.x        VF13,VF13,VF05w                              NOP                                               
+         mulw.x        VF14,VF14,VF05w                              NOP                                               
+         addx.x        VF13,VF13,VF12x                              NOP                                                      ;	STALL_LATENCY ?2
+         addx.x        VF12,VF14,VF11x                              NOP                                               
+         mulw.x        VF11,VF13,VF06w                              NOP                                                      ;	STALL_LATENCY ?2
+         mulw.x        VF12,VF12,VF06w                              NOP                                               
+         miniw.x       VF13,VF11,VF00w                              NOP                                                      ;	STALL_LATENCY ?2
+         mul.x         VF14,VF11,VF12                               NOP                                               
+         maxx.x        VF13,VF13,VF08x                              NOP                                                      ;	STALL_LATENCY ?2
+         miniw.x       VF14,VF14,VF00w                              NOP                                               
+         maxx.x        VF15,VF14,VF08x                              NOP                                                      ;	STALL_LATENCY ?3
+         ftoi4.x       VF14,VF13                                    NOP                                               
+         ftoi4.x       VF13,VF15                                    lq            VF09,4(VI06)                               ;	STALL_LATENCY ?2
+         NOP                                                        mtir          VI08,VF14x                          
+         NOP                                                        NOP                                               
+         NOP                                                        ibltz         VI08,lXlKept                        
+         NOP                                                        mtir          VI08,VF13x                          
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_69]
+         NOP                                                        sq            VF01,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF03,2(VI07)                        
+         NOP                                                        iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+lXlKept:
+; _LNOPT_w=[ normal2 ] 3 [2 0] 3   [lXlKept]
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI08,lXlNoCut                       
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 14 [24 0] 26   [__v_CORPUS_71]
+         sub.x         VF12,VF11,VF12                               iaddiu        VI05,VI05,0x00000001                
+         sub           VF04,VF04,VF01                               div           Q,VF11x,VF12x                              ;	STALL_LATENCY ?3
+         addq.x        VF11,VF00,Q                                  waitq                                                    ;	STALL_LATENCY ?6
+         sub           VF09,VF09,VF02                               NOP                                               
+         sub           VF10,VF10,VF03                               NOP                                               
+         mulx          VF04,VF04,VF11x                              NOP                                                      ;	STALL_LATENCY ?1
+         mulx          VF09,VF09,VF11x                              NOP                                               
+         mulx          VF10,VF10,VF11x                              NOP                                               
+         add           VF01,VF01,VF04                               NOP                                                      ;	STALL_LATENCY ?1
+         add           VF02,VF02,VF09                               NOP                                               
+         add           VF03,VF03,VF10                               iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        sq            VF01,-3(VI07)                              ;	STALL_LATENCY ?1
+         NOP                                                        sq            VF02,-2(VI07)                       
+         NOP                                                        sq            VF03,-1(VI07)                       
+lXlNoCut:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lXlNoCut]
+         NOP                                                        isubiu        VI04,VI04,1                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgtz         VI04,lXlLoop                        
+         NOP                                                        iaddiu        VI06,VI06,0x00000003                
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_CORPUS_73]
+         NOP                                                        isubiu        VI04,VI05,3                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI04,lXlWrap                        
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_74]
+         NOP                                                        iaddiu        VI05,VI00,0                         
+lXlWrap:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [lXlWrap]
+         NOP                                                        ibltz         VI04,lXlOut                         
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [__v_CORPUS_76]
+         NOP                                                        lq            VF03,957(VI00)                      
+         NOP                                                        lq            VF02,958(VI00)                      
+         NOP                                                        lq            VF01,959(VI00)                      
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+         NOP                                                        sq            VF03,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF01,2(VI07)                        
+lXlOut:
+; _LNOPT_w=[ normal2 ] 5 [8 0] 8   [lXlOut]
+         NOP                                                        ilw.x         VI04,1008(VI00)                     
+         NOP                                                        isubiu        VI06,VI04,3                                ;	STALL_LATENCY ?3
+         NOP                                                        iaddiu        VI05,VI00,0                         
+         NOP                                                        ibltz         VI06,lXrOut                         
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_78]
+         NOP                                                        iaddiu        VI06,VI00,0x000003bd                
+         NOP                                                        iaddiu        VI07,VI00,0x000003d5                
+lXrLoop:
+; _LNOPT_w=[ normal ] 23 [37 0] 38   [lXrLoop]
+         NOP                                                        lq            VF01,0(VI06)                        
+         NOP                                                        lq            VF04,3(VI06)                        
+         addw.x        VF13,VF00,VF01w                              lq            VF02,1(VI06)                               ;	STALL_LATENCY ?2
+         addw.x        VF14,VF00,VF04w                              lq            VF03,2(VI06)                        
+         mul.x         VF12,VF01,VF07                               lq            VF10,5(VI06)                        
+         mul.x         VF11,VF04,VF07                               NOP                                               
+         mulw.x        VF13,VF13,VF05w                              NOP                                               
+         mulw.x        VF14,VF14,VF05w                              NOP                                               
+         addx.x        VF13,VF13,VF12x                              NOP                                                      ;	STALL_LATENCY ?2
+         addx.x        VF12,VF14,VF11x                              NOP                                               
+         mulw.x        VF11,VF13,VF06w                              NOP                                                      ;	STALL_LATENCY ?2
+         mulw.x        VF12,VF12,VF06w                              NOP                                               
+         miniw.x       VF13,VF11,VF00w                              NOP                                                      ;	STALL_LATENCY ?2
+         mul.x         VF14,VF11,VF12                               NOP                                               
+         maxx.x        VF13,VF13,VF08x                              NOP                                                      ;	STALL_LATENCY ?2
+         miniw.x       VF14,VF14,VF00w                              NOP                                               
+         maxx.x        VF15,VF14,VF08x                              NOP                                                      ;	STALL_LATENCY ?3
+         ftoi4.x       VF14,VF13                                    NOP                                               
+         ftoi4.x       VF13,VF15                                    lq            VF09,4(VI06)                               ;	STALL_LATENCY ?2
+         NOP                                                        mtir          VI08,VF14x                          
+         NOP                                                        NOP                                               
+         NOP                                                        ibltz         VI08,lXrKept                        
+         NOP                                                        mtir          VI08,VF13x                          
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_80]
+         NOP                                                        sq            VF01,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF03,2(VI07)                        
+         NOP                                                        iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+lXrKept:
+; _LNOPT_w=[ normal2 ] 3 [2 0] 3   [lXrKept]
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI08,lXrNoCut                       
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 14 [24 0] 26   [__v_CORPUS_82]
+         sub.x         VF12,VF11,VF12                               iaddiu        VI05,VI05,0x00000001                
+         sub           VF04,VF04,VF01                               div           Q,VF11x,VF12x                              ;	STALL_LATENCY ?3
+         addq.x        VF11,VF00,Q                                  waitq                                                    ;	STALL_LATENCY ?6
+         sub           VF09,VF09,VF02                               NOP                                               
+         sub           VF10,VF10,VF03                               NOP                                               
+         mulx          VF04,VF04,VF11x                              NOP                                                      ;	STALL_LATENCY ?1
+         mulx          VF09,VF09,VF11x                              NOP                                               
+         mulx          VF10,VF10,VF11x                              NOP                                               
+         add           VF01,VF01,VF04                               NOP                                                      ;	STALL_LATENCY ?1
+         add           VF02,VF02,VF09                               NOP                                               
+         add           VF03,VF03,VF10                               iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        sq            VF01,-3(VI07)                              ;	STALL_LATENCY ?1
+         NOP                                                        sq            VF02,-2(VI07)                       
+         NOP                                                        sq            VF03,-1(VI07)                       
+lXrNoCut:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lXrNoCut]
+         NOP                                                        isubiu        VI04,VI04,1                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgtz         VI04,lXrLoop                        
+         NOP                                                        iaddiu        VI06,VI06,0x00000003                
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_CORPUS_84]
+         NOP                                                        isubiu        VI04,VI05,3                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI04,lXrWrap                        
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_85]
+         NOP                                                        iaddiu        VI05,VI00,0                         
+lXrWrap:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [lXrWrap]
+         NOP                                                        ibltz         VI04,lXrOut                         
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [__v_CORPUS_87]
+         NOP                                                        lq            VF03,981(VI00)                      
+         NOP                                                        lq            VF02,982(VI00)                      
+         NOP                                                        lq            VF01,983(VI00)                      
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+         NOP                                                        sq            VF03,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF01,2(VI07)                        
+lXrOut:
+; _LNOPT_w=[ normal2 ] 5 [8 0] 8   [lXrOut]
+         NOP                                                        ilw.x         VI04,1008(VI00)                     
+         NOP                                                        isubiu        VI06,VI04,3                                ;	STALL_LATENCY ?3
+         NOP                                                        iaddiu        VI05,VI00,0                         
+         NOP                                                        ibltz         VI06,lYbOut                         
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_89]
+         NOP                                                        iaddiu        VI06,VI00,0x000003d5                
+         NOP                                                        iaddiu        VI07,VI00,0x000003bd                
+lYbLoop:
+; _LNOPT_w=[ normal2 ] 25 [37 0] 40   [lYbLoop]
+         NOP                                                        lq            VF01,0(VI06)                        
+         NOP                                                        lq            VF04,3(VI06)                        
+         mul.y         VF11,VF01,VF07                               lq            VF02,1(VI06)                               ;	STALL_LATENCY ?2
+         mul.y         VF08,VF04,VF07                               lq            VF03,2(VI06)                        
+         addw.x        VF11,VF00,VF01w                              lq            VF10,5(VI06)                        
+         addw.x        VF12,VF00,VF04w                              NOP                                               
+         sub.y         VF11,VF00,VF11                               NOP                                               
+         sub.y         VF08,VF00,VF08                               NOP                                               
+         mulw.x        VF11,VF11,VF05w                              NOP                                               
+         mulw.x        VF12,VF12,VF05w                              NOP                                               
+         addy.x        VF11,VF11,VF11y                              NOP                                                      ;	STALL_LATENCY ?2
+         addy.x        VF12,VF12,VF08y                              NOP                                               
+         mulw.x        VF11,VF11,VF06w                              NOP                                                      ;	STALL_LATENCY ?2
+         mulw.x        VF12,VF12,VF06w                              NOP                                               
+         miniw.x       VF13,VF11,VF00w                              NOP                                                      ;	STALL_LATENCY ?2
+         mul.x         VF14,VF11,VF12                               NOP                                               
+         maxx.x        VF13,VF13,VF08x                              NOP                                                      ;	STALL_LATENCY ?2
+         miniw.x       VF14,VF14,VF00w                              NOP                                               
+         maxx.x        VF15,VF14,VF08x                              NOP                                                      ;	STALL_LATENCY ?3
+         ftoi4.x       VF14,VF13                                    NOP                                               
+         ftoi4.x       VF13,VF15                                    lq            VF09,4(VI06)                               ;	STALL_LATENCY ?2
+         NOP                                                        mtir          VI08,VF14x                          
+         NOP                                                        NOP                                               
+         NOP                                                        ibltz         VI08,lYbKept                        
+         NOP                                                        mtir          VI08,VF13x                          
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_91]
+         NOP                                                        sq            VF01,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF03,2(VI07)                        
+         NOP                                                        iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+lYbKept:
+; _LNOPT_w=[ normal2 ] 3 [2 0] 3   [lYbKept]
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI08,lYbNoCut                       
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 14 [24 0] 26   [__v_CORPUS_93]
+         sub.x         VF12,VF11,VF12                               iaddiu        VI05,VI05,0x00000001                
+         sub           VF04,VF04,VF01                               div           Q,VF11x,VF12x                              ;	STALL_LATENCY ?3
+         addq.x        VF11,VF00,Q                                  waitq                                                    ;	STALL_LATENCY ?6
+         sub           VF09,VF09,VF02                               NOP                                               
+         sub           VF10,VF10,VF03                               NOP                                               
+         mulx          VF04,VF04,VF11x                              NOP                                                      ;	STALL_LATENCY ?1
+         mulx          VF09,VF09,VF11x                              NOP                                               
+         mulx          VF10,VF10,VF11x                              NOP                                               
+         add           VF01,VF01,VF04                               NOP                                                      ;	STALL_LATENCY ?1
+         add           VF02,VF02,VF09                               NOP                                               
+         add           VF03,VF03,VF10                               iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        sq            VF01,-3(VI07)                              ;	STALL_LATENCY ?1
+         NOP                                                        sq            VF02,-2(VI07)                       
+         NOP                                                        sq            VF03,-1(VI07)                       
+lYbNoCut:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lYbNoCut]
+         NOP                                                        isubiu        VI04,VI04,1                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgtz         VI04,lYbLoop                        
+         NOP                                                        iaddiu        VI06,VI06,0x00000003                
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_CORPUS_95]
+         NOP                                                        isubiu        VI04,VI05,3                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI04,lYbWrap                        
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_96]
+         NOP                                                        iaddiu        VI05,VI00,0                         
+lYbWrap:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [lYbWrap]
+         NOP                                                        ibltz         VI04,lYbOut                         
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [__v_CORPUS_98]
+         NOP                                                        lq            VF03,957(VI00)                      
+         NOP                                                        lq            VF02,958(VI00)                      
+         NOP                                                        lq            VF01,959(VI00)                      
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+         NOP                                                        sq            VF03,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF01,2(VI07)                        
+lYbOut:
+; _LNOPT_w=[ normal2 ] 5 [8 0] 8   [lYbOut]
+         NOP                                                        ilw.x         VI04,1008(VI00)                     
+         NOP                                                        isubiu        VI06,VI04,3                                ;	STALL_LATENCY ?3
+         NOP                                                        iaddiu        VI05,VI00,0                         
+         NOP                                                        ibltz         VI06,lYtOut                         
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_100]
+         NOP                                                        iaddiu        VI06,VI00,0x000003bd                
+         NOP                                                        iaddiu        VI07,VI00,0x000003d5                
+lYtLoop:
+; _LNOPT_w=[ normal ] 23 [37 0] 38   [lYtLoop]
+         NOP                                                        lq            VF01,0(VI06)                        
+         NOP                                                        lq            VF04,3(VI06)                        
+         addw.x        VF11,VF00,VF01w                              lq            VF02,1(VI06)                               ;	STALL_LATENCY ?2
+         addw.x        VF12,VF00,VF04w                              lq            VF03,2(VI06)                        
+         mul.y         VF11,VF01,VF07                               lq            VF10,5(VI06)                        
+         mul.y         VF08,VF04,VF07                               NOP                                               
+         mulw.x        VF11,VF11,VF05w                              NOP                                               
+         mulw.x        VF12,VF12,VF05w                              NOP                                               
+         addy.x        VF11,VF11,VF11y                              NOP                                                      ;	STALL_LATENCY ?2
+         addy.x        VF12,VF12,VF08y                              NOP                                               
+         mulw.x        VF11,VF11,VF06w                              NOP                                                      ;	STALL_LATENCY ?2
+         mulw.x        VF12,VF12,VF06w                              NOP                                               
+         miniw.x       VF13,VF11,VF00w                              NOP                                                      ;	STALL_LATENCY ?2
+         mul.x         VF14,VF11,VF12                               NOP                                               
+         maxx.x        VF13,VF13,VF08x                              NOP                                                      ;	STALL_LATENCY ?2
+         miniw.x       VF14,VF14,VF00w                              NOP                                               
+         maxx.x        VF15,VF14,VF08x                              NOP                                                      ;	STALL_LATENCY ?3
+         ftoi4.x       VF14,VF13                                    NOP                                               
+         ftoi4.x       VF13,VF15                                    lq            VF09,4(VI06)                               ;	STALL_LATENCY ?2
+         NOP                                                        mtir          VI08,VF14x                          
+         NOP                                                        NOP                                               
+         NOP                                                        ibltz         VI08,lYtKept                        
+         NOP                                                        mtir          VI08,VF13x                          
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_102]
+         NOP                                                        sq            VF01,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF03,2(VI07)                        
+         NOP                                                        iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        iaddiu        VI05,VI05,0x00000001                
+lYtKept:
+; _LNOPT_w=[ normal2 ] 3 [2 0] 3   [lYtKept]
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI08,lYtNoCut                       
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 14 [24 0] 26   [__v_CORPUS_104]
+         sub.x         VF12,VF11,VF12                               iaddiu        VI05,VI05,0x00000001                
+         sub           VF04,VF04,VF01                               div           Q,VF11x,VF12x                              ;	STALL_LATENCY ?3
+         addq.x        VF11,VF00,Q                                  waitq                                                    ;	STALL_LATENCY ?6
+         sub           VF09,VF09,VF02                               NOP                                               
+         sub           VF10,VF10,VF03                               NOP                                               
+         mulx          VF04,VF04,VF11x                              NOP                                                      ;	STALL_LATENCY ?1
+         mulx          VF09,VF09,VF11x                              NOP                                               
+         mulx          VF10,VF10,VF11x                              NOP                                               
+         add           VF01,VF01,VF04                               NOP                                                      ;	STALL_LATENCY ?1
+         add           VF02,VF02,VF09                               NOP                                               
+         add           VF03,VF03,VF10                               iaddiu        VI07,VI07,0x00000003                
+         NOP                                                        sq            VF01,-3(VI07)                              ;	STALL_LATENCY ?1
+         NOP                                                        sq            VF02,-2(VI07)                       
+         NOP                                                        sq            VF03,-1(VI07)                       
+lYtNoCut:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [lYtNoCut]
+         NOP                                                        isubiu        VI04,VI04,1                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgtz         VI04,lYtLoop                        
+         NOP                                                        iaddiu        VI06,VI06,0x00000003                
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_CORPUS_106]
+         NOP                                                        isubiu        VI04,VI05,3                         
+         NOP                                                        NOP                                               
+         NOP                                                        ibgez         VI04,lYtWrap                        
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_107]
+         NOP                                                        iaddiu        VI05,VI00,0                         
+lYtWrap:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [lYtWrap]
+         NOP                                                        ibltz         VI04,lYtOut                         
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [__v_CORPUS_109]
+         NOP                                                        lq            VF03,981(VI00)                      
+         NOP                                                        lq            VF02,982(VI00)                      
+         NOP                                                        lq            VF01,983(VI00)                      
+         NOP                                                        isw.x         VI05,1008(VI00)                     
+         NOP                                                        sq            VF03,0(VI07)                        
+         NOP                                                        sq            VF02,1(VI07)                        
+         NOP                                                        sq            VF01,2(VI07)                        
+lYtOut:
+; _LNOPT_w=[ normal2 ] 5 [8 0] 8   [lYtOut]
+         NOP                                                        ilw.x         VI04,1008(VI00)                     
+         NOP                                                        isubiu        VI04,VI04,2                                ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+         NOP                                                        ibltz         VI04,lListNext                      
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_111]
+         NOP                                                        ibeq          VI04,VI00,lListNext                 
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_CORPUS_112]
+         NOP                                                        lq            VF01,981(VI00)                      
+         NOP                                                        lq            VF02,982(VI00)                      
+         NOP                                                        lq.xy         VF03,983(VI00)                      
+         NOP                                                        iaddiu        VI05,VI00,0x000003d8                
+lFanLoop:
+; _LNOPT_w=[ another ] 34 [28 28] 36   [lFanLoop]
+         mulaw.xyz     ACC,VF06,VF00w                               lq            VF10,0(VI05)                        
+         NOP                                                        lq            VF04,3(VI05)                        
+         mul.xyz       VF09,VF01,VF07                               div           Q,VF00w,VF01w                       
+         ftoi0         VF12,VF02                                    lq            VF15,4(VI05)                        
+         mul.xyz       VF16,VF10,VF07                               isubiu        VI04,VI04,1                         
+         mul.xyz       VF14,VF04,VF07                               NOP                                               
+         clipw.xyz     VF09xyz,VF01w                                NOP                                               
+         ftoi0         VF15,VF15                                    lq            VF13,1(VI05)                        
+         clipw.xyz     VF16xyz,VF10w                                div           Q,VF00w,VF10w                              ;	STALL_THRUPUT ?1
+         clipw.xyz     VF14xyz,VF04w                                NOP                                               
+         mulq.xyz      VF14,VF01,Q                                  NOP                                               
+         ftoi0         VF13,VF13                                    NOP                                               
+         mulq.xy       VF12,VF03,Q                                  sq            VF12,1(VI02)                        
+         addq.z        VF12,VF00,Q                                  NOP                                               
+         madd.xyz      VF14,VF14,VF05                               lq.xy         VF11,2(VI05)                        
+         mulaw.xyz     ACC,VF06,VF00w                               div           Q,VF00w,VF04w                       
+         mulq.xyz      VF15,VF10,Q                                  sq            VF15,7(VI02)                        
+         addq.z        VF10,VF00,Q                                  lq.xy         VF09,5(VI05)                        
+         ftoi4.xyz     VF13,VF14                                    sq            VF13,4(VI02)                        
+         mulq.xy       VF10,VF11,Q                                  isubiu        VI03,VI03,3                         
+         madd.xyz      VF12,VF15,VF05                               sq.xyz        VF12,0(VI02)                        
+         mulaw.xyz     ACC,VF06,VF00w                               iaddiu        VI02,VI02,0x00000009                
+         mulq.xyz      VF13,VF04,Q                                  sq.xyz        VF13,-7(VI02)                       
+         addq.z        VF04,VF00,Q                                  iaddiu        VI05,VI05,0x00000003                
+         ftoi4.xyz     VF10,VF12                                    sq.xyz        VF10,-6(VI02)                       
+         mulq.xy       VF04,VF09,Q                                  fcand         VI01,262143                         
+         madd.xyz      VF12,VF13,VF05                               iaddiu        VI06,VI01,0x00007fff                
+         NOP                                                        isw.w         VI06,-1(VI02)                       
+         NOP                                                        isw.w         VI06,-4(VI02)                       
+         NOP                                                        isw.w         VI06,-7(VI02)                       
+         ftoi4.xyz     VF04,VF12                                    sq.xyz        VF04,-3(VI02)                       
+         NOP                                                        sq.xyz        VF10,-4(VI02)                       
+         NOP                                                        ibgtz         VI04,lFanLoop                       
+         NOP                                                        sq.xyz        VF04,-1(VI02)                              ;	STALL_LATENCY ?1
+lListNext:
+; _LNOPT_w=[ normal2 ] 5 [8 0] 8   [lListNext]
+         NOP                                                        ilw.x         VI04,954(VI00)                      
+         NOP                                                        isubiu        VI04,VI04,1                                ;	STALL_LATENCY ?3
+         NOP                                                        isw.x         VI04,954(VI00)                      
+         NOP                                                        ibgtz         VI04,lListEntry                     
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_116]
+         NOP                                                        iaddiu        VI02,VI00,0x00000032                
+         NOP                                                        isub          VI02,VI02,VI03                      
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI02,VI00,lListLast                 
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 5 [5 0] 5   [__v_CORPUS_117]
+         NOP                                                        ilw.x         VI03,7(VI00)                        
+         NOP                                                        iaddiu        VI02,VI02,0x00007fff                
+         NOP                                                        iaddiu        VI02,VI02,0x00000001                
+         NOP                                                        ilw.y         VI04,7(VI00)                        
+         NOP                                                        isw.x         VI02,0(VI03)                        
+; _LNOPT_w=[ normal2 ] 6 [5 0] 6   [__v_CORPUS_118]
+         NOP                                                        NOP                                               
+         NOP                                                        iaddiu        VI02,VI03,0                         
+         NOP                                                        iadd          VI03,VI03,VI04                      
+         NOP                                                        isub          VI04,VI00,VI04                      
+         NOP                                                        isw.x         VI03,7(VI00)                        
+         NOP                                                        isw.y         VI04,7(VI00)                        
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_119]
+         NOP                                                        xgkick        VI02                                
+lListLast:
+; _LNOPT_w=[ normal2 ] 3 [6 0] 6   [lListLast]
+         NOP                                                        ilw.z         VI02,955(VI00)                      
+         NOP                                                        ibne          VI02,VI00,lListEnd                         ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 4 [7 0] 7   [__v_CORPUS_121]
+         NOP                                                        xtop          VI02                                
+         NOP                                                        ilw.w         VI03,296(VI02)                      
+         NOP                                                        ibeq          VI03,VI00,lListEnd                         ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 6 [6 0] 6   [__v_CORPUS_122]
+         NOP                                                        iaddiu        VI04,VI02,0x00000127                
+         NOP                                                        iaddiu        VI03,VI00,0x0000000c                
+         NOP                                                        iaddiu        VI02,VI00,0x00000001                
+         NOP                                                        xgkick        VI04                                
+         NOP                                                        isw.y         VI03,955(VI00)                      
+         NOP                                                        isw.z         VI02,955(VI00)                      
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_123]
+         NOP                                                        b             lListPass                           
+         NOP                                                        NOP                                               
+lListEnd:
+; _LNOPT_w=[ normal2 ] 4 [2 0] 4   [lListEnd]
+         NOP                                                        iaddiu        VI02,VI00,0x00000008                
+         NOP                                                        xgkick        VI02                                
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+lDone:
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+world_lm_CodeEnd:
+;	iCount=936
+; register stats:
+;  14 VU User integer
+;  17 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

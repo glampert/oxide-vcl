@@ -1,0 +1,49 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_ilw_branch_label_CodeStart
+		.global	Repro_ilw_branch_label_CodeEnd
+Repro_ilw_branch_label_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 4 [6 0] 6   [__v_CORPUS_4]
+         NOP                                                        ilw.x         VI02,0(VI00)                        
+         NOP                                                        ilw.y         VI01,0(VI00)                        
+         NOP                                                        ibeq          VI02,VI00,lX                               ;	STALL_LATENCY ?2
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [__v_CORPUS_5]
+         NOP                                                        b             lJ                                  
+         NOP                                                        ilw.z         VI02,0(VI00)                        
+lX:
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [lX]
+         NOP                                                        iaddiu        VI02,VI01,1                         
+lJ:
+; _LNOPT_w=[ normal2 ] 6 [2 0] 6   [lJ]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI02,VI00,lOut                      
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_9]
+         NOP                                                        isw.x         VI02,3(VI00)                        
+lOut:
+; _LNOPT_w=[ normal2 ] 2 [1 0] 2   [lOut]
+         NOP[E]                                                     isw.y         VI02,3(VI00)                        
+         NOP                                                        NOP                                               
+		.align 4
+Repro_ilw_branch_label_CodeEnd:
+;	iCount=16
+; register stats:
+;   3 VU User integer
+;   0 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

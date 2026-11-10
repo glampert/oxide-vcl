@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+INFO2: ZERO FIX   :   ---> {add.xyz} [***{vf02}***],{source},{vf00} 
+INFO: Opt::Linear       __v_COPY_4  5/5
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

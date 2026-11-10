@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/induction-collapse-range-blocked.vcl"
+  ],
+  "input_sha256": "fbcdb816ea804dea74e65e6272fdfa73b16db3b74dff8fe00b1dd3510c407c0c",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 20.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.1491043329879176,
+  "cpu_seconds": 0.168764,
+  "stdout_sha256": "0f9f6779ba8cce9b3acda8b5f06f995311f8e48b780bbf8a7e39b7452a174fa9",
+  "stderr_sha256": "d4330e301f4e5eb5460615beedd56ef8998e93f4763d3598520ca4eed7e69f9c",
+  "stdout_bytes": 894,
+  "stderr_bytes": 93,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 0,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

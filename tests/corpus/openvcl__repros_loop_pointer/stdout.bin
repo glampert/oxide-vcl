@@ -1,0 +1,46 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_loop_pointer_CodeStart
+		.global	Repro_loop_pointer_CodeEnd
+Repro_loop_pointer_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_4]
+         NOP                                                        iaddiu        VI01,VI00,0x00000064                
+         NOP                                                        iaddiu        VI02,VI00,0x0000000a                
+lLoop:
+; _LNOPT_w=[ normal2 ] 3 [6 0] 6   [lLoop]
+         NOP                                                        ilw.x         VI03,0(VI02)                        
+         NOP                                                        ibeq          VI03,VI00,lSkip                            ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_6]
+         NOP                                                        iaddiu        VI03,VI00,0x00000005                
+         NOP                                                        isw.x         VI03,1(VI00)                        
+lSkip:
+; _LNOPT_w=[ normal2 ] 7 [7 0] 7   [lSkip]
+         NOP                                                        iaddiu        VI03,VI00,0                         
+         NOP                                                        iaddiu        VI03,VI03,0x00000008                
+         NOP                                                        isw.x         VI02,0(VI01)                        
+         NOP                                                        isubiu        VI02,VI02,1                         
+         NOP                                                        iaddiu        VI01,VI01,0x00000001                
+         NOP                                                        ibne          VI02,VI00,lLoop                     
+         NOP                                                        isw.x         VI03,2(VI00)                        
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+Repro_loop_pointer_CodeEnd:
+;	iCount=16
+; register stats:
+;   4 VU User integer
+;   0 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

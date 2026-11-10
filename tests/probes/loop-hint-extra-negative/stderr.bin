@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER: failed to get immediate field 0 (extra loop count) while processing --LoopExtra. value must be >=0
+  ---> [***{--LoopExtra}***] {-1} 
+USER: failed to process an instruction
+INFO: lpgen[1](limit: number of lower instructions) - 'dumb2' flow loop
+INFO: OS_End(Linux)

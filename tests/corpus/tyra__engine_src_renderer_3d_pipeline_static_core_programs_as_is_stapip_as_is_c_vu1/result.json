@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_c_vu1.vcl"
+  ],
+  "input_sha256": "1733ded5ec462b52b21cea580abb863f478978a69713927c9ae58e94286678c6",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 120.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 2.2577857080032118,
+  "cpu_seconds": 2.833898,
+  "stdout_sha256": "aa96b3ec01ac4e476da1bb7e6e5bfbbd13ae7078985552635b210e0cc09053c3",
+  "stderr_sha256": "99777dbff575ec6a01e2fce14c2f899023d84f1ebfe12a9c3ad198fd703ff19b",
+  "stdout_bytes": 8468,
+  "stderr_bytes": 623,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 22,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

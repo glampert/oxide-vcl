@@ -1,0 +1,23 @@
+[package]
+name = "oxide-vcl"
+description = "Command-line driver for Oxide VCL, a PS2 VU compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The argument parser is a small library target so the integration tests,
+# which compile fixtures with their recorded flags, share it with the binary.
+[lib]
+name = "vcl_cli"
+path = "src/cli.rs"
+
+[[bin]]
+name = "oxide-vcl"
+path = "src/main.rs"
+
+[dependencies]
+vcl.workspace = true
+
+[lints]
+workspace = true

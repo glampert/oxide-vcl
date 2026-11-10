@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear        __v_FIX_4  1/1
+INFO: Opt::Linear            first  4/4
+INFO: Opt::Linear           second  16/16
+INFO: OS_End(Linux)

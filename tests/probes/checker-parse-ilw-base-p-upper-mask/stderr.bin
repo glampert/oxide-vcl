@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER: failed to decode operand
+USER: couldn't decode instruction .. problem is at:
+  ---> {ilw.x} {t},[***{0(p)X}***] 
+USER: expected format is: ilw.[x/y/z/w]	vi_reg,OFFSET(vi_reg)[x/y/z/w]
+INFO: OS_End(Linux)

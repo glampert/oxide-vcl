@@ -1,0 +1,39 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[5](limit: number of lower instructions) - 'dumb2' flow loop
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 1 recoverable at -1 minSafe=0..so abort
+WARN: time out..
+INFO: lpgen[5](limit: number of lower instructions) - 'normal2' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'vuta1' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'another' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'normal' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'dUp' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'vuta' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'hDown' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'normal1' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'ldumb' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: lpgen[5](limit: number of lower instructions) - 'dumb' flow loop
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: Opt::Loop             loop  5/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

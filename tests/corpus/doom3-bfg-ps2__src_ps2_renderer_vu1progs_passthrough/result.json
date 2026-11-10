@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough.vcl"
+  ],
+  "input_sha256": "7abb08d0ea877ee90e082bbc995403a0ae6f613650602fe029d4d15cc73a06ae",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 3000.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.18537591700442135,
+  "cpu_seconds": 0.24606100000000003,
+  "stdout_sha256": "c7fc3b01df58a3b4e22a670259fcdd478ed75e825fbc6c66035d40fb318c3ce8",
+  "stderr_sha256": "9591471eb4ad2ad77aa19fd3a4b4b5346b8ffdbe76ef0c7ef479c131e67fd469",
+  "stdout_bytes": 1365,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

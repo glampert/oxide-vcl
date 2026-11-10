@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFIX",
+    "/work/checker-imm-memory-source.vcl"
+  ],
+  "input_sha256": "b89bc05c6de594d43d6430890fc964b62dbc786cf516dbd10a6239ace6cf6709",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.2093312909710221,
+  "cpu_seconds": 0.242149,
+  "stdout_sha256": "5ecd52659e4e8799366957753446bdc34f7df798866a7b3a870ebdb4f076fb7d",
+  "stderr_sha256": "216c0d89361f547718ac675854e6218da4032416fc1be165504122a026486e5e",
+  "stdout_bytes": 1159,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 6,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

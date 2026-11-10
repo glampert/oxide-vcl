@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: vcl: instruction 'waitp' is unsupported, except in RAW mode.
+  ---> [***{waitp}***] 
+INFO: OS_End(Linux)

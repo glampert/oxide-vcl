@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear             live  1/4
+INFO: Opt::Linear      __v_AUDIT_5  4/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

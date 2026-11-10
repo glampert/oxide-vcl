@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/memory-load-decrement.vcl"
+  ],
+  "input_sha256": "bee6942b734681fcea9479e4982a502a52e5f183eb1a932262b0dbcf210a802f",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.16926200012676418,
+  "cpu_seconds": 0.18623800000000001,
+  "stdout_sha256": "34149e54fd9498deec466e1a7002151b5b71a814933e172c77247eb63fe1c09a",
+  "stderr_sha256": "b5d3492d6700b36b44f9e83bbbe7089932f1d29a1fb03d122f96c9c2aa01b213",
+  "stdout_bytes": 783,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

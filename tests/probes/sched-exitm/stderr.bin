@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+ERROR: iStream::Validate - left stream - but not in null state
+ERROR: flow: failed to build it from parse
+ERROR: failed to build flow from parser!
+INFO: OS_End(Linux)

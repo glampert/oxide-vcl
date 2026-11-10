@@ -1,0 +1,9 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_PRUNE_4 a.0
+INFO: UBS: __v_PRUNE_4 a.2
+INFO: UBS: __v_PRUNE_4 a.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register a is used before set at instruction(s) :
+INFO:    (field(s) : XZW)   ---> {mr32} {b},[***{a}***] 
+INFO: OS_End(Linux)

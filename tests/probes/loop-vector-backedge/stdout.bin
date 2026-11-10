@@ -1,0 +1,27 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+loop:
+; _LNOPT_w=[ normal2 ] 4 [4 4] 4   [loop]
+         NOP                                                        isubiu        VI01,VI01,0x00000001                
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI01,VI00,loop                      
+         add           VF02,VF02,VF01                               NOP                                               
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=6
+; register stats:
+;   2 VU User integer
+;   2 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

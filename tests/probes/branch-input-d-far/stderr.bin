@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear          __v_P_5  5/5
+INFO: Opt::Linear            L_one  1/1
+INFO: Opt::Linear          __v_P_4  3/4
+INFO: table __v_P_4 appears to have stalls - so skipping reduce pass
+INFO: table L_one appears to have stalls - so skipping reduce pass
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

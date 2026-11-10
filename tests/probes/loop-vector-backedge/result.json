@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/loop-vector-backedge.vcl"
+  ],
+  "input_sha256": "1c91fdd00147fefa584a0500f034431f0bc13f95fb05f357ed5624b65189dc7d",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.17514558415859938,
+  "cpu_seconds": 0.20348999999999998,
+  "stdout_sha256": "204b92d247ff7cd1d86491f22690e8c088a2fa5675b6aa04493d10f51cb41d59",
+  "stderr_sha256": "fce956e7aea1b08a39bd614c71c25c1ed5aafe2968a9b3e718c2356248a25615",
+  "stdout_bytes": 1243,
+  "stderr_bytes": 81,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

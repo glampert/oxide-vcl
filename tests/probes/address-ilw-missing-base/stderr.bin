@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_ADDRESS_4 base.0
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register base is used before set at instruction(s) :
+INFO:      ---> {ilw.w} {vi02},[***{0(base)}***] 
+INFO: OS_End(Linux)

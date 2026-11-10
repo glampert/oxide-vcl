@@ -1,0 +1,47 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_DEMO_loop__MAIN_LOOP:
+; ===             dumb : optimal=6 clid=1 mlid=1 size=(9) 
+; ===            ldumb : optimal=6 clid=0 mlid=0 size=(9) 
+; ===          normal1 : optimal=6 clid=0 mlid=0 size=(9) 
+; ===            hDown : optimal=6 clid=0 mlid=0 size=(9) 
+; ===             vuta : optimal=6 clid=0 mlid=0 size=(9) 
+; ===              dUp : optimal=6 clid=0 mlid=0 size=(9) 
+; ===           normal : optimal=6 clid=0 mlid=0 size=(9) 
+; ===          another : optimal=6 clid=0 mlid=0 size=(9) 
+; ===            vuta1 : optimal=6 clid=0 mlid=0 size=(9) 
+; ===          normal2 : optimal=6 clid=0 mlid=0 size=(9) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+EXPL_DEMO_loop__ENTRY_POINT:
+loop:
+; _LNOPT_w=[ ] 0 [0 0] 0   [EXPL_DEMO_loop__ENTRY_POINT]
+EXPL_DEMO_loop__MAIN_LOOP:
+; _LPOPT_w=[ ldumb ] 9 [9 6] 9   [EXPL_DEMO_loop__MAIN_LOOP]
+         NOP                                                        lq            VF01,0(VI01)                        
+         NOP                                                        iaddiu        VI01,VI01,0x00000001                
+         NOP                                                        iaddiu        VI02,VI02,0x00000001                
+         NOP                                                        NOP                                               
+         mul           VF01,VF01,VF02                               NOP                                               
+         NOP                                                        isubiu        VI03,VI03,0x00000001                
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI03,VI00,EXPL_DEMO_loop__MAIN_LOOP 
+         NOP                                                        sq            VF01,-1(VI02)                       
+; _LNOPT_w=[ ] 2 [0 0] 2   [EXPL_DEMO_loop__EXIT_POINT]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=11
+; register stats:
+;   4 VU User integer
+;   2 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

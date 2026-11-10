@@ -1,0 +1,58 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_MOVE_loop__MAIN_LOOP:
+; ===             dumb : optimal=7 clid=3 mlid=3 size=(7) 
+; ===            ldumb : optimal=7 clid=0 mlid=3 size=(7) 
+; ===          normal1 : optimal=7 clid=0 mlid=3 size=(7) 
+; ===            hDown : optimal=7 clid=0 mlid=3 size=(7) 
+; ===             vuta : optimal=7 clid=0 mlid=3 size=(7) 
+; ===              dUp : optimal=7 clid=0 mlid=3 size=(7) 
+; ===           normal : optimal=7 clid=0 mlid=3 size=(7) 
+; ===          another : optimal=7 clid=0 mlid=3 size=(7) 
+; ===            vuta1 : optimal=7 clid=0 mlid=3 size=(7) 
+; ===          normal2 : optimal=7 clid=0 mlid=3 size=(7) 
+; ===            dumb2 : optimal=7 clid=3 mlid=3 size=(7) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+EXPL_MOVE_loop__ENTRY_POINT:
+loop:
+; _LNOPT_w=[ ] 12 [21 0] 21   [EXPL_MOVE_loop__ENTRY_POINT]
+         add           VF04,VF01,VF02                               NOP                                               
+         mul           VF11,VF04,VF02                               NOP                                                      ;	STALL_LATENCY ?3
+         add           VF04,VF01,VF02                               move          VF08,VF04                           
+         add           VF07,VF11,VF02                               NOP                                                      ;	STALL_LATENCY ?2
+         mul           VF11,VF04,VF02                               NOP                                               
+         mul           VF09,VF07,VF02                               move          VF07,VF08                                  ;	STALL_LATENCY ?2
+         add           VF04,VF01,VF02                               move          VF08,VF04                           
+         add           VF06,VF11,VF02                               NOP                                               
+         add           VF03,VF09,VF02                               NOP                                                      ;	STALL_LATENCY ?1
+         mul           VF11,VF04,VF02                               NOP                                               
+         mul           VF09,VF06,VF02                               move          VF05,VF07                           
+         mul           VF08,VF03,VF02                               move          VF07,VF08                                  ;	STALL_LATENCY ?1
+EXPL_MOVE_loop__MAIN_LOOP:
+; _LPOPT_w=[ dumb ] 7 [7 7] 7   [EXPL_MOVE_loop__MAIN_LOOP]
+         add           VF04,VF01,VF02                               move          VF06,VF04                           
+         add           VF12,VF11,VF02                               NOP                                               
+         add           VF10,VF09,VF02                               NOP                                               
+         add           VF03,VF08,VF05                               isubiu        VI01,VI01,0x00000001                
+         mul           VF11,VF04,VF02                               move          VF05,VF07                           
+         mul           VF09,VF12,VF02                               ibne          VI01,VI00,EXPL_MOVE_loop__MAIN_LOOP 
+         mul           VF08,VF10,VF02                               move          VF07,VF06                           
+; _LNOPT_w=[ ] 2 [0 0] 2   [EXPL_MOVE_loop__EXIT_POINT]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=21
+; register stats:
+;   2 VU User integer
+;  12 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

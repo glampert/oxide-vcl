@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: invalid combination of [E/M/D/T] for this context (CODE_MODE_RAW) at instruction 
+  ---> [***{nop[e]}***] {nop} 
+INFO: OS_End(Linux)

@@ -1,0 +1,11 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_DEMO_4 t.0
+INFO: UBS: __v_DEMO_4 t.1
+INFO: UBS: __v_DEMO_4 t.2
+INFO: UBS: __v_DEMO_4 t.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register t is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {mul} {b},[***{t}***],{t} 
+INFO:    (field(s) : XYZW)   ---> {mul} {b},{t},[***{t}***] 
+INFO: OS_End(Linux)

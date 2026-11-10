@@ -1,0 +1,130 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fClipScale},{0} {+} {6(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fPosOffset},{0(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->YZ]    ---> [***{mr32}***] {fUVOffset},{fPosScale} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fUVOffset},{fUVOffset} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{-7(iVert)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{-3(iVert)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iPrev2)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iPrev1)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->Z]    ---> [***{lq}***] {fPass},{955(vi00)} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{lq}***] {fUV0},{981} {+} {2(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{lq}***] {fUV1},{2(iFan)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{lq}***] {fUV2},{5(iFan)} 
+INFO: Opt::Linear       lTransform  3/4
+INFO: Opt::Linear    __v_CORPUS_92  4/4
+INFO: Opt::Linear        lNearLoop  40/37
+INFO: Opt::Linear          lXlLoop  40/37
+INFO: Opt::Linear          lXrLoop  38/37
+INFO: Opt::Linear          lYbLoop  40/37
+INFO: Opt::Linear          lYtLoop  38/37
+INFO: Opt::Linear     __v_CORPUS_4  20/20
+INFO: Opt::Linear     __v_CORPUS_6  40/39
+INFO: Opt::Linear     __v_CORPUS_7  2/2
+INFO: Opt::Linear     __v_CORPUS_8  7/7
+INFO: Opt::Linear    __v_CORPUS_10  5/5
+INFO: Opt::Linear    __v_CORPUS_11  5/5
+INFO: Opt::Linear    __v_CORPUS_12  6/5
+INFO: Opt::Linear    __v_CORPUS_13  1/1
+INFO: Opt::Linear       lStripFull  23/23
+INFO: Opt::Linear       lStripRoom  11/11
+INFO: Opt::Linear     lStripVertex  2/2
+INFO: Opt::Linear    __v_CORPUS_16  5/5
+INFO: Opt::Linear    __v_CORPUS_17  5/5
+INFO: Opt::Linear    __v_CORPUS_18  6/5
+INFO: Opt::Linear    __v_CORPUS_19  1/1
+INFO: Opt::Linear       lStripLast  2/2
+INFO: Opt::Linear        lListPath  10/10
+INFO: Opt::Linear    __v_CORPUS_23  0/0
+INFO: Opt::Linear       lListEntry  5/5
+INFO: Opt::Linear    __v_CORPUS_25  5/5
+INFO: Opt::Linear    __v_CORPUS_26  5/5
+INFO: Opt::Linear    __v_CORPUS_27  6/5
+INFO: Opt::Linear    __v_CORPUS_28  1/1
+INFO: Opt::Linear        lListFull  7/6
+INFO: Opt::Linear        lListRoom  5/5
+INFO: Opt::Linear    __v_CORPUS_31  8/8
+INFO: Opt::Linear    __v_CORPUS_32  11/10
+INFO: Opt::Linear    __v_CORPUS_33  24/24
+INFO: Opt::Linear        lListClip  36/32
+INFO: Opt::Linear    __v_CORPUS_36  2/2
+INFO: Opt::Linear    __v_CORPUS_38  5/5
+INFO: Opt::Linear        lNearKept  3/2
+INFO: Opt::Linear    __v_CORPUS_40  26/24
+INFO: Opt::Linear       lNearNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_42  4/4
+INFO: Opt::Linear    __v_CORPUS_43  1/1
+INFO: Opt::Linear        lNearWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_45  7/7
+INFO: Opt::Linear         lNearOut  8/8
+INFO: Opt::Linear    __v_CORPUS_47  2/2
+INFO: Opt::Linear    __v_CORPUS_49  5/5
+INFO: Opt::Linear          lXlKept  3/2
+INFO: Opt::Linear    __v_CORPUS_51  26/24
+INFO: Opt::Linear         lXlNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_53  4/4
+INFO: Opt::Linear    __v_CORPUS_54  1/1
+INFO: Opt::Linear          lXlWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_56  7/7
+INFO: Opt::Linear           lXlOut  8/8
+INFO: Opt::Linear    __v_CORPUS_58  2/2
+INFO: Opt::Linear    __v_CORPUS_60  5/5
+INFO: Opt::Linear          lXrKept  3/2
+INFO: Opt::Linear    __v_CORPUS_62  26/24
+INFO: Opt::Linear         lXrNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_64  4/4
+INFO: Opt::Linear    __v_CORPUS_65  1/1
+INFO: Opt::Linear          lXrWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_67  7/7
+INFO: Opt::Linear           lXrOut  8/8
+INFO: Opt::Linear    __v_CORPUS_69  2/2
+INFO: Opt::Linear    __v_CORPUS_71  5/5
+INFO: Opt::Linear          lYbKept  3/2
+INFO: Opt::Linear    __v_CORPUS_73  26/24
+INFO: Opt::Linear         lYbNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_75  4/4
+INFO: Opt::Linear    __v_CORPUS_76  1/1
+INFO: Opt::Linear          lYbWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_78  7/7
+INFO: Opt::Linear           lYbOut  8/8
+INFO: Opt::Linear    __v_CORPUS_80  2/2
+INFO: Opt::Linear    __v_CORPUS_82  5/5
+INFO: Opt::Linear          lYtKept  3/2
+INFO: Opt::Linear    __v_CORPUS_84  26/24
+INFO: Opt::Linear         lYtNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_86  4/4
+INFO: Opt::Linear    __v_CORPUS_87  1/1
+INFO: Opt::Linear          lYtWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_89  7/7
+INFO: Opt::Linear           lYtOut  8/8
+INFO: Opt::Linear    __v_CORPUS_91  2/2
+INFO: Opt::Linear         lFanLoop  36/28
+INFO: Opt::Linear        lListNext  8/8
+INFO: Opt::Linear    __v_CORPUS_96  5/5
+INFO: Opt::Linear    __v_CORPUS_97  5/5
+INFO: Opt::Linear    __v_CORPUS_98  6/5
+INFO: Opt::Linear    __v_CORPUS_99  1/1
+INFO: Opt::Linear        lListLast  2/2
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

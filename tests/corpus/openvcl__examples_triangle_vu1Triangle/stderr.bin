@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear     __v_CORPUS_4  12/12
+INFO: Opt::Linear       vertexLoop  27/27
+INFO: Opt::Linear     __v_CORPUS_6  1/1
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

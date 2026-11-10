@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear       subroutine  2/4
+INFO: Opt::Linear        __v_FIX_4  2/2
+INFO: Opt::Linear             back  3/1
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

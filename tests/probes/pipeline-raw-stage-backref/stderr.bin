@@ -1,0 +1,12 @@
+INFO: OS_Init(Linux)
+WARN: vcl thinks it found problem(s) in the input source:
+INFO: VCL thinks the following instructions caused stalls:
+INFO: STALL_LATENCY(2) maxVal 2 : local
+INFO:     setter is : (field(s) : XYZW)   ---> {2..mul} [***{vf04}***],{vf03},{vf01} {nop} 
+INFO:     user is   : (field(s) : XYZW)   ---> {3..add} {vf02},{vf02},[***{vf04}***] {nop} 
+INFO: STALL_LATENCY(2) maxVal 2 : local
+INFO:     setter is : (field(s) : XYZW)   ---> {2..mul} [***{vf04}***],{vf03},{vf01} {nop} 
+INFO:     user is   : (field(s) : XYZW)   ---> {3..add} {vf02},{vf02},[***{vf04}***] {nop} 
+INFO2: REMOVE INST:   ---> [***{2..mul}***] {vf04},{vf03},{vf01} {nop} 
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

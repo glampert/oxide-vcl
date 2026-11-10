@@ -1,0 +1,37 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_P_4:
+; _LNOPT_w=[ vuta1 ] 7 [6 0] 7   [__v_P_4]
+         NOP                                                        iaddiu        VI01,VI02,0x000000e1                
+         NOP                                                        xgkick        VI01                                
+         NOP                                                        lq            VF03,101(VI00)                      
+         NOP                                                        lq            VF02,100(VI00)                      
+         NOP                                                        lq            VF01,99(VI00)                       
+         NOP[E]                                                     lq            VF04,102(VI00)                      
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 8 [8 0] 11   [__v_P_5]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         mulax         ACC,VF01,VF10x                               NOP                                               
+         madday        ACC,VF02,VF10y                               NOP                                               
+         maddaz        ACC,VF03,VF10z                               NOP                                               
+         maddw         VF04,VF04,VF10w                              NOP                                               
+         NOP[E]                                                     sq            VF04,0(VI00)                               ;	STALL_LATENCY ?3
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=15
+; register stats:
+;   3 VU User integer
+;   5 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

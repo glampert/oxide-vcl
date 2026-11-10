@@ -1,0 +1,37 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_CALL_4:
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [__v_CALL_4]
+         add           VF02,VF01,VF01                               bal           VI01,subroutine                     
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [first_return]
+         mul           VF03,VF04,VF01                               bal           VI01,subroutine                            ;	STALL_LATENCY ?1
+         sub           VF02,VF01,VF04                               NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [second_return]
+         NOP[E]                                                     NOP                                               
+         add           VF02,VF03,VF04                               NOP                                               
+subroutine:
+; _LNOPT_w=[ normal2 ] 6 [4 0] 6   [subroutine]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         mul           VF04,VF02,VF02                               NOP                                               
+         NOP                                                        jr            VI01                                
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=12
+; register stats:
+;   1 VU User integer
+;   4 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

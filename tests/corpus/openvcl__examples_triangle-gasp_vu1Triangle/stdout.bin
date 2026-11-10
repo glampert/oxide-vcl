@@ -1,0 +1,53 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	vu1Triangle_CodeStart
+		.global	vu1Triangle_CodeEnd
+vu1Triangle_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 12 [12 0] 12   [__v_CORPUS_4]
+         NOP                                                        iaddiu        VI02,VI00,0x00000014                
+         NOP                                                        iaddiu        VI01,VI00,0x00000006                
+         NOP                                                        iaddiu        VI03,VI00,0x00000014                
+         NOP                                                        lq            VF03,4(VI00)                        
+         NOP                                                        lq            VF05,5(VI00)                        
+         NOP                                                        lq            VF01,0(VI00)                        
+         NOP                                                        lq            VF02,1(VI00)                        
+         NOP                                                        sqi           VF03,(VI02++)                       
+         NOP                                                        lq            VF03,2(VI00)                        
+         NOP                                                        lq            VF04,3(VI00)                        
+         NOP                                                        sqi           VF05,(VI02++)                       
+         NOP                                                        iaddiu        VI04,VI00,0x00000003                
+vertexLoop:
+; _LNOPT_w=[ normal2 ] 10 [27 7] 27   [vertexLoop]
+         NOP                                                        lqi           VF05,(VI01++)                       
+         mulax         ACC,VF01,VF05x                               isubiu        VI04,VI04,1                                ;	STALL_LATENCY ?3
+         madday        ACC,VF02,VF05y                               NOP                                               
+         maddaz        ACC,VF03,VF05z                               NOP                                               
+         maddw         VF05,VF04,VF05w                              NOP                                               
+         NOP                                                        div           Q,VF00w,VF05w                              ;	STALL_LATENCY ?3
+         mulq.xyz      VF05,VF05,Q                                  waitq                                                    ;	STALL_LATENCY ?6
+         ftoi4         VF05,VF05                                    NOP                                                      ;	STALL_LATENCY ?3
+         NOP                                                        ibne          VI04,VI00,vertexLoop                
+         NOP                                                        sqi           VF05,(VI02++)                              ;	STALL_LATENCY ?2
+; _LNOPT_w=[ normal2 ] 3 [1 0] 3   [__v_CORPUS_6]
+         NOP                                                        xgkick        VI03                                
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+vu1Triangle_CodeEnd:
+;	iCount=25
+; register stats:
+;   5 VU User integer
+;   6 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

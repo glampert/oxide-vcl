@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/alloc-enter-inherit-binding.vcl"
+  ],
+  "input_sha256": "f333049cb1c5d24004836b556c4249263dc8c0f97b1263a23991e78de4896ca1",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 20.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.23694320800132118,
+  "cpu_seconds": 0.26641099999999995,
+  "stdout_sha256": "5fd93dfa806075a8074aa2672024e55ba53f430af1885559832e74d7303ba0fc",
+  "stderr_sha256": "b9c4a2db1a3e8a6db92df46f519593dd6aa8604288d0901a40253f333b9f6516",
+  "stdout_bytes": 1085,
+  "stderr_bytes": 225,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 2,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

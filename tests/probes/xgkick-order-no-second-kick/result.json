@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/no-second-kick.vcl"
+  ],
+  "input_sha256": "e1a16fad34767a6cd06e37882f8371f78ba7c048ea13ba6a618cdf2cb697f66c",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.17875604203436524,
+  "cpu_seconds": 0.244863,
+  "stdout_sha256": "02fa6c6220df60f83dc7d23b33e78584d1cbaa645dfd06fe1737dfe21fbf0068",
+  "stderr_sha256": "9591471eb4ad2ad77aa19fd3a4b4b5346b8ffdbe76ef0c7ef479c131e67fd469",
+  "stdout_bytes": 1134,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

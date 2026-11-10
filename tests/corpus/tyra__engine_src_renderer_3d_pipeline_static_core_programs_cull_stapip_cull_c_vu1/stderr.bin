@@ -1,0 +1,16 @@
+INFO: OS_Init(Linux)
+INFO: prune inaccessible stream __v_CORPUS_19
+INFO: REMOVE INST: operand -1 modbits ffffffff..
+INFO: Opt::Linear     __v_CORPUS_4  10/10
+INFO: Opt::Linear    __v_CORPUS_11  3/4
+INFO: Opt::Linear       multiColor  3/4
+INFO: Opt::Linear            begin  7/7
+INFO: Opt::Linear     __v_CORPUS_6  2/2
+INFO: Opt::Linear setDestAddrMultiColor  1/1
+INFO: Opt::Linear      setDestAddr  8/8
+INFO: Opt::Linear       vertexLoop  2/2
+INFO: Opt::Linear       processing  46/36
+INFO: Opt::Linear    __v_CORPUS_15  1/1
+INFO: Opt::Linear    __v_CORPUS_16  2/0
+INFO: Opt::Linear    __v_CORPUS_17  2/2
+INFO: OS_End(Linux)

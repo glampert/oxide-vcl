@@ -1,0 +1,3 @@
+INFO: OS_Init(Linux)
+ERROR: vcl failed to allocate a register of type VU User floating point, but there's no registers of this type available for it to use.. maybe adding a .init_.. directive would help
+INFO: OS_End(Linux)

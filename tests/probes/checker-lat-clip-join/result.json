@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFIX",
+    "/work/checker-lat-clip-join.vcl"
+  ],
+  "input_sha256": "eaad1cc3e748008abef7a85f714de11dc973b574fb3beec0b851f443f539629d",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.26216995797585696,
+  "cpu_seconds": 0.309172,
+  "stdout_sha256": "ad67fc784703bb43b751f304800179121c4322fa3c233abe445881bf1fe9253b",
+  "stderr_sha256": "f2e133b19c0d71118e2466f6e1ac0882dfb3e5802f4630560148ba4c8ccac090",
+  "stdout_bytes": 1348,
+  "stderr_bytes": 213,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 8,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

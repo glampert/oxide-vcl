@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+ERROR: not find vf10.x
+USER: a directive parser failed at line:
+  ---> {.init_vf} {vf02},{vf10.x} 
+INFO: OS_End(Linux)

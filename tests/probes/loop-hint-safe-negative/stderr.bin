@@ -1,0 +1,41 @@
+INFO: OS_Init(Linux)
+USER: for --LoopCS, the minimum safe count (arg 2) must be must be >=0
+  ---> [***{--LoopCS}***] {1},{-1} 
+USER: failed to process an instruction
+INFO: lpgen[2](limit: number of lower instructions) - 'dumb2' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'normal2' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'vuta1' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'another' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'normal' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'dUp' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'vuta' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'hDown' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'normal1' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'ldumb' flow loop
+WARN: time out..
+INFO: lpgen[2](limit: number of lower instructions) - 'dumb' flow loop
+WARN: time out..
+INFO: lpgen[3](limit: number of lower instructions) - 'dumb2' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'normal2' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'vuta1' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'another' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'normal' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'dUp' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'vuta' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'hDown' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'normal1' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'ldumb' flow loop
+INFO: lpgen[3](limit: number of lower instructions) - 'dumb' flow loop
+INFO: Opt::Loop             loop  3/2
+WARN: setting minimum safe count to 1000 for loop
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_ORACLE_4 CLIP.0
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register CLIP is used before set at instruction(s) :
+INFO:    implicit operand 'CLIP'
+  ---> [***{fcand}***] {vi01},{1} 
+INFO: OS_End(Linux)

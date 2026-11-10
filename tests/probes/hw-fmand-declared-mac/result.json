@@ -1,0 +1,29 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/hw-fmand-declared-mac.vcl"
+  ],
+  "input_sha256": "7cb1ec979347414a35685d8bec4b8d00e22da86ca4649487c9e2e12a4b3416a5",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 1,
+  "exit_status": 1,
+  "wall_seconds": 0.06055391696281731,
+  "cpu_seconds": 0.05799399999999999,
+  "stdout_sha256": "c7650eaaaa621b80c48197851423f5cce526925e64c726069779ea6f55c1b4f3",
+  "stderr_sha256": "0c63cc114e128b5e79a63bb20b1b29339e1cbe8f5d9159d8a56e1ca4d63219b3",
+  "stdout_bytes": 47,
+  "stderr_bytes": 103,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 0,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

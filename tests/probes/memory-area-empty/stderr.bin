@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+ERROR: size is <=0 for a work area
+USER: a directive parser failed at line:
+  ---> {.vu_work_area} {vu0},{0},{0} 
+INFO: OS_End(Linux)

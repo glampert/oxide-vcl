@@ -1,0 +1,11 @@
+INFO: OS_Init(Linux)
+INFO: remove branch..
+INFO: UBS: first_return first_saved.0
+INFO: UBS: first_return first_saved.1
+INFO: UBS: first_return first_saved.2
+INFO: UBS: first_return first_saved.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register first_saved is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {add} {result},[***{first_saved}***],{returned} 
+INFO: OS_End(Linux)

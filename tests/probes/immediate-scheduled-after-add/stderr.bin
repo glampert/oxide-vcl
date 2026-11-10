@@ -1,0 +1,1246 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[5](limit: number of lower instructions) - 'dumb2' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 4 critical at 2 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 4 critical at 2 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 4 critical at 2 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 4 critical at 2 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 4 critical at 2 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 4 critical at 2 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 2 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+INFO: sidefx : loop@ 4 critical at 1 recoverable at -1 minSafe=0..so abort
+WARN: time out..
+INFO: lpgen[5](limit: number of lower instructions) - 'normal2' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'vuta1' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 1 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 1 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 1 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 1 critical at 0 recoverable at -1 minSafe=0..so abort
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: sidefx : loop@ 1 critical at 0 recoverable at -1 minSafe=0..so abort
+INFO: lpgen[5](limit: number of lower instructions) - 'another' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'normal' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'dUp' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: lpgen[5](limit: number of lower instructions) - 'vuta' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: lpgen[5](limit: number of lower instructions) - 'hDown' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'normal1' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'ldumb' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+INFO: lpgen[5](limit: number of lower instructions) - 'dumb' flow loop
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{isubiu}***] {count},{count},{1} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+  ---> [***{iaddiu}***] {p},{p},{3} 
+  ---> [***{add}***] {b},{b},{d} 
+WARN: time out..
+INFO: Opt::Loop             loop  5/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

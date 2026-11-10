@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: vcl: instruction 'nop' is unsupported, except in RAW mode.
+  ---> [***{nop}***] 
+INFO: OS_End(Linux)

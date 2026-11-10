@@ -1,0 +1,3 @@
+.vsm
+nop
+.endvsm

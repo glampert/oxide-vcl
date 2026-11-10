@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER:  can't figure out which base register to map avf01 to
+USER: couldn't decode instruction .. problem is at:
+  ---> {in_vf} [***{a}***] {vf01} 
+USER: expected format is: in_vf.[xyzw]	vf_reg[.xyzw][(base_reg)]
+INFO: OS_End(Linux)

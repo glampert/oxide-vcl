@@ -1,0 +1,45 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+outer:
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [outer]
+         NOP                                                        iaddiu        VI03,VI00,0x00000003                
+inner:
+; _LNOPT_w=[ normal2 ] 14 [14 14] 14   [inner]
+         NOP                                                        ilw.x         VI05,0(VI02)                        
+         NOP                                                        ilw.x         VI07,1(VI02)                        
+         NOP                                                        ilw.x         VI04,2(VI02)                        
+         NOP                                                        isubiu        VI03,VI03,0x00000001                
+         NOP                                                        ilw.x         VI08,3(VI02)                        
+         NOP                                                        ilw.x         VI06,4(VI02)                        
+         NOP                                                        iadd          VI05,VI05,VI07                      
+         NOP                                                        iaddiu        VI02,VI02,0x00000006                
+         NOP                                                        iadd          VI04,VI04,VI08                      
+         NOP                                                        iadd          VI05,VI05,VI04                      
+         NOP                                                        iadd          VI05,VI05,VI06                      
+         NOP                                                        iadd          VI05,VI05,VI01                      
+         NOP                                                        ibne          VI03,VI00,inner                     
+         NOP                                                        isw.x         VI05,-1(VI02)                       
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_FIX_7]
+         NOP                                                        isubiu        VI01,VI01,0x00000001                
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI01,VI00,outer                     
+         NOP                                                        NOP                                               
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=21
+; register stats:
+;   9 VU User integer
+;   0 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

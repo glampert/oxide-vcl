@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fA},{1(vi00)} 
+INFO: Opt::Linear     __v_CORPUS_4  6/6
+INFO: Opt::Linear     __v_CORPUS_5  2/4
+INFO: Opt::Linear            lFmtB  1/4
+INFO: Opt::Linear            lJoin  6/3
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

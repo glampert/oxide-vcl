@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+ERROR: Parser:: was passed a null string!
+ERROR: failed to init parser
+INFO: OS_End(Linux)

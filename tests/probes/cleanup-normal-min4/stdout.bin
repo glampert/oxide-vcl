@@ -1,0 +1,47 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_CLEAN_loop__MAIN_LOOP:
+; ===            ldumb : optimal=4 clid=0 mlid=1 size=(5) 
+; ===          normal1 : optimal=4 clid=0 mlid=1 size=(5) 
+; ===            hDown : optimal=4 clid=0 mlid=1 size=(5) 
+; ===             vuta : optimal=4 clid=0 mlid=1 size=(5) 
+; ===              dUp : optimal=4 clid=0 mlid=1 size=(5) 
+; ===           normal : optimal=4 clid=0 mlid=1 size=(5) 
+; ===          another : optimal=4 clid=0 mlid=1 size=(5) 
+; ===            vuta1 : optimal=4 clid=0 mlid=1 size=(5) 
+; ===          normal2 : optimal=4 clid=0 mlid=1 size=(5) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+EXPL_CLEAN_loop__ENTRY_POINT:
+loop:
+; _LNOPT_w=[ ] 3 [5 0] 5   [EXPL_CLEAN_loop__ENTRY_POINT]
+         NOP                                                        lq            VF03,8(VI02)                        
+         NOP                                                        isubiu        VI01,VI01,0x00000001                
+         mul           VF03,VF03,VF01                               iaddiu        VI02,VI02,0x00000003                       ;	STALL_LATENCY ?2
+EXPL_CLEAN_loop__MAIN_LOOP:
+; _LPOPT_w=[ ldumb ] 5 [5 4] 5   [EXPL_CLEAN_loop__MAIN_LOOP]
+         NOP                                                        lq            VF04,8(VI02)                        
+         NOP                                                        isubiu        VI01,VI01,0x00000001                
+         NOP                                                        iaddiu        VI02,VI02,0x00000003                
+         add           VF02,VF02,VF03                               ibne          VI01,VI00,EXPL_CLEAN_loop__MAIN_LOOP
+         mul           VF03,VF04,VF01                               NOP                                               
+; _LNOPT_w=[ ] 4 [4 0] 4   [EXPL_CLEAN_loop__EPI0]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     NOP                                               
+         add           VF02,VF02,VF03                               NOP                                               
+		.align 4
+;	iCount=12
+; register stats:
+;   3 VU User integer
+;   4 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

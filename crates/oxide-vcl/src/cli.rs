@@ -1,0 +1,422 @@
+//! Command-line parsing for the `oxide-vcl` driver, following the rules
+//! observed from vcl 1.4beta7.
+//!
+//! The original does not use getopt: it switches on the second byte of each
+//! leading argument, and values are the remainder of that same argument.
+//! Runtime evidence lives under `local/evidence/oracle/cli-*`.
+
+use std::fmt;
+
+/// The project's version, shared by every crate in the workspace.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The UTC date this driver was built (see `build.rs`).
+pub const BUILD_DATE: &str = env!("VCL_BUILD_DATE");
+
+/// The help screen printed by `-h`.
+pub fn help() -> String {
+    include_str!("help.txt")
+        .replace("{version}", VERSION)
+        .replace("{date}", BUILD_DATE)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NoticeLevel {
+    Info,
+    Warning,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Notice {
+    pub level: NoticeLevel,
+    pub message: &'static str,
+}
+
+/// A parsed command line: the compiler's settings plus what the driver does
+/// around compilation (files, preprocessing, diagnostics).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Arguments {
+    /// Settings passed to [`vcl::compile`].
+    pub compile: vcl::Options,
+    /// Source file; standard input when `None`.
+    pub input: Option<String>,
+    /// Assembly output file (`-o`); standard output when `None`.
+    pub output: Option<String>,
+    /// Label header file (`-j`).
+    pub header: Option<String>,
+    pub help: bool,
+    pub quiet: bool,
+    /// `file(line): error: message` diagnostics (`-p`).
+    pub ms_diagnostics: bool,
+    /// Run the C preprocessor first (`-G`).
+    pub preprocess_cpp: bool,
+    /// Run gasp (`-g`).
+    pub preprocess_gasp: bool,
+    /// Run gasp with its alternate syntax (`-g+`).
+    pub preprocess_gasp_alternate: bool,
+    /// Skip every preprocessing stage (`-W`).
+    pub skip_preprocessing: bool,
+    /// Keep the preprocessing stages' temporary files (`-K`).
+    pub keep_temps: bool,
+    /// `-I...` arguments, forwarded to the preprocessors in order.
+    pub preprocessor_arguments: Vec<String>,
+    /// Messages in the original's parse order, already honoring `-q` at that point.
+    pub notices: Vec<Notice>,
+}
+
+impl Arguments {
+    fn info(&mut self, message: &'static str) {
+        if !self.quiet {
+            self.notices.push(Notice {
+                level: NoticeLevel::Info,
+                message,
+            });
+        }
+    }
+
+    fn warn(&mut self, message: &'static str) {
+        self.notices.push(Notice {
+            level: NoticeLevel::Warning,
+            message,
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiagnosticKind {
+    Error,
+    User,
+    Plain,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CliError {
+    pub message: String,
+    pub kind: DiagnosticKind,
+    /// Some failures occur only after OS_Init has already logged its message.
+    pub os_initialized: bool,
+    pub output: Option<String>,
+    pub quiet: bool,
+    pub notices: Vec<Notice>,
+}
+
+impl CliError {
+    fn new(message: String, kind: DiagnosticKind, initialized: bool, options: Arguments) -> Self {
+        Self {
+            message,
+            kind,
+            os_initialized: initialized,
+            output: options.output,
+            quiet: options.quiet,
+            notices: options.notices,
+        }
+    }
+
+    /// Original `exit(-1)` argument, as observed at the i386 syscall boundary.
+    pub const fn raw_exit_code(&self) -> u32 {
+        u32::MAX
+    }
+
+    pub const fn exit_status(&self) -> u8 {
+        unix_exit_status(self.raw_exit_code())
+    }
+}
+
+impl fmt::Display for CliError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CliError {}
+
+/// Linux exposes the low byte of a normal process's exit argument to its parent.
+pub const fn unix_exit_status(raw_code: u32) -> u8 {
+    raw_code as u8
+}
+
+/// Parse arguments excluding the executable's name.
+pub fn parse<I, S>(arguments: I) -> Result<Arguments, CliError>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let arguments: Vec<String> = arguments.into_iter().map(Into::into).collect();
+    let mut options = Arguments::default();
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index).filter(|value| value.starts_with('-')) {
+        let selector = argument.as_bytes().get(1).copied().unwrap_or(0);
+        // VCL arguments are byte-oriented. A non-ASCII selector cannot match
+        // any switch, so only take this UTF-8 slice when the selector is ASCII.
+        let value = if selector.is_ascii() && argument.len() >= 2 {
+            &argument[2..]
+        } else {
+            ""
+        };
+        match selector {
+            b'I' => options.preprocessor_arguments.push(argument.clone()),
+            b'A' | b'a' => options.info("-a option is now on always\n"),
+            b'C' => {
+                options.compile.disable_size_reduction = true;
+                options.info("disabling code size reduction pass..\n");
+            }
+            // Register dumps during external allocation: not produced.
+            b'D' => {}
+            b'F' | b'f' => {
+                options.compile.disable_alignment = true;
+                options.info("will skip align emit\n");
+            }
+            b'G' => options.preprocess_cpp = true,
+            b'H' | b'h' => {
+                options.help = true;
+                return Ok(options);
+            }
+            b'o' => options.output = Some(value.to_owned()),
+            b'K' => {
+                options.keep_temps = true;
+                options.info("keep temporary files in /tmp enabled (/tmp/vclin. etc\n");
+            }
+            b'M' => {
+                options.compile.timid_memory = true;
+                options.warn("timid memory access mode enabled\n");
+            }
+            b'P' => options
+                .warn(" prune disabled (not) this options was deprecated, and now is disabled\n"),
+            // Undocumented in the original, with no observed effect.
+            b'Q' => {}
+            // Staggered loop memory access is not implemented: notice only.
+            b'S' => options.info("stagger ram access...\n"),
+            b'U' => options.compile.unique_labels = true,
+            b'W' | b'w' => options.skip_preprocessing = true,
+            b'Z' => options
+                .warn(" disabled immediate fixups - this option is now deprecated and removed\n"),
+            b'c' => options.compile.comments = true,
+            b'd' => {
+                options.compile.dumb = true;
+                options.compile.disable_loops = true;
+            }
+            b'L' => options.compile.disable_loops = true,
+            b'e' => {
+                options.compile.disable_end_bit = true;
+                options.info("disabling [e] bit setting\n");
+            }
+            b'g' => match value.as_bytes().first() {
+                None => options.preprocess_gasp = true,
+                Some(b'+') => options.preprocess_gasp_alternate = true,
+                _ => {
+                    return Err(CliError::new(
+                        format!("bad command line option '{argument}' .. only -g+ or -g allowed\n"),
+                        DiagnosticKind::User,
+                        false,
+                        options,
+                    ));
+                }
+            },
+            b'j' => options.header = Some(value.to_owned()),
+            b'm' => options.compile.mpg = Some(strtol_decimal_i32(value)),
+            b'n' => options.compile.new_syntax = true,
+            b'p' => options.ms_diagnostics = true,
+            b'q' => options.quiet = true,
+            b's' => options.compile.symbolic = true,
+            // The optimizer here has no time limit, so the value is unused.
+            b't' => {}
+            b'u' => options.compile.unique = Some(value.to_owned()),
+            _ => {
+                return Err(CliError::new(
+                    format!("bad args '{argument}', try -h for help\n"),
+                    DiagnosticKind::Error,
+                    false,
+                    options,
+                ));
+            }
+        }
+        index += 1;
+    }
+    if arguments.len() - index > 1 {
+        return Err(CliError::new(
+            "bad args (-o now specifies output file..)\n".to_owned(),
+            DiagnosticKind::Plain,
+            true,
+            options,
+        ));
+    }
+    options.input = arguments.get(index).cloned();
+    if options.input.is_some() && options.input == options.output {
+        return Err(CliError::new(
+            "can't have infile==outfile\n".to_owned(),
+            DiagnosticKind::Plain,
+            true,
+            options,
+        ));
+    }
+    Ok(options)
+}
+
+/// i386 glibc `strtol(value, NULL, 10)`: whitespace/sign, a decimal prefix,
+/// zero for no digits, and saturation at the signed 32-bit limits.
+fn strtol_decimal_i32(value: &str) -> i32 {
+    let mut bytes = value.bytes().skip_while(u8::is_ascii_whitespace).peekable();
+    let negative = match bytes.peek() {
+        Some(b'-') => {
+            bytes.next();
+            true
+        }
+        Some(b'+') => {
+            bytes.next();
+            false
+        }
+        _ => false,
+    };
+    let limit = if negative {
+        2_147_483_648_u64
+    } else {
+        i32::MAX as u64
+    };
+    let magnitude = bytes
+        .take_while(u8::is_ascii_digit)
+        .fold(0_u64, |number, byte| {
+            number
+                .saturating_mul(10)
+                .saturating_add(u64::from(byte - b'0'))
+                .min(limit)
+        });
+    if negative {
+        -(magnitude as i64) as i32
+    } else {
+        magnitude as i32
+    }
+}
+
+// ----------------------------------------------
+// Unit tests
+// ----------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_and_stdin() {
+        let options = parse(Vec::<String>::new()).unwrap();
+        assert_eq!(options, Arguments::default());
+    }
+
+    #[test]
+    fn help_is_immediate_and_case_aliases_are_explicit() {
+        for flag in ["-h", "-H", "-help", "-Hanything"] {
+            assert!(parse([flag, "--invalid", "one", "two"]).unwrap().help);
+        }
+        for flag in ["--help", "--version", "-v", "--", "-", "-N"] {
+            assert_eq!(parse([flag]).unwrap_err().kind, DiagnosticKind::Error);
+        }
+    }
+
+    #[test]
+    fn values_are_attached_and_last_value_wins() {
+        let options = parse(["-oold", "-onew.vsm", "-jlabels.inc", "-uID", "file.vcl"]).unwrap();
+        assert_eq!(options.output.as_deref(), Some("new.vsm"));
+        assert_eq!(options.header.as_deref(), Some("labels.inc"));
+        assert_eq!(options.compile.unique.as_deref(), Some("ID"));
+        assert_eq!(options.input.as_deref(), Some("file.vcl"));
+        assert_eq!(
+            parse(["-o", "file.vcl"]).unwrap().output.as_deref(),
+            Some("")
+        );
+        assert!(parse(["-o", "output.vsm", "input.vcl"]).is_err());
+    }
+
+    #[test]
+    fn parsing_stops_at_first_filename_without_restricting_extension() {
+        assert_eq!(
+            parse(["file.asm"]).unwrap().input.as_deref(),
+            Some("file.asm")
+        );
+        let error = parse(["file.vcl", "-q"]).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::Plain);
+        assert!(error.os_initialized);
+        assert_eq!(error.message, "bad args (-o now specifies output file..)\n");
+    }
+
+    #[test]
+    fn timeout_is_accepted_and_numbers_use_decimal_strtol() {
+        assert_eq!(parse(["-t1", "-tjunk"]).unwrap(), Arguments::default());
+        for (value, expected) in [
+            ("", 0),
+            ("0", 0),
+            ("-5", -5),
+            ("junk", 0),
+            ("0x20", 0),
+            ("3junk", 3),
+            (" +12", 12),
+            ("999999999999999999999", i32::MAX),
+        ] {
+            assert_eq!(strtol_decimal_i32(value), expected);
+        }
+    }
+
+    #[test]
+    fn mpg_keeps_signed_decimal_value() {
+        assert_eq!(parse(["-m"]).unwrap().compile.mpg, Some(0));
+        assert_eq!(parse(["-m16tail"]).unwrap().compile.mpg, Some(16));
+        assert_eq!(parse(["-m-10"]).unwrap().compile.mpg, Some(-10));
+        assert_eq!(
+            parse(["-m9999999999999"]).unwrap().compile.mpg,
+            Some(i32::MAX)
+        );
+        assert_eq!(
+            parse(["-m-9999999999999"]).unwrap().compile.mpg,
+            Some(i32::MIN)
+        );
+    }
+
+    #[test]
+    fn most_switches_ignore_suffix_but_g_is_special() {
+        let options = parse([
+            "-quiet",
+            "-funrelated",
+            "-dxxx",
+            "-W",
+            "-g+extra",
+            "-Iinclude",
+        ])
+        .unwrap();
+        assert!(
+            options.quiet
+                && options.compile.disable_alignment
+                && options.compile.dumb
+                && options.compile.disable_loops
+        );
+        assert!(options.preprocess_gasp_alternate && options.skip_preprocessing);
+        assert_eq!(options.preprocessor_arguments, ["-Iinclude"]);
+        assert_eq!(parse(["-gbad"]).unwrap_err().kind, DiagnosticKind::User);
+    }
+
+    #[test]
+    fn quiet_applies_in_argument_order_and_keeps_warnings() {
+        let early = parse(["-a", "-q", "-f", "-P", "-Z"]).unwrap();
+        assert_eq!(early.notices.len(), 3);
+        assert_eq!(early.notices[0].level, NoticeLevel::Info);
+        assert!(
+            early.notices[1..]
+                .iter()
+                .all(|notice| notice.level == NoticeLevel::Warning)
+        );
+        assert!(parse(["-q", "-h"]).unwrap().quiet);
+    }
+
+    #[test]
+    fn same_input_output_is_checked_after_options() {
+        let error = parse(["-ofile.vcl", "file.vcl"]).unwrap_err();
+        assert_eq!(error.message, "can't have infile==outfile\n");
+        assert_eq!(error.output.as_deref(), Some("file.vcl"));
+        assert!(error.os_initialized);
+    }
+
+    #[test]
+    fn failures_retain_raw_syscall_code_and_parent_visible_status() {
+        let error = parse(["--unknown"]).unwrap_err();
+        assert_eq!(error.raw_exit_code(), 0xffff_ffff);
+        assert_eq!(error.exit_status(), 255);
+        assert_eq!(unix_exit_status(0x1234), 0x34);
+    }
+}

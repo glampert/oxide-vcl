@@ -1,0 +1,35 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST:   ---> [***{loi}***] {12583167.0}  [ {; clamp colors to 255 (255 + 12582912)} ] 
+INFO2: REMOVE INST:   ---> [***{maxi.w}***] {gs_offsets},{vf00},{i} 
+INFO2: REMOVE INST:   ---> [***{fcset}***] {0x000} 
+INFO: lpgen[12](limit: number of lower instructions) - 'dumb2' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[12](limit: number of lower instructions) - 'normal2' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[12](limit: number of lower instructions) - 'vuta1' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[12](limit: number of lower instructions) - 'another' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[12](limit: number of lower instructions) - 'normal' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[12](limit: number of lower instructions) - 'dUp' flow adcLoop_done_lid
+INFO: lpgen[12](limit: number of lower instructions) - 'vuta' flow adcLoop_done_lid
+INFO: lpgen[12](limit: number of lower instructions) - 'hDown' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[12](limit: number of lower instructions) - 'normal1' flow adcLoop_done_lid
+INFO: lpgen[12](limit: number of lower instructions) - 'ldumb' flow adcLoop_done_lid
+INFO: lpgen[12](limit: number of lower instructions) - 'dumb' flow adcLoop_done_lid
+WARN: time out..
+INFO: Opt::Loop adcLoop_done_lid  12/12
+INFO: Opt::Linear     __v_CORPUS_4  30/26
+INFO: Opt::Linear    main_loop_lid  19/19
+INFO: Opt::Linear      adcLoop_lid  13/13
+INFO: Opt::Linear     __v_CORPUS_8  8/8
+INFO: Opt::Linear     __v_CORPUS_9  8/8
+INFO: Opt::Linear    __v_CORPUS_10  8/8
+INFO: Opt::Linear    __v_CORPUS_11  7/7
+INFO: Opt::Linear         done_lid  4/2
+INFO: Opt::Linear    __v_CORPUS_15  2/2
+INFO: UBS: EXPL_CORPUS_adcLoop_done_lid__EPI1 Q.0
+INFO: on the final pass, was detected, but , it should be ok
+INFO: OS_End(Linux)

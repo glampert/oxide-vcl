@@ -1,0 +1,43 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_ORACLE_loop__MAIN_LOOP:
+; ===             dumb : optimal=4 clid=0 mlid=0 size=(4) 
+; ===            ldumb : optimal=4 clid=0 mlid=0 size=(4) 
+; ===          normal1 : optimal=4 clid=0 mlid=0 size=(4) 
+; ===            hDown : optimal=4 clid=0 mlid=0 size=(4) 
+; ===             vuta : optimal=4 clid=0 mlid=0 size=(4) 
+; ===              dUp : optimal=4 clid=0 mlid=0 size=(4) 
+; ===           normal : optimal=4 clid=0 mlid=0 size=(4) 
+; ===          another : optimal=4 clid=0 mlid=0 size=(4) 
+; ===            vuta1 : optimal=4 clid=0 mlid=0 size=(4) 
+; ===          normal2 : optimal=4 clid=0 mlid=0 size=(4) 
+; ===            dumb2 : optimal=4 clid=0 mlid=0 size=(4) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+EXPL_ORACLE_loop__ENTRY_POINT:
+loop:
+; _LNOPT_w=[ ] 0 [0 0] 0   [EXPL_ORACLE_loop__ENTRY_POINT]
+EXPL_ORACLE_loop__MAIN_LOOP:
+; _LPOPT_w=[ dumb ] 4 [4 4] 4   [EXPL_ORACLE_loop__MAIN_LOOP]
+         add           VF02,VF02,VF01                               isubiu        VI01,VI01,0x00000001                
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI01,VI00,EXPL_ORACLE_loop__MAIN_LOOP
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ ] 2 [0 0] 2   [EXPL_ORACLE_loop__EXIT_POINT]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=6
+; register stats:
+;   2 VU User integer
+;   2 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

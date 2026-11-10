@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO: UBS: main_loop_lid CLIPa.0
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register CLIPa is used before set at instruction(s) :
+INFO:    implicit operand 'CLIPa'
+  ---> [***{clipw.xyz}***] {vf08},{vf08w} 
+INFO: OS_End(Linux)

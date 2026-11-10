@@ -1,0 +1,4 @@
+.vsm
+nop
+--exitm
+.endvsm

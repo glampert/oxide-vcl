@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+USER: vcl couldn't find the label 'missing' refered to in instruction :
+  ---> [***{b}***] {missing} 
+INFO: OS_End(Linux)

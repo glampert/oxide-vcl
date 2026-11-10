@@ -1,0 +1,3 @@
+INFO: OS_Init(Linux)
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

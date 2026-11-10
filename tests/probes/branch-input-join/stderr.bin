@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST: operand -1 modbits ffffffff..
+INFO: Opt::Linear            L_one  0/0
+INFO: Opt::Linear          __v_P_5  2/4
+INFO: Opt::Linear            L_two  3/1
+INFO: Opt::Linear          __v_P_4  3/4
+INFO: table __v_P_4 appears to have stalls - so skipping reduce pass
+INFO: table __v_P_5 appears to have stalls - so skipping reduce pass
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

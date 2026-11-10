@@ -1,0 +1,28 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "/work/sched-add.vcl"
+  ],
+  "input_sha256": "a6a4759f06ec52a20f399657ecf3900a181210d6afad33a42c424090990870fd",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "wall_seconds": 0.14977587503381073,
+  "cpu_seconds": 0.16513299999999997,
+  "stdout_sha256": "7651d1939e9bc8efbfc30ef1fbe635e72e549153fc04a8d086675d40b6d6ddb3",
+  "stderr_sha256": "32d421945fc45ad49bb74dda0c7d34a5408de98b51659bd54543fe14e25d9fb1",
+  "stdout_bytes": 809,
+  "stderr_bytes": 142,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  },
+  "exit_status": 0
+}

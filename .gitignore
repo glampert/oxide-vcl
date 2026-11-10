@@ -1,0 +1,6 @@
+*.pyc
+.DS_Store
+/local/
+/target/
+__pycache__/
+CLAUDE.local.md

@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uPRUNE",
+    "/work/prune-opmula-acc-x.vcl"
+  ],
+  "input_sha256": "a4cbcca8bec5a3a16f03041c9b98e62d927de32adf7b75e242458cf838635f0e",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.1643392089754343,
+  "cpu_seconds": 0.19176600000000002,
+  "stdout_sha256": "b42876ddf6351e7704ba351873fd6dbac85dbda70bd83b6fb011eb898e3c447b",
+  "stderr_sha256": "e1dec403ef413eabd6f53fbd8b24856011996d20674faa0e8eb80d8544a94626",
+  "stdout_bytes": 781,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uPARSER",
+    "/work/parser-efu-eatanxz-fields.vcl"
+  ],
+  "input_sha256": "efc2d2fa3a0bb85cd5de1f040650b83476e3b688a29e8045b6ea3b102bcf6bb5",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.4076891249860637,
+  "cpu_seconds": 0.300424,
+  "stdout_sha256": "2ba237b5818f69c8e505ba8f85a1eb6de1971ecfd102a211652f8251681edb66",
+  "stderr_sha256": "3add3bb321c6d538cf62590ed5aef3d8ef62a0845635b9dfaf6872aa5d9ebc14",
+  "stdout_bytes": 784,
+  "stderr_bytes": 134,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

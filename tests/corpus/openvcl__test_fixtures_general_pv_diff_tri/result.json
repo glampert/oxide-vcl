@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/openvcl__test_fixtures_general_pv_diff_tri.vcl"
+  ],
+  "input_sha256": "61f1cddf511923e2c27f79534baedf6bab531e39d6e799d5350b6ac623be0f65",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 145.85987316598766,
+  "cpu_seconds": 177.989893,
+  "stdout_sha256": "49cb5f3a0c18cb44892b91fced78a248f325091f726030d910846a6fe83a5547",
+  "stderr_sha256": "759fcdf175296ac89625a5ee40ca922647a6dc55b65620383a34de170b71095d",
+  "stdout_bytes": 78277,
+  "stderr_bytes": 6475,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 86,
+    "fired": 23,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+INFO: remove branch..
+INFO: currently at stream: __v_EXT_4 trying to allocate external register second__0
+INFO: VU User integer
+INFO:  EXTERNAL:             first__0 - VI02 
+INFO:  EXTERNAL:                 VI01 - VI01 
+INFO:  EXTERNAL:            second__0 - UNALLOCATED 
+INFO: VU User floating point
+ERROR: failed to assign an external second__0
+INFO: OS_End(Linux)

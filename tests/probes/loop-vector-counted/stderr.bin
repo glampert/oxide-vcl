@@ -1,0 +1,15 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[4](limit: instruction latency) - 'dumb2' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'normal2' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'vuta1' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'another' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'normal' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'dUp' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'vuta' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'hDown' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'normal1' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'ldumb' flow loop
+INFO: lpgen[4](limit: instruction latency) - 'dumb' flow loop
+INFO: Opt::Loop             loop  4/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

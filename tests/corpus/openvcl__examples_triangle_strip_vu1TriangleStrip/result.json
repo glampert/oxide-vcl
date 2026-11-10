@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/openvcl__examples_triangle_strip_vu1TriangleStrip.vcl"
+  ],
+  "input_sha256": "5f0dff7cea2daf95c937790f9b077487456c3c389ebb222d47d999cd189c1420",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 120.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.8888257090002298,
+  "cpu_seconds": 1.1297290000000002,
+  "stdout_sha256": "875bc79f1622530a7db3aa8593e20a3b3a35eb46a0f8995e817e92c0428bb821",
+  "stderr_sha256": "f88d6e821d7f8d838ea97d8da86d7540d24ef578397a6a903d2aad777d7fe1c6",
+  "stdout_bytes": 3888,
+  "stderr_bytes": 217,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 3,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFIX",
+    "/work/checker-lat-mac-join.vcl"
+  ],
+  "input_sha256": "1d96786dfc11c0e44acbc7b4eb0ddced03af4ae53d7b63896261d0033918d8b6",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.25190420798026025,
+  "cpu_seconds": 0.296332,
+  "stdout_sha256": "d7a176d033ce637e8f4ce3827a4d05456e04f43f9b6ec054cbeb13db86e2da92",
+  "stderr_sha256": "f2e133b19c0d71118e2466f6e1ac0882dfb3e5802f4630560148ba4c8ccac090",
+  "stdout_bytes": 1348,
+  "stderr_bytes": 213,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 8,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

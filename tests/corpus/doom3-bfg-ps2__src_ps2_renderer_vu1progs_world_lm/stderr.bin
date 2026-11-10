@@ -1,0 +1,552 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fClipScale},{0} {+} {6(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fPosOffset},{0(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->YZ]    ---> [***{mr32}***] {fUVOffset},{fPosScale} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fUVOffset},{fUVOffset} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fXyz},{1(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iPrev2)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iPrev1)} 
+INFO2: PRUNE FIELD: [XYZW->ZW]    ---> [***{lq}***] {fStq},{3(iVertex)} 
+INFO2: PRUNE FIELD: [XYZW->Z]    ---> [***{lq}***] {fPass},{955(vi00)} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{lq}***] {fUV0},{981} {+} {2(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{lq}***] {fUV1},{2(iFan)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{lq}***] {fUV2},{5(iFan)} 
+INFO: Opt::Linear   __v_CORPUS_112  4/4
+INFO: Opt::Linear    __v_CORPUS_45  7/6
+INFO: Opt::Linear        lNearLoop  40/37
+INFO: Opt::Linear          lXlLoop  40/37
+INFO: Opt::Linear          lXrLoop  38/37
+INFO: Opt::Linear          lYbLoop  40/37
+INFO: Opt::Linear          lYtLoop  38/37
+INFO: Opt::Linear     __v_CORPUS_4  22/22
+INFO: Opt::Linear       lTransform  43/43
+INFO: Opt::Linear     __v_CORPUS_6  2/2
+INFO: Opt::Linear     __v_CORPUS_7  7/7
+INFO: Opt::Linear      lStripQword  4/4
+INFO: Opt::Linear     __v_CORPUS_9  5/5
+INFO: Opt::Linear    __v_CORPUS_10  5/5
+INFO: Opt::Linear    __v_CORPUS_11  6/5
+INFO: Opt::Linear    __v_CORPUS_12  1/1
+INFO: Opt::Linear       lStripFull  35/35
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__2__0 - VI12
+INFO:  LOCAL :          iMask__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__2__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__4__0 - UNALLOCATED
+INFO:  LOCAL :        iVertex__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__5__0 - VI09
+INFO:  LOCAL :     iVertsLeft__2__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__3__0 - VI14
+INFO:  LOCAL :          iMask__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__3__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__5__0 - VI12
+INFO:  LOCAL :        iVertex__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__6__0 - VI07
+INFO:  LOCAL :     iVertsLeft__3__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__4__0 - VI11
+INFO:  LOCAL :          iMask__4__0 - VI13
+INFO:  LOCAL :        iOffset__4__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__6__0 - VI03
+INFO:  LOCAL :        iVertex__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__7__0 - VI04
+INFO:  LOCAL :     iVertsLeft__4__0 - VI08
+INFO:  LOCAL :         iEntry__5__0 - VI10
+INFO:  LOCAL :          iMask__5__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__5__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__7__0 - VI09
+INFO:  LOCAL :        iVertex__5__0 - UNALLOCATED
+INFO: VU User floating point
+INFO:  LOCAL :      fSTQ__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__2__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__6__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__5__0.XYZ - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__2__0 - VI13
+INFO:  LOCAL :          iMask__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__2__0 - VI14
+INFO:  LOCAL :           iAdc__4__0 - VI13
+INFO:  LOCAL :        iVertex__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__5__0 - VI11
+INFO:  LOCAL :     iVertsLeft__2__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__3__0 - VI12
+INFO:  LOCAL :          iMask__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__3__0 - VI13
+INFO:  LOCAL :           iAdc__5__0 - VI12
+INFO:  LOCAL :        iVertex__3__0 - VI14
+INFO:  LOCAL :        iOutPtr__6__0 - VI09
+INFO:  LOCAL :     iVertsLeft__3__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__4__0 - VI10
+INFO:  LOCAL :          iMask__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__4__0 - VI11
+INFO:  LOCAL :           iAdc__6__0 - VI11
+INFO:  LOCAL :        iVertex__4__0 - VI12
+INFO:  LOCAL :        iOutPtr__7__0 - VI07
+INFO:  LOCAL :     iVertsLeft__4__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__5__0 - VI08
+INFO:  LOCAL :          iMask__5__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__5__0 - VI09
+INFO:  LOCAL :           iAdc__7__0 - VI09
+INFO:  LOCAL :        iVertex__5__0 - VI11
+INFO: VU User floating point
+INFO:  LOCAL :      fSTQ__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__2__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__6__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__5__0.XYZ - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__2__0 - VI10
+INFO:  LOCAL :          iMask__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__2__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__4__0 - VI10
+INFO:  LOCAL :        iVertex__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__5__0 - VI07
+INFO:  LOCAL :     iVertsLeft__2__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__3__0 - VI11
+INFO:  LOCAL :          iMask__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__3__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__5__0 - VI11
+INFO:  LOCAL :        iVertex__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__6__0 - VI08
+INFO:  LOCAL :     iVertsLeft__3__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__4__0 - VI12
+INFO:  LOCAL :          iMask__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__4__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__6__0 - VI12
+INFO:  LOCAL :        iVertex__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__7__0 - VI09
+INFO:  LOCAL :     iVertsLeft__4__0 - VI04
+INFO:  LOCAL :         iEntry__5__0 - VI13
+INFO:  LOCAL :          iMask__5__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__5__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__7__0 - VI13
+INFO:  LOCAL :        iVertex__5__0 - VI14
+INFO: VU User floating point
+INFO:  LOCAL :      fSTQ__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__2__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__6__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__5__0.XYZ - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__2__0 - VI12
+INFO:  LOCAL :          iMask__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__2__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__4__0 - VI13
+INFO:  LOCAL :        iVertex__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__5__0 - VI07
+INFO:  LOCAL :     iVertsLeft__2__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__3__0 - VI14
+INFO:  LOCAL :          iMask__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__3__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__5__0 - VI12
+INFO:  LOCAL :        iVertex__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__6__0 - VI08
+INFO:  LOCAL :     iVertsLeft__3__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__4__0 - VI11
+INFO:  LOCAL :          iMask__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__4__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__6__0 - VI11
+INFO:  LOCAL :        iVertex__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__7__0 - VI04
+INFO:  LOCAL :     iVertsLeft__4__0 - VI09
+INFO:  LOCAL :         iEntry__5__0 - VI10
+INFO:  LOCAL :          iMask__5__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__5__0 - UNALLOCATED
+INFO:  LOCAL :           iAdc__7__0 - VI10
+INFO:  LOCAL :        iVertex__5__0 - VI14
+INFO: VU User floating point
+INFO:  LOCAL :      fSTQ__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__2__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__6__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__5__0.XYZ - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__2__0 - VI09
+INFO:  LOCAL :          iMask__2__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__2__0 - VI10
+INFO:  LOCAL :           iAdc__4__0 - VI09
+INFO:  LOCAL :        iVertex__2__0 - VI12
+INFO:  LOCAL :        iOutPtr__5__0 - VI10
+INFO:  LOCAL :     iVertsLeft__2__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__3__0 - VI11
+INFO:  LOCAL :          iMask__3__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__3__0 - VI12
+INFO:  LOCAL :           iAdc__5__0 - VI12
+INFO:  LOCAL :        iVertex__3__0 - VI13
+INFO:  LOCAL :        iOutPtr__6__0 - VI12
+INFO:  LOCAL :     iVertsLeft__3__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__4__0 - VI13
+INFO:  LOCAL :          iMask__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__4__0 - VI14
+INFO:  LOCAL :           iAdc__6__0 - VI13
+INFO:  LOCAL :        iVertex__4__0 - UNALLOCATED
+INFO:  LOCAL :        iOutPtr__7__0 - VI07
+INFO:  LOCAL :     iVertsLeft__4__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__5__0 - VI08
+INFO:  LOCAL :          iMask__5__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__5__0 - VI09
+INFO:  LOCAL :           iAdc__7__0 - VI08
+INFO:  LOCAL :        iVertex__5__0 - VI10
+INFO: VU User floating point
+INFO:  LOCAL :      fSTQ__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__2__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__3__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__4__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fSTQ__6__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fCol__5__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__5__0.XYZ - UNALLOCATED
+INFO: Opt::Linear       lStripRoom  61/59
+INFO: Opt::Linear    __v_CORPUS_15  5/5
+INFO: Opt::Linear    __v_CORPUS_16  5/5
+INFO: Opt::Linear    __v_CORPUS_17  6/5
+INFO: Opt::Linear    __v_CORPUS_18  1/1
+INFO: Opt::Linear       lStripLast  6/6
+INFO: Opt::Linear    __v_CORPUS_20  8/8
+INFO: Opt::Linear   lLightmapQword  4/4
+INFO: Opt::Linear    __v_CORPUS_22  5/5
+INFO: Opt::Linear    __v_CORPUS_23  5/5
+INFO: Opt::Linear    __v_CORPUS_24  6/5
+INFO: Opt::Linear    __v_CORPUS_25  1/1
+INFO: Opt::Linear    lLightmapFull  36/36
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__8__0 - VI14
+INFO:  LOCAL :          iMask__8__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__8__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__12__0 - VI14
+INFO:  LOCAL :        iVertex__8__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__11__0 - VI09
+INFO:  LOCAL :     iVertsLeft__8__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__9__0 - VI12
+INFO:  LOCAL :          iMask__9__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__9__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__13__0 - VI12
+INFO:  LOCAL :        iVertex__9__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__12__0 - VI07
+INFO:  LOCAL :     iVertsLeft__9__0 - UNALLOCATED
+INFO:  LOCAL :        iEntry__10__0 - VI11
+INFO:  LOCAL :         iMask__10__0 - VI13
+INFO:  LOCAL :       iOffset__10__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__14__0 - VI03
+INFO:  LOCAL :       iVertex__10__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__13__0 - VI04
+INFO:  LOCAL :    iVertsLeft__10__0 - VI08
+INFO:  LOCAL :        iEntry__11__0 - VI10
+INFO:  LOCAL :         iMask__11__0 - UNALLOCATED
+INFO:  LOCAL :       iOffset__11__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__15__0 - VI09
+INFO:  LOCAL :       iVertex__11__0 - UNALLOCATED
+INFO: VU User floating point
+INFO:  LOCAL :        fSTQ__9__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__2__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fCol__8__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__8__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__10__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__3__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fCol__9__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__9__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__11__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__4__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :     fCol__10__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fXyz__10__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__12__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__5__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__5__0.XYZ - UNALLOCATED
+INFO:  LOCAL :     fCol__11__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fXyz__11__0.XYZ - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__8__0 - VI10
+INFO:  LOCAL :          iMask__8__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__8__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__12__0 - VI10
+INFO:  LOCAL :        iVertex__8__0 - VI04
+INFO:  LOCAL :       iOutPtr__11__0 - VI07
+INFO:  LOCAL :     iVertsLeft__8__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__9__0 - VI11
+INFO:  LOCAL :          iMask__9__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__9__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__13__0 - VI11
+INFO:  LOCAL :        iVertex__9__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__12__0 - VI08
+INFO:  LOCAL :     iVertsLeft__9__0 - UNALLOCATED
+INFO:  LOCAL :        iEntry__10__0 - VI12
+INFO:  LOCAL :         iMask__10__0 - UNALLOCATED
+INFO:  LOCAL :       iOffset__10__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__14__0 - VI12
+INFO:  LOCAL :       iVertex__10__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__13__0 - VI09
+INFO:  LOCAL :    iVertsLeft__10__0 - VI04
+INFO:  LOCAL :        iEntry__11__0 - VI13
+INFO:  LOCAL :         iMask__11__0 - UNALLOCATED
+INFO:  LOCAL :       iOffset__11__0 - VI14
+INFO:  LOCAL :          iAdc__15__0 - VI13
+INFO:  LOCAL :       iVertex__11__0 - UNALLOCATED
+INFO: VU User floating point
+INFO:  LOCAL :        fSTQ__9__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__2__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fCol__8__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__8__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__10__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__3__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fCol__9__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__9__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__11__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__4__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :     fCol__10__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fXyz__10__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__12__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__5__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__5__0.XYZ - UNALLOCATED
+INFO:  LOCAL :     fCol__11__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fXyz__11__0.XYZ - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI05 - VI05 
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO:  EXTERNAL:                 VI03 - VI03 
+INFO:  EXTERNAL:                 VI04 - VI04 
+INFO:  EXTERNAL:                 VI06 - VI06 
+INFO:  LOCAL :         iEntry__8__0 - VI12
+INFO:  LOCAL :          iMask__8__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__8__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__12__0 - VI13
+INFO:  LOCAL :        iVertex__8__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__11__0 - VI07
+INFO:  LOCAL :     iVertsLeft__8__0 - UNALLOCATED
+INFO:  LOCAL :         iEntry__9__0 - VI14
+INFO:  LOCAL :          iMask__9__0 - UNALLOCATED
+INFO:  LOCAL :        iOffset__9__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__13__0 - VI12
+INFO:  LOCAL :        iVertex__9__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__12__0 - VI08
+INFO:  LOCAL :     iVertsLeft__9__0 - UNALLOCATED
+INFO:  LOCAL :        iEntry__10__0 - VI11
+INFO:  LOCAL :         iMask__10__0 - UNALLOCATED
+INFO:  LOCAL :       iOffset__10__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__14__0 - VI11
+INFO:  LOCAL :       iVertex__10__0 - UNALLOCATED
+INFO:  LOCAL :       iOutPtr__13__0 - VI04
+INFO:  LOCAL :    iVertsLeft__10__0 - VI09
+INFO:  LOCAL :        iEntry__11__0 - VI10
+INFO:  LOCAL :         iMask__11__0 - UNALLOCATED
+INFO:  LOCAL :       iOffset__11__0 - UNALLOCATED
+INFO:  LOCAL :          iAdc__15__0 - VI10
+INFO:  LOCAL :       iVertex__11__0 - VI14
+INFO: VU User floating point
+INFO:  LOCAL :        fSTQ__9__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__2__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__2__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fCol__8__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__8__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__10__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__3__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__3__0.XYZ - UNALLOCATED
+INFO:  LOCAL :      fCol__9__0.XYZW - UNALLOCATED
+INFO:  LOCAL :       fXyz__9__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__11__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__4__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__4__0.XYZ - UNALLOCATED
+INFO:  LOCAL :     fCol__10__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fXyz__10__0.XYZ - UNALLOCATED
+INFO:  LOCAL :       fSTQ__12__0.ZW - UNALLOCATED
+INFO:  LOCAL :         fLmT__5__0.W - UNALLOCATED
+INFO:  LOCAL :      fLmSt__5__0.XYZ - UNALLOCATED
+INFO:  LOCAL :     fCol__11__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      fXyz__11__0.XYZ - UNALLOCATED
+INFO: Opt::Linear    lLightmapRoom  64/63
+INFO: Opt::Linear    __v_CORPUS_28  5/5
+INFO: Opt::Linear    __v_CORPUS_29  5/5
+INFO: Opt::Linear    __v_CORPUS_30  6/5
+INFO: Opt::Linear    __v_CORPUS_31  1/1
+INFO: Opt::Linear    lLightmapLast  2/2
+INFO: Opt::Linear        lListPath  3/3
+INFO: Opt::Linear    __v_CORPUS_35  0/0
+INFO: Opt::Linear        lListPass  13/13
+INFO: Opt::Linear    __v_CORPUS_37  0/0
+INFO: Opt::Linear       lListEntry  5/5
+INFO: Opt::Linear    __v_CORPUS_39  5/5
+INFO: Opt::Linear    __v_CORPUS_40  5/5
+INFO: Opt::Linear    __v_CORPUS_41  6/5
+INFO: Opt::Linear    __v_CORPUS_42  1/1
+INFO: Opt::Linear        lListFull  9/9
+INFO: Opt::Linear        lListRoom  6/6
+INFO: Opt::Linear   lListHaveLanes  10/10
+INFO: Opt::Linear    __v_CORPUS_47  5/5
+INFO: Opt::Linear    __v_CORPUS_48  10/9
+INFO: Opt::Linear    __v_CORPUS_49  6/6
+INFO: Opt::Linear    __v_CORPUS_50  19/19
+INFO: Opt::Linear lListLightmapCorners  21/21
+INFO: Opt::Linear lListCornersDone  3/3
+INFO: Opt::Linear        lListClip  36/32
+INFO: Opt::Linear    __v_CORPUS_56  2/2
+INFO: Opt::Linear    __v_CORPUS_58  5/5
+INFO: Opt::Linear        lNearKept  3/2
+INFO: Opt::Linear    __v_CORPUS_60  26/24
+INFO: Opt::Linear       lNearNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_62  4/4
+INFO: Opt::Linear    __v_CORPUS_63  1/1
+INFO: Opt::Linear        lNearWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_65  7/7
+INFO: Opt::Linear         lNearOut  8/8
+INFO: Opt::Linear    __v_CORPUS_67  2/2
+INFO: Opt::Linear    __v_CORPUS_69  5/5
+INFO: Opt::Linear          lXlKept  3/2
+INFO: Opt::Linear    __v_CORPUS_71  26/24
+INFO: Opt::Linear         lXlNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_73  4/4
+INFO: Opt::Linear    __v_CORPUS_74  1/1
+INFO: Opt::Linear          lXlWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_76  7/7
+INFO: Opt::Linear           lXlOut  8/8
+INFO: Opt::Linear    __v_CORPUS_78  2/2
+INFO: Opt::Linear    __v_CORPUS_80  5/5
+INFO: Opt::Linear          lXrKept  3/2
+INFO: Opt::Linear    __v_CORPUS_82  26/24
+INFO: Opt::Linear         lXrNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_84  4/4
+INFO: Opt::Linear    __v_CORPUS_85  1/1
+INFO: Opt::Linear          lXrWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_87  7/7
+INFO: Opt::Linear           lXrOut  8/8
+INFO: Opt::Linear    __v_CORPUS_89  2/2
+INFO: Opt::Linear    __v_CORPUS_91  5/5
+INFO: Opt::Linear          lYbKept  3/2
+INFO: Opt::Linear    __v_CORPUS_93  26/24
+INFO: Opt::Linear         lYbNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_95  4/4
+INFO: Opt::Linear    __v_CORPUS_96  1/1
+INFO: Opt::Linear          lYbWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_98  7/7
+INFO: Opt::Linear           lYbOut  8/8
+INFO: Opt::Linear   __v_CORPUS_100  2/2
+INFO: Opt::Linear   __v_CORPUS_102  5/5
+INFO: Opt::Linear          lYtKept  3/2
+INFO: Opt::Linear   __v_CORPUS_104  26/24
+INFO: Opt::Linear         lYtNoCut  4/4
+INFO: Opt::Linear   __v_CORPUS_106  4/4
+INFO: Opt::Linear   __v_CORPUS_107  1/1
+INFO: Opt::Linear          lYtWrap  2/2
+INFO: Opt::Linear   __v_CORPUS_109  7/7
+INFO: Opt::Linear           lYtOut  8/8
+INFO: Opt::Linear   __v_CORPUS_111  2/2
+INFO: Opt::Linear         lFanLoop  36/28
+INFO: Opt::Linear        lListNext  8/8
+INFO: Opt::Linear   __v_CORPUS_116  5/5
+INFO: Opt::Linear   __v_CORPUS_117  5/5
+INFO: Opt::Linear   __v_CORPUS_118  6/5
+INFO: Opt::Linear   __v_CORPUS_119  1/1
+INFO: Opt::Linear        lListLast  6/6
+INFO: Opt::Linear   __v_CORPUS_121  7/7
+INFO: Opt::Linear   __v_CORPUS_122  6/6
+INFO: Opt::Linear   __v_CORPUS_123  2/2
+INFO: Opt::Linear         lListEnd  2/2
+INFO: OS_End(Linux)

@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+WARN: immediate 40000 doesn't fit as unsigned value in 15 bits - skipping
+WARN: immediate 70000 doesn't fit as unsigned value in 15 bits - skipping
+WARN: immediate 40000 doesn't fit as unsigned value in 15 bits - skipping
+WARN: immediate 70000 doesn't fit as unsigned value in 15 bits - skipping
+INFO: Opt::Linear        __v_FIX_4  2/2
+WARN: immediate 40000 doesn't fit as unsigned value in 15 bits - skipping
+WARN: immediate 70000 doesn't fit as unsigned value in 15 bits - skipping
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

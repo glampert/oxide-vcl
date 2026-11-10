@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFIX",
+    "/work/checker-mem-copied-base.vcl"
+  ],
+  "input_sha256": "59efde379fcd97187bc6d36f4c305ef13ced4fe317142875738da01d1e5e6e02",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.22695512499194592,
+  "cpu_seconds": 0.272222,
+  "stdout_sha256": "b65b0ab54d753eaa06f9fc3aa837b996d2c11b6a7414a4eb00332439770d269f",
+  "stderr_sha256": "5c52b2e621b8b7dbe83d8ed50703fbbfbc30b54fe0754b245ed42bb0b087a971",
+  "stdout_bytes": 1567,
+  "stderr_bytes": 134,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 6,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO: remove branch..
+INFO: remove branch..
+INFO: Opt::Linear        __v_EXT_4  1/1
+INFO: Opt::Linear             step  1/1
+INFO: Opt::Linear             next  1/1
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

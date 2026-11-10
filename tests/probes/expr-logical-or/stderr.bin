@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+ERROR: failed to evaluate tree for '1||0' to type EXP_DATATYPE_UINT
+ERROR: failed to decode an immediate
+USER: couldn't decode instruction .. problem is at:
+  ---> {iaddiu} {b},{a},[***{1||0}***] 
+USER: expected format is: iaddiu	vi_reg,vi_reg,IMMEDIATE(EXP_DATATYPE_UINT)
+INFO: OS_End(Linux)

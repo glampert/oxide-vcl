@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER: failed to decode operand
+USER: couldn't decode instruction .. problem is at:
+  ---> {lq} {a},[***{0(p)x}***] 
+USER: expected format is: lq.[xyzw]	vf_reg[xyzw],OFFSET(vi_reg)
+INFO: OS_End(Linux)

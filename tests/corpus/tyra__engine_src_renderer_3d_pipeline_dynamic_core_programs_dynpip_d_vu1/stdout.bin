@@ -1,0 +1,169 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	DynPipVU1_D_CodeStart
+		.global	DynPipVU1_D_CodeEnd
+DynPipVU1_D_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 8 [8 0] 8   [__v_CORPUS_4]
+         NOP                                                        fcset         0                                   
+         NOP                                                        lq            VF01,19(VI00)                       
+         NOP                                                        lq            VF02,0(VI00)                        
+         NOP                                                        lq            VF03,1(VI00)                        
+         NOP                                                        lq            VF04,2(VI00)                        
+         NOP                                                        lq            VF05,3(VI00)                        
+         NOP                                                        lq            VF06,9(VI00)                        
+         NOP                                                        lq            VF07,10(VI00)                       
+begin:
+; _LNOPT_w=[ normal2 ] 18 [18 0] 18   [begin]
+         NOP                                                        xtop          VI02                                
+         NOP                                                        ilw.w         VI03,0(VI02)                        
+         NOP                                                        iaddiu        VI04,VI02,0x00000002                
+         NOP                                                        lq            VF09,1(VI02)                        
+         NOP                                                        lq.y          VF08,8(VI00)                        
+         NOP                                                        iadd          VI05,VI04,VI03                      
+         NOP                                                        iadd          VI05,VI05,VI03                      
+         NOP                                                        iadd          VI06,VI05,VI03                      
+         NOP                                                        iadd          VI07,VI06,VI03                      
+         NOP                                                        iadd          VI06,VI06,VI03                      
+         NOP                                                        sq            VF01,0(VI07)                        
+         NOP                                                        sq            VF07,1(VI07)                        
+         NOP                                                        sq            VF01,2(VI07)                        
+         NOP                                                        sq            VF06,3(VI07)                        
+         NOP                                                        sq            VF09,4(VI07)                        
+         NOP                                                        iaddiu        VI07,VI07,0x00000005                
+         NOP                                                        lq.xyz        VF09,0(VI02)                        
+         NOP                                                        iadd          VI08,VI02,VI03                      
+vertexLoop:
+; _LNOPT_w=[ another ] 106 [93 93] 107   [vertexLoop]
+         NOP                                                        iadd          VI09,VI05,VI03                      
+         NOP                                                        lq.xyz        VF12,1(VI05)                        
+         NOP                                                        lq.xyz        VF10,0(VI05)                        
+         NOP                                                        lq.xyz        VF11,2(VI05)                        
+         NOP                                                        lq.xyz        VF16,1(VI09)                        
+         NOP                                                        lq.xyz        VF13,0(VI09)                        
+         NOP                                                        lq.xyz        VF14,2(VI09)                        
+         sub.xyz       VF16,VF16,VF12                               NOP                                                      ;	STALL_LATENCY ?1
+         sub.xyz       VF15,VF13,VF10                               iadd          VI01,VI04,VI03                      
+         sub.xyz       VF18,VF14,VF11                               lq            VF13,0(VI01)                        
+         NOP                                                        lq            VF14,0(VI04)                        
+         muly.xyz      VF16,VF16,VF08y                              NOP                                               
+         muly.xyz      VF15,VF15,VF08y                              NOP                                               
+         muly.xyz      VF21,VF18,VF08y                              NOP                                               
+         sub           VF19,VF13,VF14                               lq            VF17,1(VI01)                        
+         add.xyz       VF18,VF16,VF12                               lq            VF16,1(VI04)                        
+         add.xyz       VF15,VF15,VF10                               lq.xyz        VF20,4(VI00)                        
+         add.xyz       VF13,VF21,VF11                               lq.xyz        VF10,5(VI00)                        
+         muly          VF12,VF19,VF08y                              NOP                                               
+         sub           VF11,VF17,VF16                               NOP                                               
+         mulax.xyz     ACC,VF20,VF18x                               lq.xyz        VF19,6(VI00)                        
+         madday.xyz    ACC,VF10,VF18y                               lq.xyz        VF20,4(VI00)                        
+         add           VF12,VF12,VF14                               lq.xyz        VF17,5(VI00)                        
+         muly          VF10,VF11,VF08y                              lq            VF11,2(VI04)                        
+         maddz.xyz     VF14,VF19,VF18z                              lq.xyz        VF19,6(VI00)                        
+         mulax.xyz     ACC,VF20,VF15x                               lq.xyz        VF20,4(VI00)                        
+         madday.xyz    ACC,VF17,VF15y                               lq.xyz        VF17,5(VI00)                        
+         add           VF10,VF10,VF16                               lq.xyz        VF18,6(VI00)                        
+         maddz.xyz     VF15,VF19,VF15z                              lq            VF16,2(VI01)                        
+         mulax.xyz     ACC,VF20,VF13x                               NOP                                               
+         madday.xyz    ACC,VF17,VF13y                               NOP                                               
+         maddz.xyz     VF13,VF18,VF13z                              NOP                                               
+         sub           VF16,VF16,VF11                               NOP                                               
+         mulax         ACC,VF02,VF12x                               NOP                                               
+         madday        ACC,VF03,VF12y                               lq.xyz        VF20,12(VI00)                       
+         maddaz        ACC,VF04,VF12z                               lq.xyz        VF17,13(VI00)                       
+         muly          VF18,VF16,VF08y                              NOP                                               
+         maddw         VF12,VF05,VF12w                              lq.xyz        VF16,14(VI00)                       
+         mulax.xyz     ACC,VF20,VF14x                               lq.xyz        VF19,12(VI00)                       
+         madday.xyz    ACC,VF17,VF14y                               lq.xyz        VF17,13(VI00)                       
+         add           VF11,VF18,VF11                               lq.xyz        VF18,14(VI00)                       
+         maddz.xyz     VF16,VF16,VF14z                              lq.xyz        VF20,12(VI00)                       
+         mulax.xyz     ACC,VF19,VF15x                               NOP                                               
+         madday.xyz    ACC,VF17,VF15y                               lq.xyz        VF17,13(VI00)                       
+         maddz.xyz     VF14,VF18,VF15z                              lq.xyz        VF18,14(VI00)                       
+         mulax.xyz     ACC,VF20,VF13x                               NOP                                               
+         miniw.xyz     VF15,VF16,VF00w                              NOP                                               
+         madday.xyz    ACC,VF17,VF13y                               NOP                                               
+         maddz.xyz     VF13,VF18,VF13z                              NOP                                               
+         mulax         ACC,VF02,VF10x                               NOP                                               
+         miniw.xyz     VF14,VF14,VF00w                              NOP                                               
+         maxx.xyz      VF18,VF15,VF00x                              NOP                                               
+         clipw.xyz     VF12xyz,VF12w                                NOP                                               
+         miniw.xyz     VF13,VF13,VF00w                              div           Q,VF00w,VF12w                       
+         madday        ACC,VF03,VF10y                               NOP                                               
+         maxx.xyz      VF17,VF14,VF00x                              NOP                                               
+         maddaz        ACC,VF04,VF10z                               NOP                                               
+         maxx.xyz      VF13,VF13,VF00x                              NOP                                               
+         maddw         VF16,VF05,VF10w                              lq.xyz        VF22,17(VI00)                       
+         mulax         ACC,VF02,VF11x                               lq.xyz        VF21,15(VI00)                       
+         mulq.xyz      VF12,VF12,Q                                  lq.xyz        VF20,15(VI00)                       
+         madday        ACC,VF03,VF11y                               lq.xyz        VF19,17(VI00)                       
+         maddaz        ACC,VF04,VF11z                               lq.xyz        VF10,16(VI00)                       
+         maddw         VF15,VF05,VF11w                              lq.xyz        VF14,18(VI00)                       
+         mulax.xyz     ACC,VF20,VF18x                               lq.xyz        VF20,18(VI00)                       
+         clipw.xyz     VF16xyz,VF16w                                div           Q,VF00w,VF16w                       
+         madday.xyz    ACC,VF10,VF18y                               lq.xyz        VF11,16(VI00)                       
+         maddaz.xyz    ACC,VF22,VF18z                               fcand         VI01,262143                         
+         maddw.xyz     VF10,VF20,VF00w                              iaddiu        VI01,VI01,0x00007fff                
+         mulax.xyz     ACC,VF21,VF17x                               isw.w         VI01,1(VI07)                        
+         madday.xyz    ACC,VF11,VF17y                               lq.xyz        VF18,16(VI00)                       
+         maddaz.xyz    ACC,VF19,VF17z                               lq.xyz        VF20,15(VI00)                       
+         clipw.xyz     VF15xyz,VF15w                                div           Q,VF00w,VF15w                       
+         maddw.xyz     VF11,VF14,VF00w                              lq.xyz        VF17,17(VI00)                       
+         mulq.xyz      VF16,VF16,Q                                  lq.xyz        VF14,18(VI00)                       
+         mulax.xyz     ACC,VF20,VF13x                               fcand         VI01,262143                         
+         madday.xyz    ACC,VF18,VF13y                               NOP                                               
+         maddaz.xyz    ACC,VF17,VF13z                               NOP                                               
+         maddw.xyz     VF13,VF14,VF00w                              NOP                                               
+         mulq.xyz      VF14,VF15,Q                                  NOP                                               
+         mulaw.xyz     ACC,VF09,VF00w                               NOP                                               
+         madd.xyz      VF15,VF12,VF09                               loi           0x43000000                          
+         addi.w        VF10,VF00,I                                  NOP                                               
+         mulaw.xyz     ACC,VF09,VF00w                               loi           0x43000000                          
+         addi.w        VF11,VF00,I                                  NOP                                               
+         madd.xyz      VF12,VF16,VF09                               NOP                                               
+         ftoi4.xyz     VF15,VF15                                    iaddiu        VI04,VI04,0x00000003                
+         mulaw.xyz     ACC,VF09,VF00w                               loi           0x43000000                          
+         addi.w        VF12,VF00,I                                  loi           0x437f0000                          
+         minii.xyz     VF10,VF10,I                                  iaddiu        VI05,VI05,0x00000003                
+         madd.xyz      VF14,VF14,VF09                               loi           0x437f0000                          
+         minii.xyz     VF16,VF11,I                                  sq.xyz        VF15,1(VI07)                        
+         ftoi4.xyz     VF15,VF12                                    loi           0x437f0000                          
+         minii.xyz     VF12,VF13,I                                  iaddiu        VI07,VI07,0x00000006                
+         maxx.xyz      VF11,VF10,VF00x                              isubiu        VI08,VI08,3                         
+         maxx.xyz      VF10,VF16,VF00x                              iaddiu        VI01,VI01,0x00007fff                
+         ftoi4.xyz     VF13,VF14                                    isw.w         VI01,-5(VI07)                       
+         maxx.xyz      VF12,VF12,VF00x                              fcand         VI01,262143                         
+         ftoi0         VF14,VF11                                    iaddiu        VI01,VI01,0x00007fff                
+         ftoi0         VF11,VF10                                    isw.w         VI01,-5(VI07)                       
+         NOP                                                        sq.xyz        VF15,-3(VI07)                       
+         ftoi0         VF12,VF12                                    sq.xyz        VF13,-1(VI07)                       
+         NOP                                                        sq            VF14,-4(VI07)                       
+         NOP                                                        sq            VF11,-6(VI07)                       
+         NOP                                                        ibne          VI08,VI02,vertexLoop                
+         NOP                                                        sq            VF12,-2(VI07)                       
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_7]
+         NOP                                                        xgkick        VI06                                
+; _LNOPT_w=[ normal2 ] 2 [0 0] 2   [__v_CORPUS_8]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_9]
+         NOP                                                        b             begin                               
+         NOP                                                        NOP                                               
+		.align 4
+DynPipVU1_D_CodeEnd:
+;	iCount=137
+; register stats:
+;  10 VU User integer
+;  23 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

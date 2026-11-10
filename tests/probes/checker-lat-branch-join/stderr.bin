@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear        __v_FIX_5  1/1
+INFO: Opt::Linear        __v_FIX_7  1/1
+INFO: Opt::Linear        __v_FIX_4  2/2
+INFO: Opt::Linear             join  3/2
+INFO: OS_End(Linux)

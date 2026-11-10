@@ -1,0 +1,29 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/emit-lvmove.vcl"
+  ],
+  "input_sha256": "34dd1804b4dddcb307eeaee4ced8156eea6cdc3f6e4c4386b013148fd29fffd4",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 4294967295,
+  "exit_status": 255,
+  "wall_seconds": 0.1577132500242442,
+  "cpu_seconds": 0.17487899999999998,
+  "stdout_sha256": "c7650eaaaa621b80c48197851423f5cce526925e64c726069779ea6f55c1b4f3",
+  "stderr_sha256": "4d17f6b993237f16e411fddac98971bc0ebc02bca5af66957c9d3d2593ab1bb0",
+  "stdout_bytes": 47,
+  "stderr_bytes": 344,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

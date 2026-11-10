@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+WARN: VUSTR:: badly formed mod bits string!
+ERROR: oDecodeToken: bad FL1 bits
+USER: failed to decode operand
+USER: couldn't decode instruction .. problem is at:
+  ---> {mtir} {result},[***{valuexx}***] 
+USER: expected format is: mtir	vi_reg,vf_reg[x/y/z/w]
+INFO: OS_End(Linux)

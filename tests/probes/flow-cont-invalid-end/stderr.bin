@@ -1,0 +1,3 @@
+INFO: OS_Init(Linux)
+USER: encountered cont directive in bad context..mode=2
+INFO: OS_End(Linux)

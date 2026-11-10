@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST: operand -1 modbits ffffffff..
+INFO: Opt::Linear          __v_P_4  6/5
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

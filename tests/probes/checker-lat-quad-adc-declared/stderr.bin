@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {vf07},{0(vi00)} 
+INFO2: REMOVE INST:   ---> [***{lq}***] {vf09},{2(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {vf15},{3(vi00)} 
+INFO2: ZERO FIX   :   ---> {opmsub.xyz} [***{vf12}***],{vf09},{vf08} 
+INFO: Opt::Linear    main_loop_lid  22/21
+INFO: Opt::Linear        __v_FIX_6  2/2
+INFO: OS_End(Linux)

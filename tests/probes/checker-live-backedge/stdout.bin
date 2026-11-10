@@ -1,0 +1,41 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_FIX_4:
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_FIX_4]
+         NOP                                                        iaddiu        VI03,VI00,0                         
+loop:
+; _LNOPT_w=[ normal2 ] 15 [15 15] 15   [loop]
+         NOP                                                        ilw.x         VI04,0(VI02)                        
+         NOP                                                        ilw.x         VI06,2(VI02)                        
+         NOP                                                        ilw.x         VI05,4(VI02)                        
+         NOP                                                        isubiu        VI01,VI01,0x00000001                
+         NOP                                                        ilw.x         VI08,3(VI02)                        
+         NOP                                                        ilw.x         VI07,5(VI02)                        
+         NOP                                                        iadd          VI03,VI04,VI03                      
+         NOP                                                        isw.x         VI03,1(VI02)                        
+         NOP                                                        iadd          VI03,VI06,VI08                      
+         NOP                                                        iadd          VI05,VI05,VI07                      
+         NOP                                                        iadd          VI05,VI03,VI05                      
+         NOP                                                        iaddiu        VI03,VI04,0x00000001                
+         NOP                                                        isw.x         VI05,6(VI02)                        
+         NOP                                                        ibne          VI01,VI00,loop                      
+         NOP                                                        iaddiu        VI02,VI02,0x00000008                
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=18
+; register stats:
+;   9 VU User integer
+;   0 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

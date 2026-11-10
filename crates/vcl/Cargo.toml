@@ -1,0 +1,10 @@
+[package]
+name = "vcl"
+description = "Evidence-driven reconstruction of the SCE VCL Vector Unit scheduler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

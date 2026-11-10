@@ -1,0 +1,9 @@
+INFO: OS_Init(Linux)
+INFO: prune inaccessible stream dead
+INFO: REMOVE INST:   ---> [***{add}***] {b},{a},{a} 
+INFO: REMOVE INST:   ---> [***{b}***] {dead} 
+INFO: remove branch..
+INFO: Opt::Linear             done  1/4
+INFO: Opt::Linear       __v_RULE_4  0/0
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

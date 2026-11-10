@@ -1,0 +1,205 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fNegDiv0},{1010} {+} {3(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fNegDiv1},{1010} {+} {4(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fNegDiv2},{1010} {+} {5(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fNegDiv3},{1010} {+} {6(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fColour0},{1010} {+} {7(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fColour1},{1010} {+} {8(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fColour2},{1010} {+} {9(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fColour3},{1010} {+} {10(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fPos0},{0(iInPtr)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fPos1},{2(iInPtr)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fPos2},{4(iInPtr)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fFrontV},{1010} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBackV},{1010} {+} {1(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fStScale},{1010} {+} {3(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fColorClamp},{7(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fCurI},{0(iInPtr)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{itof0}***] {fCur},{fCurI} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mul}***] {acc},{fFrontV},{fCur} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{madd}***] {fLerp},{fBackV},{fOld} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fCurI},{3(iInPtr)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{itof0}***] {fCur},{fCurI} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mul}***] {acc},{fFrontV},{fCur} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{madd}***] {fLerp},{fBackV},{fOld} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fCurI},{6(iInPtr)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{itof0}***] {fCur},{fCurI} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mul}***] {acc},{fFrontV},{fCur} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{madd}***] {fLerp},{fBackV},{fOld} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{sub}***] {fEdge1},{fPos1},{fPos0} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{sub}***] {fEdge2},{fPos2},{fPos0} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mulq}***] {fStqScaled},{fStq0},{q} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{mr32}***] {fST},{fStqScaled} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mulq}***] {fStqScaled},{fStq1},{q} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{mr32}***] {fST},{fStqScaled} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mulq}***] {fStqScaled},{fStq2},{q} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{mr32}***] {fST},{fStqScaled} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fWarpFold},{1022} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBatch},{1(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{add}***] {fHalf},{vf00},{fWarpFold[y]} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{sub}***] {fNegHalf},{vf00},{fHalf} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fRaw},{fStq0} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fWarpFold},{1022} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBatch},{1(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{add}***] {fHalf},{vf00},{fWarpFold[y]} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{sub}***] {fNegHalf},{vf00},{fHalf} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fRaw},{fStq1} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fWarpFold},{1022} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBatch},{1(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{add}***] {fHalf},{vf00},{fWarpFold[y]} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{sub}***] {fNegHalf},{vf00},{fHalf} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fRaw},{fStq2} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fWarpFold},{1022} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBatch},{1(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{add}***] {fHalf},{vf00},{fWarpFold[y]} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{sub}***] {fNegHalf},{vf00},{fHalf} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fRaw},{fStq0} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fWarpFold},{1022} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBatch},{1(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{add}***] {fHalf},{vf00},{fWarpFold[y]} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{sub}***] {fNegHalf},{vf00},{fHalf} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fRaw},{fStq1} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fWarpFold},{1022} {+} {0(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fBatch},{1(iBase)} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{add}***] {fHalf},{vf00},{fWarpFold[y]} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{sub}***] {fNegHalf},{vf00},{fHalf} 
+INFO2: PRUNE FIELD: [XYZW->XY]    ---> [***{mr32}***] {fRaw},{fStq2} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->Z]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->X]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpC},{fCurPos},{fClipScale} 
+INFO2: PRUNE FIELD: [XYZ->Y]    ---> [***{mul.xyz}***] {fJpN},{fNxtPos},{fClipScale} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnC},{vf00},{fJpC} 
+INFO2: REMOVE INST:   ---> [***{sub.xyz}***] {fJnN},{vf00},{fJpN} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fStq0},{981} {+} {1(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fStq1},{1(iFan)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fStq2},{4(iFan)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mulq}***] {fStqScaled},{fStq0},{q} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{mr32}***] {fST},{fStqScaled} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mulq}***] {fStqScaled},{fStq1},{q} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{mr32}***] {fST},{fStqScaled} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{mulq}***] {fStqScaled},{fStq2},{q} 
+INFO2: PRUNE FIELD: [XYZW->XYW]    ---> [***{mr32}***] {fST},{fStqScaled} 
+INFO: Opt::Linear     __v_CORPUS_4  19/19
+INFO: Opt::Linear   __v_CORPUS_104  4/4
+INFO: Opt::Linear        lNearLoop  40/37
+INFO: Opt::Linear          lXlLoop  40/37
+INFO: Opt::Linear          lXrLoop  38/37
+INFO: Opt::Linear          lYbLoop  40/37
+INFO: Opt::Linear          lYtLoop  38/37
+INFO: Opt::Linear     __v_CORPUS_5  7/6
+INFO: Opt::Linear     __v_CORPUS_6  1/1
+INFO: Opt::Linear       lStrideSet  1/1
+INFO: Opt::Linear     __v_CORPUS_8  18/17
+INFO: Opt::Linear    lTriangleLoop  15/15
+INFO: Opt::Linear    __v_CORPUS_16  3/4
+INFO: Opt::Linear    __v_CORPUS_17  37/36
+INFO: Opt::Linear    __v_CORPUS_10  5/5
+INFO: Opt::Linear    __v_CORPUS_11  5/5
+INFO: Opt::Linear    __v_CORPUS_12  6/5
+INFO: Opt::Linear    __v_CORPUS_13  1/1
+INFO: Opt::Linear         lKicked1  18/17
+INFO: Opt::Linear   lWindowHasRoom  6/6
+INFO: Opt::Linear      lLight0Done  13/12
+INFO: Opt::Linear    __v_CORPUS_19  36/36
+INFO: Opt::Linear      lLight1Done  12/12
+INFO: Opt::Linear    __v_CORPUS_21  36/36
+INFO: Opt::Linear      lLight2Done  18/17
+INFO: Opt::Linear       lKeyframes  86/65
+INFO: Opt::Linear     lTransformed  2/2
+INFO: Opt::Linear    __v_CORPUS_27  6/6
+INFO: Opt::Linear    __v_CORPUS_28  20/20
+INFO: Opt::Linear    __v_CORPUS_29  5/5
+INFO: Opt::Linear   lEmitUn0Packed  3/3
+INFO: Opt::Linear     lEmitUn0Done  20/20
+INFO: Opt::Linear    __v_CORPUS_33  5/5
+INFO: Opt::Linear   lEmitUn1Packed  3/3
+INFO: Opt::Linear     lEmitUn1Done  20/20
+INFO: Opt::Linear    __v_CORPUS_37  5/5
+INFO: Opt::Linear   lEmitUn2Packed  3/3
+INFO: Opt::Linear     lEmitUn2Done  6/6
+INFO: Opt::Linear       lWarpWhole  15/15
+INFO: Opt::Linear    __v_CORPUS_43  111/105
+INFO: Opt::Linear    lClipTriangle  17/17
+INFO: Opt::Linear    __v_CORPUS_46  110/105
+INFO: Opt::Linear      lSeedWarped  8/8
+INFO: Opt::Linear    __v_CORPUS_48  2/2
+INFO: Opt::Linear    __v_CORPUS_50  5/5
+INFO: Opt::Linear        lNearKept  3/2
+INFO: Opt::Linear    __v_CORPUS_52  27/24
+INFO: Opt::Linear       lNearNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_54  4/4
+INFO: Opt::Linear    __v_CORPUS_55  1/1
+INFO: Opt::Linear        lNearWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_57  7/7
+INFO: Opt::Linear         lNearOut  8/8
+INFO: Opt::Linear    __v_CORPUS_59  2/2
+INFO: Opt::Linear    __v_CORPUS_61  5/5
+INFO: Opt::Linear          lXlKept  3/2
+INFO: Opt::Linear    __v_CORPUS_63  27/24
+INFO: Opt::Linear         lXlNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_65  4/4
+INFO: Opt::Linear    __v_CORPUS_66  1/1
+INFO: Opt::Linear          lXlWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_68  7/7
+INFO: Opt::Linear           lXlOut  8/8
+INFO: Opt::Linear    __v_CORPUS_70  2/2
+INFO: Opt::Linear    __v_CORPUS_72  5/5
+INFO: Opt::Linear          lXrKept  3/2
+INFO: Opt::Linear    __v_CORPUS_74  27/24
+INFO: Opt::Linear         lXrNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_76  4/4
+INFO: Opt::Linear    __v_CORPUS_77  1/1
+INFO: Opt::Linear          lXrWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_79  7/7
+INFO: Opt::Linear           lXrOut  8/8
+INFO: Opt::Linear    __v_CORPUS_81  2/2
+INFO: Opt::Linear    __v_CORPUS_83  5/5
+INFO: Opt::Linear          lYbKept  3/2
+INFO: Opt::Linear    __v_CORPUS_85  27/24
+INFO: Opt::Linear         lYbNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_87  4/4
+INFO: Opt::Linear    __v_CORPUS_88  1/1
+INFO: Opt::Linear          lYbWrap  2/2
+INFO: Opt::Linear    __v_CORPUS_90  7/7
+INFO: Opt::Linear           lYbOut  8/8
+INFO: Opt::Linear    __v_CORPUS_92  2/2
+INFO: Opt::Linear    __v_CORPUS_94  5/5
+INFO: Opt::Linear          lYtKept  3/2
+INFO: Opt::Linear    __v_CORPUS_96  27/24
+INFO: Opt::Linear         lYtNoCut  4/4
+INFO: Opt::Linear    __v_CORPUS_98  4/4
+INFO: Opt::Linear    __v_CORPUS_99  1/1
+INFO: Opt::Linear          lYtWrap  2/2
+INFO: Opt::Linear   __v_CORPUS_101  7/7
+INFO: Opt::Linear           lYtOut  8/8
+INFO: Opt::Linear   __v_CORPUS_103  2/2
+INFO: Opt::Linear         lFanLoop  20/20
+INFO: Opt::Linear   __v_CORPUS_106  5/5
+INFO: Opt::Linear  lEmitFan0Packed  3/3
+INFO: Opt::Linear    lEmitFan0Done  20/20
+INFO: Opt::Linear   __v_CORPUS_110  5/5
+INFO: Opt::Linear  lEmitFan1Packed  3/3
+INFO: Opt::Linear    lEmitFan1Done  20/20
+INFO: Opt::Linear   __v_CORPUS_114  5/5
+INFO: Opt::Linear  lEmitFan2Packed  3/3
+INFO: Opt::Linear    lEmitFan2Done  10/10
+INFO: Opt::Linear        lClipDone  5/5
+INFO: Opt::Linear   __v_CORPUS_120  5/5
+INFO: Opt::Linear   __v_CORPUS_121  5/5
+INFO: Opt::Linear   __v_CORPUS_122  6/5
+INFO: Opt::Linear   __v_CORPUS_123  1/1
+INFO: OS_End(Linux)

@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_ORACLE_4 R.0
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register R is used before set at instruction(s) :
+INFO:      ---> {rget} {b},[***{R}***] 
+INFO: OS_End(Linux)

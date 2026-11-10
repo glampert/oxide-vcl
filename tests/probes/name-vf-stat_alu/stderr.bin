@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+USER: can't use stat_alu as a name for one of the VU User floating point
+USER: oDecode: not find register 'stat_alu' from VU User floating point
+USER: couldn't decode instruction .. problem is at:
+  ---> {add} [***{stat_alu}***],{a},{a} 
+USER: expected format is: add.[xyzw]	vf_reg[xyzw],vf_reg[xyzw],vf_reg[xyzw]
+INFO: OS_End(Linux)

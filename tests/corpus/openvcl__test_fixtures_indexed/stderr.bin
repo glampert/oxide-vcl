@@ -1,0 +1,73 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->Z]    ---> [***{maxw}***] {ones},{vf00},{vf00} 
+INFO2: PRUNE FIELD: [XYZW->Z]    ---> [***{maxw}***] {ones},{vf00},{vf00} 
+INFO2: REMOVE INST:   ---> [***{loi}***] {12583167.0}  [ {; clamp colors to 255 (255 + 12582912)} ] 
+INFO2: REMOVE INST:   ---> [***{maxi.w}***] {gs_offsets},{vf00},{i} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {gif_tag},{(((((((((((((((((((((((((((0)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {6)} {+} {6)} {+} {6)} {+} {6)} {+} {6)} {+} {6)} {+} {6)} {+} {6)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {1)} {+} {4)} {+} {1)} {+} {4)} {+} {4)(vi00)} 
+INFO: lpgen[18](limit: number of upper instructions) - 'dumb2' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'normal2' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'vuta1' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'another' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'normal' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'dUp' flow dir_light_vert_loop_lid
+WARN: time out..
+INFO: lpgen[18](limit: number of upper instructions) - 'vuta' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'hDown' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'normal1' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'ldumb' flow dir_light_vert_loop_lid
+INFO: lpgen[18](limit: number of upper instructions) - 'dumb' flow dir_light_vert_loop_lid
+INFO: Opt::Loop dir_light_vert_loop_lid  18/18
+INFO: lpgen[39](limit: number of upper instructions) - 'dumb2' flow pt_light_vert_loop_lid
+WARN: time out..
+INFO: lpgen[39](limit: number of upper instructions) - 'normal2' flow pt_light_vert_loop_lid
+WARN: time out..
+INFO: lpgen[39](limit: number of upper instructions) - 'vuta1' flow pt_light_vert_loop_lid
+INFO: lpgen[39](limit: number of upper instructions) - 'another' flow pt_light_vert_loop_lid
+INFO: lpgen[39](limit: number of upper instructions) - 'normal' flow pt_light_vert_loop_lid
+WARN: time out..
+INFO: lpgen[39](limit: number of upper instructions) - 'dUp' flow pt_light_vert_loop_lid
+WARN: time out..
+INFO: lpgen[39](limit: number of upper instructions) - 'vuta' flow pt_light_vert_loop_lid
+INFO: lpgen[39](limit: number of upper instructions) - 'hDown' flow pt_light_vert_loop_lid
+INFO: lpgen[39](limit: number of upper instructions) - 'normal1' flow pt_light_vert_loop_lid
+INFO: lpgen[39](limit: number of upper instructions) - 'ldumb' flow pt_light_vert_loop_lid
+WARN: time out..
+INFO: lpgen[39](limit: number of upper instructions) - 'dumb' flow pt_light_vert_loop_lid
+WARN: time out..
+INFO: Opt::Loop pt_light_vert_loop_lid  39/34
+INFO: lpgen[38](limit: number of lower instructions) - 'dumb2' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'normal2' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'vuta1' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'another' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'normal' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'dUp' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'vuta' flow xform_loop_lid
+INFO: lpgen[38](limit: number of lower instructions) - 'hDown' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'normal1' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[38](limit: number of lower instructions) - 'ldumb' flow xform_loop_lid
+INFO: lpgen[38](limit: number of lower instructions) - 'dumb' flow xform_loop_lid
+WARN: time out..
+INFO: Opt::Loop   xform_loop_lid  38/38
+INFO2: REMOVE INST:   ---> [***{iaddiu}***] {next_output},{next_output},{3} 
+INFO2: REMOVE INST:   ---> [***{iaddiu}***] {next_output},{next_output},{3} 
+INFO: Opt::Linear    __v_CORPUS_16  4/4
+INFO: Opt::Linear    __v_CORPUS_10  4/4
+INFO: Opt::Linear     __v_CORPUS_4  4/4
+INFO: Opt::Linear    main_loop_lid  8/8
+INFO: Opt::Linear     __v_CORPUS_7  1/4
+INFO: Opt::Linear dir_light_loop_lid  55/52
+INFO: Opt::Linear    pt_lights_lid  6/6
+INFO: Opt::Linear    __v_CORPUS_13  1/4
+INFO: Opt::Linear pt_light_loop_lid  16/16
+INFO: Opt::Linear done_lighting_lid  30/30
+INFO: Opt::Linear    __v_CORPUS_20  4/2
+INFO: Opt::Linear    __v_CORPUS_21  2/2
+INFO: OS_End(Linux)

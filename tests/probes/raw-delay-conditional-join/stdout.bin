@@ -1,0 +1,34 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_ORACLE_5:
+; _LNOPT_w=[ ] 2 [4 0] 2   [__v_ORACLE_5]
+         NOP                                                        ibeq          VI01,VI00,target                    
+         add           VF02,VF01,VF01                               NOP                                               
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [__v_ORACLE_7]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     nop                                               
+         add           VF03,VF02,VF01                               NOP                                               
+target:
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [target]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     NOP                                               
+         sub           VF03,VF02,VF01                               NOP                                               
+		.align 4
+;	iCount=10
+; register stats:
+;   2 VU User integer
+;   3 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

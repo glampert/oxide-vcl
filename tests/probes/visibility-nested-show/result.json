@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uDEMO",
+    "/work/nested-show.vcl"
+  ],
+  "input_sha256": "f33bf7565969d17b1ece831c088205c0fe9ecef3eb8f8fa39398f1c7e222dcd8",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.8998647499829531,
+  "cpu_seconds": 0.5262789999999999,
+  "stdout_sha256": "cf45ef142b8df1be00fbb7209188c3a066137c658b35ad2aa7f0a4c4cf01c2ee",
+  "stderr_sha256": "dd164e398d44138bde312171542816404933636aeefa6939855447627869c1d0",
+  "stdout_bytes": 948,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

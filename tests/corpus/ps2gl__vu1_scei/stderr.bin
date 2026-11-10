@@ -1,0 +1,32 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST:   ---> [***{ilw.w}***] {do_clipping},{76(vi00)} 
+INFO: lpgen[19](limit: number of upper instructions) - 'dumb2' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[19](limit: number of upper instructions) - 'normal2' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'vuta1' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'another' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[19](limit: number of upper instructions) - 'normal' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'dUp' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'vuta' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'hDown' flow adcLoop_done_lid
+WARN: time out..
+INFO: lpgen[19](limit: number of upper instructions) - 'normal1' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'ldumb' flow adcLoop_done_lid
+INFO: lpgen[19](limit: number of upper instructions) - 'dumb' flow adcLoop_done_lid
+WARN: time out..
+INFO: Opt::Loop adcLoop_done_lid  19/19
+INFO: Opt::Linear     __v_CORPUS_6  16/14
+INFO: Opt::Linear     __v_CORPUS_7  16/14
+INFO: Opt::Linear     __v_CORPUS_4  10/10
+INFO: Opt::Linear     __v_CORPUS_5  12/9
+INFO: Opt::Linear  finish_init_lid  17/16
+INFO: Opt::Linear    main_loop_lid  19/19
+INFO: Opt::Linear      adcLoop_lid  13/13
+INFO: Opt::Linear    __v_CORPUS_12  8/8
+INFO: Opt::Linear    __v_CORPUS_13  8/8
+INFO: Opt::Linear    __v_CORPUS_14  8/8
+INFO: Opt::Linear    __v_CORPUS_15  7/7
+INFO: Opt::Linear         done_lid  4/2
+INFO: Opt::Linear    __v_CORPUS_19  2/2
+INFO: OS_End(Linux)

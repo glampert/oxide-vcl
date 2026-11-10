@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCOPY",
+    "/work/copy-iaddiu-zero.vcl"
+  ],
+  "input_sha256": "70dccb6100c5d12b5e0a5b9a470dc1fe4c3c1a63d6bdfd5b6032e846439df51a",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 30.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.1585485000105109,
+  "cpu_seconds": 0.176253,
+  "stdout_sha256": "1b40f75e80d3c6952d0ae4928d8d438750d09907955ffaacb4a6a0d84c1c147f",
+  "stderr_sha256": "16a962867cdb5f596266f0e32787a04519d0eaa6490c2deb1cc19791a1a8f188",
+  "stdout_bytes": 779,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

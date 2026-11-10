@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+USER: a scalar can only be the third operand in generic instruction
+USER: couldn't decode instruction .. problem is at:
+  ---> {add} [***{result[x]}***],{model},{model} 
+USER: expected format is: add.[xyzw]	vec_reg,vf_reg,vec_reg
+INFO: OS_End(Linux)

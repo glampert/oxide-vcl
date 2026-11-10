@@ -1,0 +1,35 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_seed_store_order_CodeStart
+		.global	Repro_seed_store_order_CodeEnd
+Repro_seed_store_order_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ another ] 10 [9 0] 10   [__v_CORPUS_4]
+         NOP                                                        lq            VF02,2(VI00)                        
+         NOP                                                        lq            VF01,1(VI00)                        
+         NOP                                                        iaddiu        VI01,VI00,0x00000003                
+         NOP                                                        iaddiu        VI02,VI00,0                         
+         max.yz        VF02,VF02,VF02                               sq            VF02,961(VI02)                      
+         NOP                                                        sq            VF01,962(VI02)                      
+         NOP                                                        sq            VF01,960(VI02)                      
+         NOP                                                        isw.x         VI01,1009(VI00)                     
+         NOP[E]                                                     sq.yz         VF02,961(VI00)                      
+         NOP                                                        NOP                                               
+		.align 4
+Repro_seed_store_order_CodeEnd:
+;	iCount=10
+; register stats:
+;   3 VU User integer
+;   2 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

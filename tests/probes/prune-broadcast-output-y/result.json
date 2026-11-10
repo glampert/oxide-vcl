@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uPRUNE",
+    "/work/prune-broadcast-output-y.vcl"
+  ],
+  "input_sha256": "a6c7b3a7aeed5a25ddc46d56e4f5b75df5beb69ff7db1b254b671d93db9f8cde",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.15523908310569823,
+  "cpu_seconds": 0.17793199999999998,
+  "stdout_sha256": "30dbd5cc4a7477229f6c356d4ce1779d281fadf76f183b1f809750226ca1e851",
+  "stderr_sha256": "1cb095a9dc94b86040dc1bed2e27c2830e82cc27dd53be14bb8afc2e56568704",
+  "stdout_bytes": 781,
+  "stderr_bytes": 201,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

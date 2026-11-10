@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+ERROR: init work area - failed to get vu mem pool
+USER: a directive parser failed at line:
+  ---> {.vu_work_area} {vu0},{0x20},{4} 
+INFO: OS_End(Linux)

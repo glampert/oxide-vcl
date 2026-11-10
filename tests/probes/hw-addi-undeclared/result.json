@@ -1,0 +1,29 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/hw-addi-undeclared.vcl"
+  ],
+  "input_sha256": "6bd3f8943fc5fa1d85432beb2c629c7c1dd0d4febdad98e8c5ac8b2cc5de004e",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 4294967295,
+  "exit_status": 255,
+  "wall_seconds": 0.07037391699850559,
+  "cpu_seconds": 0.072296,
+  "stdout_sha256": "c7650eaaaa621b80c48197851423f5cce526925e64c726069779ea6f55c1b4f3",
+  "stderr_sha256": "f23d4bfa9f6077659d5a588675d28344a5e251534abb2b80c247c398037965bf",
+  "stdout_bytes": 47,
+  "stderr_bytes": 320,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 0,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

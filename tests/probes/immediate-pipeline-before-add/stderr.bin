@@ -1,0 +1,18 @@
+INFO: OS_Init(Linux)
+WARN: vcl thinks it found problem(s) in the input source:
+INFO: VCL thinks the following instructions caused stalls:
+INFO: STALL_LATENCY(2) maxVal 2 : local
+INFO:     setter is : (field(s) : XYZW)   ---> {1..abs} {vf00},{vf01} {2..lq} [***{vf03}***],{5(vi02)} 
+INFO:     user is   : (field(s) : XYZW)   ---> {3..add} {vf02},[***{vf03}***],{vf01} {1..iaddiu} {vi02},{vi02},{3} 
+INFO: STALL_LATENCY(2) maxVal 2 : local
+INFO:     setter is : (field(s) : XYZW)   ---> {1..abs} {vf00},{vf01} {2..lq} [***{vf03}***],{5(vi02)} 
+INFO:     user is   : (field(s) : XYZW)   ---> {3..add} {vf02},[***{vf03}***],{vf01} {1..iaddiu} {vi02},{vi02},{3} 
+INFO2: REMOVE INST:   ---> [***{1..abs}***] {vf00},{vf01} {2..lq} {vf03},{5(vi02)} 
+INFO2: REMOVE INST:   ---> [***{1..abs}***] {vf00},{vf01} {2..lq} {vf03},{5(vi02)} 
+INFO2: REMOVE INST:   ---> {1..abs} {vf00},{vf01} [***{2..lq}***] {vf03},{5(vi02)} 
+INFO2: REMOVE INST:   ---> [***{1..abs}***] {vf00},{vf01} {2..lq} {vf03},{5(vi02)} 
+INFO2: REMOVE INST:   ---> {1..abs} {vf00},{vf01} [***{2..lq}***] {vf03},{5(vi02)} 
+INFO2: REMOVE INST:   ---> [***{3..add}***] {vf02},{vf03},{vf01} {1..iaddiu} {vi02},{vi02},{3} 
+INFO2: REMOVE INST:   ---> [***{3..add}***] {vf02},{vf03},{vf01} {1..iaddiu} {vi02},{vi02},{3} 
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_PRUNE_4 missing_value.0
+INFO: UBS: __v_PRUNE_4 missing_value.1
+INFO: UBS: __v_PRUNE_4 missing_value.2
+INFO: UBS: __v_PRUNE_4 missing_value.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register missing_value is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {mul} {unused},[***{missing_value}***],{a} 
+INFO: OS_End(Linux)

@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+ERROR: ea is negative for a work area
+USER: a directive parser failed at line:
+  ---> {.vu_work_area} {vu0},{-1},{2} 
+INFO: OS_End(Linux)

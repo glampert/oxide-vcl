@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+ERROR: VCL has found a branch to register at :
+ERROR: that's apparently set by:
+ERROR: unfortunately vcl can't figure out where the branch should go..
+ERROR: try adding a tag list to the branch
+ERROR: failed to fixup a branch-to-register instruction
+ERROR: failed to resolve branches after constructing streams
+ERROR: flow: failed to split parser stream
+ERROR: failed to build flow from parser!
+INFO: OS_End(Linux)

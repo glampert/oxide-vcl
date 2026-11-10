@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+USER: vcl can't find instruction '|'
+USER: found a syntax error at :
+  ---> {nop} [***{|}***] {nop} 
+INFO: OS_End(Linux)

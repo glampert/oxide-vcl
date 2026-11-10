@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+USER: can't use clip as a name for one of the VU User integer
+USER: oDecode: not find register 'clip' from VU User integer
+USER: couldn't decode instruction .. problem is at:
+  ---> {iadd} [***{clip}***],{a},{a} 
+USER: expected format is: iadd	vi_reg,vi_reg,vi_reg
+INFO: OS_End(Linux)

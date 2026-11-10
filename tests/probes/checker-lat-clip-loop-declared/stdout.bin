@@ -1,0 +1,44 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_clip_loop_entry_CodeStart
+		.global	Repro_clip_loop_entry_CodeEnd
+Repro_clip_loop_entry_CodeStart:
+__v_FIX_4:
+; _LNOPT_w=[ normal2 ] 3 [7 0] 5   [__v_FIX_4]
+         NOP                                                        lq            VF01,1(VI00)                        
+         NOP                                                        iaddiu        VI02,VI00,0x00000004                
+         clipw.xyz     VF01xyz,VF01w                                div           Q,VF00w,VF01w                              ;	STALL_LATENCY ?2
+lLoop:
+; _LNOPT_w=[ another ] 12 [7 7] 13   [lLoop]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         mulq          VF02,VF01,Q                                  isubiu        VI02,VI02,1                         
+         NOP                                                        fcand         VI01,63                             
+         NOP                                                        isw.x         VI01,5(VI00)                        
+         clipw.xyz     VF02xyz,VF02w                                div           Q,VF00w,VF02w                              ;	STALL_LATENCY ?1
+         NOP                                                        ibne          VI02,VI00,lLoop                     
+         NOP                                                        sq            VF02,2(VI00)                        
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+Repro_clip_loop_entry_CodeEnd:
+;	iCount=17
+; register stats:
+;   3 VU User integer
+;   3 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

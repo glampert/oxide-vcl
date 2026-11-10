@@ -1,0 +1,9 @@
+INFO: OS_Init(Linux)
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fGSScale},{4(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fGSOffset},{5(vi00)} 
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {fClipScale},{6(vi00)} 
+INFO: Opt::Linear     __v_CORPUS_4  32/32
+INFO: Opt::Linear    lParticleLoop  40/40
+INFO: Opt::Linear     __v_CORPUS_7  1/1
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

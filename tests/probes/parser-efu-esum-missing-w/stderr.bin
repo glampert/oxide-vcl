@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_PARSER_4 value.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register value is used before set at instruction(s) :
+INFO:    (field(s) : W)   ---> {esum} {P},[***{value}***] 
+INFO: OS_End(Linux)

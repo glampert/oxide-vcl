@@ -1,0 +1,46 @@
+INFO: OS_Init(Linux)
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+INFO: VU User integer
+INFO:  EXTERNAL:                 VI02 - VI02 
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF01.XYZW - VF01 
+INFO:  EXTERNAL:            VF03.XYZW - VF03 -THR
+INFO:  LOCAL : scratch_temp__0__0.XYZW - UNALLOCATED
+ERROR: no opt table.. something failed making table .. for __v_ORACLE_5!
+ERROR: failed to convert all uta linear->raw
+INFO: OS_End(Linux)

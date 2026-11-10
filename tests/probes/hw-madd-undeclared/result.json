@@ -1,0 +1,29 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/hw-madd-undeclared.vcl"
+  ],
+  "input_sha256": "0d6976e7a33ff3f827ca7793f6432eae80917309bc752a4a13c82113fcc6531e",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 4294967295,
+  "exit_status": 255,
+  "wall_seconds": 0.07085141609422863,
+  "cpu_seconds": 0.07498300000000002,
+  "stdout_sha256": "c7650eaaaa621b80c48197851423f5cce526925e64c726069779ea6f55c1b4f3",
+  "stderr_sha256": "c5f01be1889609a85a8a803bc66f2a21b2310a5951c373259e1785fbf197bf3f",
+  "stdout_bytes": 47,
+  "stderr_bytes": 455,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 0,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

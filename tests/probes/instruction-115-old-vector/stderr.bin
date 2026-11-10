@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_INSTRUCTION_5 tt_nP.0
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register tt_nP is used before set at instruction(s) :
+INFO:    implicit operand 'tt_nP'
+  ---> {nop} [***{waitp}***] 
+INFO: OS_End(Linux)

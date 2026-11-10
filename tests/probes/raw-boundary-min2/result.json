@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uBOUND",
+    "/work/raw-boundary-min2.vcl"
+  ],
+  "input_sha256": "80def70e3aa276b39eb53c72386f41f7f6bbee6b7fc198e65c6f426e53c1334d",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 30.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.7538571660115849,
+  "cpu_seconds": 0.6804129999999999,
+  "stdout_sha256": "083385bab7de6507989f910cbf26324de51ab9ea74ff48bb8be712878a591c92",
+  "stderr_sha256": "3bf9886ea3f575550545420962b2c53491383f9dd7cb037b11fc9338cacd42bc",
+  "stdout_bytes": 3191,
+  "stderr_bytes": 1453,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 0,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

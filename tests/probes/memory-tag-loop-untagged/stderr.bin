@@ -1,0 +1,42 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[6](limit: number of lower instructions) - 'dumb2' flow loop
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 2 critical at -1 recoverable at 1 minSafe=0..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=0..so abort
+WARN: time out..
+INFO: lpgen[6](limit: number of lower instructions) - 'normal2' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'vuta1' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'another' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'normal' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'dUp' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'vuta' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'hDown' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'normal1' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'ldumb' flow loop
+INFO: lpgen[6](limit: number of lower instructions) - 'dumb' flow loop
+WARN: time out..
+INFO: Opt::Loop             loop  6/6
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

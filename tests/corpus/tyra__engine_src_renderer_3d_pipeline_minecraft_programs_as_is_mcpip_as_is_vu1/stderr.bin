@@ -1,0 +1,11 @@
+INFO: OS_Init(Linux)
+INFO: prune inaccessible stream __v_CORPUS_11
+INFO: REMOVE INST: operand -1 modbits ffffffff..
+INFO2: PRUNE FIELD: [XYZW->XYZ]    ---> [***{lq}***] {scale},{0(buffer)} 
+INFO: Opt::Linear            begin  18/18
+INFO: Opt::Linear     __v_CORPUS_4  2/4
+INFO: Opt::Linear       vertexLoop  30/23
+INFO: Opt::Linear     __v_CORPUS_7  1/1
+INFO: Opt::Linear     __v_CORPUS_8  2/0
+INFO: Opt::Linear     __v_CORPUS_9  2/2
+INFO: OS_End(Linux)

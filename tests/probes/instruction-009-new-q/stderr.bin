@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+ERROR: failed to find derived instruction type 'miniq'
+ERROR: oDecode:: iBuildHook failed to patch instruction
+USER: couldn't decode instruction .. problem is at:
+  ---> {mini} {vf04},{vf01},{Q} 
+USER: expected format is: mini.[xyzw]	vf_reg,vf_reg,Q
+INFO: OS_End(Linux)

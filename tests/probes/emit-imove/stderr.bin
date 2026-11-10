@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear     __v_ORACLE_4  1/1
+ERROR: baseMuid not set in vmove_Emit
+ERROR: emit hook failed for an instruction
+ERROR: failed to emit upper for pipe 1 ie
+ERROR: failed to emit instruction!
+ERROR: failed to build out table
+ERROR: flowMon : failed to write a stream
+ERROR: failed to write string
+INFO: OS_End(Linux)

@@ -1,0 +1,9 @@
+INFO: OS_Init(Linux)
+INFO: Opt::Linear       __v_CALL_4  2/4
+INFO: Opt::Linear     first_return  2/4
+INFO: Opt::Linear       subroutine  6/4
+INFO: Opt::Linear    second_return  2/4
+INFO: table first_return appears to have stalls - so skipping reduce pass
+INFO: table subroutine appears to have stalls - so skipping reduce pass
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

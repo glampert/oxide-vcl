@@ -1,0 +1,9 @@
+INFO: OS_Init(Linux)
+INFO: BLD_PASS
+INFO: pass thru  - setting reached top for __v_FIX_7
+INFO: Opt::Linear        __v_FIX_4  1/1
+INFO: Opt::Linear        __v_FIX_7  0/0
+INFO: Opt::Linear       __v_FIX_10  1/1
+INFO: skip target emit. .coz it's no longer visible
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

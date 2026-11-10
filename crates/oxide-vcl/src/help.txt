@@ -1,0 +1,50 @@
+oxide-vcl {version} (Oxide VCL), built {date}
+Schedules VCL source into PlayStation 2 vector unit assembly.
+
+usage: oxide-vcl [options] [inputfile]
+
+Reads <inputfile>, or standard input when it is absent, and writes the
+assembly to standard output unless -o is given. Options come before the input
+file, and a value follows its option letter directly: -ofile.vsm, not
+-o file.vsm.
+
+output:
+  -o<file>       write the assembly to <file>
+  -j<file>       also write an assembler header of the program's labels to <file>
+  -m[<address>]  wrap the code in a DMA/MPG packet loaded at <address> (default 0)
+  -c             emit the source lines as comments
+  -s             emit symbolic register names, skipping register assignment
+  -f             omit .align directives
+  -e             never set the [E] bit (--exitm without an argument does this
+                 for one exit)
+  -u<name>       prefix generated labels with <name> instead of the file name
+  -U             make all labels except .global ones unique
+
+input:
+  -n             new syntax mode
+  -G             run the C preprocessor first (gcc -P -E -C -x assembler-with-cpp)
+  -g             run gasp first, for macros and source line information
+                 (gasp -p -s -c ';')
+  -g+            run gasp with its alternate syntax (gasp -p -a -s -c ';')
+  -I<dir>        pass an include directory to the preprocessors
+  -W             skip the preprocessors
+  -K             keep the preprocessors' temporary files
+
+code generation:
+  -L             schedule loops as straight-line code
+  -d             plain in-order code generation only; implies -L
+  -C             disable the code size reduction pass
+  -M             timid memory access mode
+
+diagnostics:
+  -q             quiet: print only warnings and errors
+  -p             Microsoft-style errors: file(line): error: message
+  -h             print this help
+
+accepted for compatibility, without effect:
+  -t<seconds>    optimizer time limit (this optimizer has none)
+  -S             staggered memory access in loops
+  -D             register dumps during external allocation
+  -Q             undocumented in vcl
+  -a             always on
+  -P, -Z         deprecated; print a warning

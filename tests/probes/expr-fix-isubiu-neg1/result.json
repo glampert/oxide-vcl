@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uEXPR",
+    "/work/expr-fix-isubiu-neg1.vcl"
+  ],
+  "input_sha256": "2af5caa7a10a4e51d1542a338994ea9baf8f2d2208f43fa487e5c6738fdd9615",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.15580104081891477,
+  "cpu_seconds": 0.17586799999999997,
+  "stdout_sha256": "9926ca95a19e5df65514a1660f1c5e1e14f9e36f16cbff4e7ebb65ca8d8e6799",
+  "stderr_sha256": "0a44ec4f24454049f787feb09c5cc570a6b8e48c5e435f5ec3f147f24c58a1c3",
+  "stdout_bytes": 779,
+  "stderr_bytes": 346,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

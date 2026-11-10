@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+WARN: changing binding for b from VF02 to VF03
+ERROR: regweb:: set map - can't map to different base registers..
+ERROR: regweb:: try to map both VF03 and VF02
+ERROR: failed to load mapping from a into b
+ERROR: failed to merge web entries
+ERROR: RegWeb::AddiTable: failed to add an isn
+ERROR: flow: AddIStream failed for __v_ORACLE_5
+ERROR: failed to gather flow
+INFO: OS_End(Linux)

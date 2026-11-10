@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/openvcl__repros_mac_join.vcl"
+  ],
+  "input_sha256": "8edd10256ee846fdab125ac6a322f58e08cdf5ec9cbc62cb4d2b27d5a6833872",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 120.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.8006989999848884,
+  "cpu_seconds": 0.7118929999999999,
+  "stdout_sha256": "5008af9ce3b26cc47146f8212de59f0ad115833c4561053ac8c19913cc95a46a",
+  "stderr_sha256": "90607e1263f3c1ce26d3c5e6d370af3fd7042daa23eda423c20e02036588e2f1",
+  "stdout_bytes": 2505,
+  "stderr_bytes": 322,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 9,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

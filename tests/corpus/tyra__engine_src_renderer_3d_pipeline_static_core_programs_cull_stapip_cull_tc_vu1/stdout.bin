@@ -1,0 +1,132 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	StaPipVU1Cull_TC_CodeStart
+		.global	StaPipVU1Cull_TC_CodeEnd
+StaPipVU1Cull_TC_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 11 [11 0] 11   [__v_CORPUS_4]
+         NOP                                                        fcset         0                                   
+         NOP                                                        lq            VF01,19(VI00)                       
+         NOP                                                        lq            VF02,0(VI00)                        
+         NOP                                                        lq            VF03,1(VI00)                        
+         NOP                                                        lq            VF04,2(VI00)                        
+         NOP                                                        lq            VF05,3(VI00)                        
+         NOP                                                        lq            VF06,7(VI00)                        
+         NOP                                                        ilw.x         VI02,8(VI00)                        
+         NOP                                                        lq            VF07,9(VI00)                        
+         NOP                                                        lq            VF08,10(VI00)                       
+         NOP                                                        lq            VF09,11(VI00)                       
+begin:
+; _LNOPT_w=[ normal2 ] 8 [8 0] 8   [begin]
+         NOP                                                        xtop          VI03                                
+         NOP                                                        ilw.w         VI01,0(VI03)                        
+         NOP                                                        iaddiu        VI04,VI03,0x00000002                
+         NOP                                                        lq.xyz        VF10,0(VI03)                        
+         NOP                                                        lq            VF11,1(VI03)                        
+         NOP                                                        iadd          VI05,VI04,VI01                      
+         NOP                                                        iblez         VI02,setDestAddrMultiColor          
+         NOP                                                        iadd          VI06,VI05,VI01                      
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_6]
+         NOP                                                        b             setDestAddr                         
+         NOP                                                        iadd          VI07,VI05,VI01                      
+setDestAddrMultiColor:
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [setDestAddrMultiColor]
+         NOP                                                        iadd          VI07,VI06,VI01                      
+setDestAddr:
+; _LNOPT_w=[ normal2 ] 10 [10 0] 10   [setDestAddr]
+         NOP                                                        iaddiu        VI08,VI07,0                         
+         NOP                                                        sq            VF01,0(VI08)                        
+         NOP                                                        sq            VF08,1(VI08)                        
+         NOP                                                        sq            VF01,2(VI08)                        
+         NOP                                                        sq            VF07,3(VI08)                        
+         NOP                                                        sq            VF01,4(VI08)                        
+         NOP                                                        sq            VF09,5(VI08)                        
+         NOP                                                        sq            VF11,6(VI08)                        
+         NOP                                                        iaddiu        VI08,VI08,0x00000007                
+         NOP                                                        iadd          VI09,VI03,VI01                      
+vertexLoop:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [vertexLoop]
+         NOP                                                        iblez         VI02,multiColor                     
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 3 [4 0] 3   [__v_CORPUS_11]
+         add           VF11,VF06,VF00                               NOP                                               
+         add           VF12,VF06,VF00                               b             processing                          
+         add           VF13,VF06,VF00                               NOP                                               
+multiColor:
+; _LNOPT_w=[ normal2 ] 3 [4 0] 3   [multiColor]
+         NOP                                                        lq            VF11,0(VI06)                        
+         NOP                                                        lq            VF12,1(VI06)                        
+         NOP                                                        lq            VF13,2(VI06)                        
+processing:
+; _LNOPT_w=[ another ] 45 [39 0] 48   [processing]
+         NOP                                                        lq            VF16,0(VI04)                        
+         mulax         ACC,VF02,VF16x                               lq            VF15,1(VI04)                               ;	STALL_LATENCY ?3
+         madday        ACC,VF03,VF16y                               NOP                                               
+         maddaz        ACC,VF04,VF16z                               NOP                                               
+         maddw         VF16,VF05,VF16w                              NOP                                               
+         mulax         ACC,VF02,VF15x                               lq            VF14,2(VI04)                        
+         madday        ACC,VF03,VF15y                               NOP                                               
+         maddaz        ACC,VF04,VF15z                               NOP                                               
+         maddw         VF15,VF05,VF15w                              NOP                                               
+         mulax         ACC,VF02,VF14x                               div           Q,VF00w,VF16w                       
+         madday        ACC,VF03,VF14y                               NOP                                               
+         maddaz        ACC,VF04,VF14z                               loi           0x437f0000                          
+         minii.xyz     VF11,VF11,I                                  lq            VF18,0(VI05)                        
+         maddw         VF14,VF05,VF14w                              loi           0x437f0000                          
+         minii.xyz     VF13,VF13,I                                  NOP                                               
+         clipw.xyz     VF16xyz,VF16w                                NOP                                               
+         mulq.xyz      VF16,VF16,Q                                  div           Q,VF00w,VF15w                       
+         mulq          VF17,VF18,Q                                  loi           0x437f0000                          
+         minii.xyz     VF12,VF12,I                                  iaddiu        VI06,VI06,0x00000003                
+         clipw.xyz     VF15xyz,VF15w                                iaddiu        VI05,VI05,0x00000003                
+         maxx.xyz      VF11,VF11,VF00x                              iaddiu        VI04,VI04,0x00000003                
+         maxx.xyz      VF13,VF13,VF00x                              lq            VF18,-2(VI05)                       
+         mulaw.xyz     ACC,VF10,VF00w                               fcand         VI01,262143                         
+         mulq.xyz      VF15,VF15,Q                                  div           Q,VF00w,VF14w                       
+         maxx.xyz      VF12,VF12,VF00x                              iaddiu        VI08,VI08,0x00000009                
+         madd.xyz      VF17,VF16,VF10                               sq            VF17,-9(VI08)                       
+         mulq          VF16,VF18,Q                                  lq            VF19,-1(VI05)                       
+         clipw.xyz     VF14xyz,VF14w                                isubiu        VI09,VI09,3                         
+         ftoi0         VF11,VF11                                    iaddiu        VI01,VI01,0x00007fff                
+         ftoi0         VF20,VF13                                    isw.w         VI01,-7(VI08)                       
+         mulq.xyz      VF13,VF14,Q                                  fcand         VI01,262143                         
+         mulaw.xyz     ACC,VF10,VF00w                               iaddiu        VI01,VI01,0x00007fff                
+         ftoi4.xyz     VF18,VF17                                    isw.w         VI01,-4(VI08)                       
+         madd.xyz      VF16,VF15,VF10                               sq            VF16,-6(VI08)                       
+         ftoi0         VF12,VF12                                    fcand         VI01,262143                         
+         mulaw.xyz     ACC,VF10,VF00w                               iaddiu        VI01,VI01,0x00007fff                
+         madd.xyz      VF11,VF13,VF10                               sq            VF11,-8(VI08)                       
+         mulq          VF14,VF19,Q                                  isw.w         VI01,-1(VI08)                       
+         ftoi4.xyz     VF12,VF16                                    sq            VF12,-5(VI08)                       
+         NOP                                                        sq            VF20,-2(VI08)                       
+         ftoi4.xyz     VF11,VF11                                    sq.xyz        VF18,-7(VI08)                       
+         NOP                                                        sq            VF14,-3(VI08)                       
+         NOP                                                        sq.xyz        VF12,-4(VI08)                       
+         NOP                                                        ibne          VI09,VI03,vertexLoop                
+         NOP                                                        sq.xyz        VF11,-1(VI08)                       
+; _LNOPT_w=[ normal2 ] 1 [1 0] 1   [__v_CORPUS_15]
+         NOP                                                        xgkick        VI07                                
+; _LNOPT_w=[ normal2 ] 2 [0 0] 2   [__v_CORPUS_16]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CORPUS_17]
+         NOP                                                        b             begin                               
+         NOP                                                        NOP                                               
+		.align 4
+StaPipVU1Cull_TC_CodeEnd:
+;	iCount=90
+; register stats:
+;  10 VU User integer
+;  21 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

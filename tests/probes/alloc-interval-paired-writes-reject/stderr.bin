@@ -1,0 +1,12 @@
+INFO: OS_Init(Linux)
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:              VF01.XY - VF01 
+INFO:  EXTERNAL:               VF04.Y - VF04 
+INFO:  EXTERNAL:              VF02.XY - VF02 
+INFO:  LOCAL :     temp_one__0__0.X - UNALLOCATED
+INFO:  LOCAL :     temp_two__0__0.Y - VF03
+ERROR: failed to assign reg for vsm table!
+ERROR: here is __v_ORACLE_5
+ERROR: failed to process raw tables
+INFO: OS_End(Linux)

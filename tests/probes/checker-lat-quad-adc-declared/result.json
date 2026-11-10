@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFIX",
+    "/work/checker-lat-quad-adc-declared.vcl"
+  ],
+  "input_sha256": "e6dbd414bd471c1d1a8095695ccc11c2b120456830386f5c170a8fbdf53173e8",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.3498842500266619,
+  "cpu_seconds": 0.40725900000000004,
+  "stdout_sha256": "2cb729471a08bbbfa5b1ba145a8972cacb361357c6d911b1f2179580c6700747",
+  "stderr_sha256": "40a58da3aced923a9a7cb5603a285990361ad39da1cb6747f81d0c1fe2b66cf7",
+  "stdout_bytes": 3253,
+  "stderr_bytes": 393,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 7,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uP",
+    "/work/c_coal.vcl"
+  ],
+  "input_sha256": "6897394156b8759b4e4449c5c66d5bd3420d1318d91a28f903672bd7a5a27d27",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 600.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.19587129197316244,
+  "cpu_seconds": 0.224602,
+  "stdout_sha256": "33a2f58b0289a583e471a7f22ff2a90a42e099be772bfdba30625a642da60962",
+  "stderr_sha256": "6329017fb6de2ea754e862dd5b13a80b42c4a74ca671595b004914e867c7477e",
+  "stdout_bytes": 1573,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

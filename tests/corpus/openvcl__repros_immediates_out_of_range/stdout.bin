@@ -1,0 +1,33 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_immediates_out_of_range_CodeStart
+		.global	Repro_immediates_out_of_range_CodeEnd
+Repro_immediates_out_of_range_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 8 [7 0] 11   [__v_CORPUS_4]
+         NOP                                                        ilw.x         VI01,0(VI00)                        
+         NOP                                                        isubiu        VI03,VI01,18                               ;	STALL_LATENCY ?3
+         NOP                                                        iaddiu        VI02,VI01,0x00009c40                
+         NOP                                                        isubiu        VI01,VI01,0xffffffff                
+         NOP                                                        isw.x         VI03,2000(VI00)                     
+         NOP                                                        isw.x         VI02,3(VI00)                        
+         NOP[E]                                                     isw.x         VI01,4(VI00)                        
+         NOP                                                        NOP                                               
+		.align 4
+Repro_immediates_out_of_range_CodeEnd:
+;	iCount=8
+; register stats:
+;   4 VU User integer
+;   0 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

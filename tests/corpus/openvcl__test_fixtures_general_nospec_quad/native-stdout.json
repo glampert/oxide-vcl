@@ -1,0 +1,8 @@
+{
+  "reference": "native-stdout.bin",
+  "source": "evidence/native/ci-42184560449/vcl-native-shard3/shard3/openvcl__test_fixtures_general_nospec_quad/r1/stdout.bin",
+  "sha256": "c4ba12bcabf7f4f13d14ebf9585f08a1b9ef833aec5b5a98578546d26cece917",
+  "run": "GitHub Actions run 42184560449 (glampert/openvcl ci/vcl-native-corpus), x86-64 Ubuntu 20.04",
+  "repeats": "3 runs, identical output",
+  "why": "Emulated at alarm scale 1 the period 47 normal1 strategy hits the watchdog and the loop is scheduled at period 48; natively it finishes (period 47). An emulated run with that alarm held off (TRACE_UNLIMITED=47:normal1, evidence/lpgen/quad-p47/normal1-unlimited) prints the same output."
+}

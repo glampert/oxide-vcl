@@ -1,0 +1,28 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST:   ---> [***{lq.xyz}***] {obj_to_world_transpose_2},{69(vi00)} 
+INFO2: REMOVE INST:   ---> [***{loi}***] {12583167.0} 
+INFO2: REMOVE INST:   ---> [***{maxi.w}***] {gs_offsets},{vf00},{i} 
+INFO2: REMOVE INST:   ---> [***{ilw.w}***] {do_clipping},{76(vi00)} 
+INFO2: REMOVE INST:   ---> [***{mulq.xyz}***] {ul_tex_asdf},{ul_tex_coord},{q} 
+INFO2: REMOVE INST:   ---> [***{mulq.xyz}***] {lr_tex_asdf},{lr_tex_coord},{q} 
+INFO: lpgen[24](limit: number of upper instructions) - 'dumb2' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[24](limit: number of upper instructions) - 'normal2' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[24](limit: number of upper instructions) - 'vuta1' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'another' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'normal' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'dUp' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'vuta' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'hDown' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'normal1' flow xform_loop_lid
+INFO: lpgen[24](limit: number of upper instructions) - 'ldumb' flow xform_loop_lid
+WARN: time out..
+INFO: lpgen[24](limit: number of upper instructions) - 'dumb' flow xform_loop_lid
+WARN: time out..
+INFO: Opt::Loop   xform_loop_lid  24/24
+INFO: Opt::Linear     __v_CORPUS_4  12/12
+INFO: Opt::Linear    main_loop_lid  12/11
+INFO: Opt::Linear         done_lid  4/2
+INFO: Opt::Linear     __v_CORPUS_9  2/2
+INFO: OS_End(Linux)

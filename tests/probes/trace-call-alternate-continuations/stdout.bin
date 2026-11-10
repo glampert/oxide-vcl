@@ -1,0 +1,45 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_CALL_4:
+; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_CALL_4]
+         NOP                                                        ibeq          VI02,VI00,second_call               
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [__v_CALL_5]
+         add           VF02,VF01,VF01                               bal           VI01,subroutine                     
+         mul           VF03,VF01,VF01                               NOP                                               
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [first_return]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     nop                                               
+         add           VF02,VF03,VF01                               NOP                                               
+second_call:
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [second_call]
+         sub           VF02,VF00,VF00                               bal           VI01,subroutine                     
+         add           VF03,VF01,VF01                               NOP                                               
+; _LNOPT_w=[ normal2 ] 4 [4 0] 4   [second_return]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     NOP                                               
+         sub           VF02,VF03,VF01                               NOP                                               
+subroutine:
+; _LNOPT_w=[ normal2 ] 3 [4 0] 3   [subroutine]
+         NOP                                                        NOP                                               
+         NOP                                                        jr            VI01                                
+         mul           VF01,VF02,VF02                               NOP                                               
+		.align 4
+;	iCount=17
+; register stats:
+;   3 VU User integer
+;   4 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

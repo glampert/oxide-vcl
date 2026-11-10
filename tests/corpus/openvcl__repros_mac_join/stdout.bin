@@ -1,0 +1,44 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+		.global	Repro_mac_join_CodeStart
+		.global	Repro_mac_join_CodeEnd
+Repro_mac_join_CodeStart:
+__v_CORPUS_4:
+; _LNOPT_w=[ normal2 ] 4 [6 0] 6   [__v_CORPUS_4]
+         NOP                                                        ilw.x         VI01,0(VI00)                        
+         NOP                                                        lq.xyz        VF01,1(VI00)                        
+         NOP                                                        ibeq          VI01,VI00,lFmtB                            ;	STALL_LATENCY ?2
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [__v_CORPUS_5]
+         sub.xyz       VF02,VF01,VF00                               b             lJoin                               
+         NOP                                                        NOP                                               
+lFmtB:
+; _LNOPT_w=[ normal2 ] 1 [4 0] 1   [lFmtB]
+         add.xyz       VF02,VF01,VF00                               NOP                                               
+lJoin:
+; _LNOPT_w=[ normal2 ] 7 [3 0] 7   [lJoin]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        fmand         VI01,VI01                           
+         NOP                                                        isw.x         VI01,2(VI00)                        
+         NOP[E]                                                     sq.xyz        VF02,3(VI00)                        
+         NOP                                                        NOP                                               
+		.align 4
+Repro_mac_join_CodeEnd:
+;	iCount=14
+; register stats:
+;   2 VU User integer
+;   3 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

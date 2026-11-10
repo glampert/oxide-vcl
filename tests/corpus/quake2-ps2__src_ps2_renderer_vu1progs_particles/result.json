@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/quake2-ps2__src_ps2_renderer_vu1progs_particles.vcl"
+  ],
+  "input_sha256": "db18c4a019555e86c9534a52822cc96dcfc7a32b4d77807b9b6fca3793fab8cd",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 120.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 2.6590207919944078,
+  "cpu_seconds": 3.16254,
+  "stdout_sha256": "fe72b1052ea20c31bf1a91f27eab900bb67dd33e0c5d3cd9044d53733b3687a2",
+  "stderr_sha256": "24da8773e81540460126fff9a4c7251f1cc98ccf51f9c6420f00e1ac6e7f9e92",
+  "stdout_bytes": 8114,
+  "stderr_bytes": 445,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 5,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

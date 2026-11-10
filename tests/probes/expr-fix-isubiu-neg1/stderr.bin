@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+WARN: immediate -1 doesn't fit as unsigned value in 15 bits - skipping
+WARN: immediate -1 doesn't fit as unsigned value in 15 bits - skipping
+INFO: Opt::Linear       __v_EXPR_4  1/1
+WARN: immediate -1 doesn't fit as unsigned value in 15 bits - skipping
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

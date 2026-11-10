@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uCORPUS",
+    "/work/tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1.vcl"
+  ],
+  "input_sha256": "0c44afe6cecd60d6b4daabd34d18d0d3ee6657b61460a5d06e91dc7fc55fad0c",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 120.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 2.0644460420007817,
+  "cpu_seconds": 2.5614380000000003,
+  "stdout_sha256": "04e374ff470f83e7b8b2c3c5174d466050450f5455abde6bd5e60934ead86993",
+  "stderr_sha256": "16664610f8c42c391bb0264451187d82d292bfd8c42d07498a0b3e3241149faa",
+  "stdout_bytes": 6764,
+  "stderr_bytes": 454,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 16,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

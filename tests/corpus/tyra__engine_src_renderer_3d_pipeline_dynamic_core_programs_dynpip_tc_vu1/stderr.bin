@@ -1,0 +1,11 @@
+INFO: OS_Init(Linux)
+INFO: prune inaccessible stream __v_CORPUS_11
+INFO: REMOVE INST: operand -1 modbits ffffffff..
+INFO2: REMOVE INST:   ---> [***{ilw.x}***] {singleColorEnabled},{8(vi00)} 
+INFO: Opt::Linear     __v_CORPUS_4  13/13
+INFO: Opt::Linear            begin  20/20
+INFO: Opt::Linear       vertexLoop  67/48
+INFO: Opt::Linear     __v_CORPUS_7  1/1
+INFO: Opt::Linear     __v_CORPUS_8  2/0
+INFO: Opt::Linear     __v_CORPUS_9  2/2
+INFO: OS_End(Linux)

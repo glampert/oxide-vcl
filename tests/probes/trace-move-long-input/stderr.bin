@@ -1,0 +1,15 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[7](limit: number of upper instructions) - 'dumb2' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'normal2' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'vuta1' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'another' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'normal' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'dUp' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'vuta' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'hDown' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'normal1' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'ldumb' flow loop
+INFO: lpgen[7](limit: number of upper instructions) - 'dumb' flow loop
+INFO: Opt::Loop             loop  7/7
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

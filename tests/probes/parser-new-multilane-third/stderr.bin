@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+USER: bad [x,y,z,w] token for scalar
+USER: failed to decode operand
+USER: couldn't decode instruction .. problem is at:
+  ---> {add} {result},{model},[***{model[xy]}***] 
+USER: expected format is: add.[xyzw]	vf_reg,vf_reg,vec_reg
+INFO: OS_End(Linux)

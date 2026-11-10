@@ -1,0 +1,29 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uORACLE",
+    "/work/hw-mula-madd.vcl"
+  ],
+  "input_sha256": "51a0bf0df7c929259d3367d54a2ce14b6a57dcfd7de936d4abd7ca24e4988d5c",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 25.0,
+  "wall_timeout_seconds": 60.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "wall_seconds": 0.15430820803157985,
+  "cpu_seconds": 0.17615799999999998,
+  "stdout_sha256": "54cb5367bf04e66f208ac44b090eb8f9088b22b7e2456266c957e5edab952f94",
+  "stderr_sha256": "01c7b381e3b178abe241149cf3064a0a636d5b9dd4f1f70b151300047b078d02",
+  "stdout_bytes": 783,
+  "stderr_bytes": 133,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 1,
+    "fired": 0,
+    "unhandled": 0
+  }
+}

@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+WARN: vcl thinks it found problem(s) in the input source:
+INFO: VCL thinks the following instructions caused stalls:
+INFO: STALL_LATENCY(3) maxVal 3 : local
+INFO:     setter is : (field(s) : XYZW)   ---> {add} {first},{temp_one},{a} {move} [***{temp_two}***],{b} 
+INFO:     user is   : (field(s) : XYZW)   ---> {add} {second},[***{temp_two}***],{a} {nop} 
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

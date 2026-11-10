@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+WARN: changing binding for v from VF01 to VF02
+INFO: Opt::Linear        __v_FIX_4  5/5
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

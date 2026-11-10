@@ -1,0 +1,17 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_ORACLE_5 VF01.0
+INFO: UBS: __v_ORACLE_5 VF01.1
+INFO: UBS: __v_ORACLE_5 VF01.2
+INFO: UBS: __v_ORACLE_5 VF01.3
+INFO: UBS: target VF01.0
+INFO: UBS: target VF01.1
+INFO: UBS: target VF01.2
+INFO: UBS: target VF01.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register VF01 is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {add} {vf03},{vf02},[***{vf01}***] {nop} 
+INFO: Used before set : INFO: register VF01 is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {add} {vf02},[***{vf01}***],{vf01} {nop} 
+INFO:    (field(s) : XYZW)   ---> {add} {vf02},{vf01},[***{vf01}***] {nop} 
+INFO: OS_End(Linux)

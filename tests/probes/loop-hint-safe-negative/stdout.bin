@@ -1,0 +1,43 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_DEMO_loop__MAIN_LOOP:
+; ===             dumb : optimal=2 clid=1 mlid=1 size=(3) 
+; ===            ldumb : optimal=2 clid=1 mlid=1 size=(3) 
+; ===          normal1 : optimal=2 clid=1 mlid=1 size=(3) 
+; ===            hDown : optimal=2 clid=1 mlid=1 size=(3) 
+; ===             vuta : optimal=2 clid=1 mlid=1 size=(3) 
+; ===              dUp : optimal=2 clid=1 mlid=1 size=(3) 
+; ===           normal : optimal=2 clid=1 mlid=1 size=(3) 
+; ===          another : optimal=2 clid=1 mlid=1 size=(3) 
+; ===            vuta1 : optimal=2 clid=1 mlid=1 size=(3) 
+; ===          normal2 : optimal=2 clid=1 mlid=1 size=(3) 
+; ===            dumb2 : optimal=2 clid=1 mlid=1 size=(3) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+EXPL_DEMO_loop__ENTRY_POINT:
+loop:
+; _LNOPT_w=[ ] 1 [1 0] 1   [EXPL_DEMO_loop__ENTRY_POINT]
+         NOP                                                        isubiu        VI02,VI02,0x00000001                
+EXPL_DEMO_loop__MAIN_LOOP:
+; _LPOPT_w=[ dumb ] 3 [2 2] 3   [EXPL_DEMO_loop__MAIN_LOOP]
+         NOP                                                        NOP                                               
+         NOP                                                        ibne          VI02,VI00,EXPL_DEMO_loop__MAIN_LOOP 
+         NOP                                                        isubiu        VI02,VI02,0x00000001                
+; _LNOPT_w=[ ] 2 [0 0] 2   [EXPL_DEMO_loop__EXIT_POINT]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=6
+; register stats:
+;   2 VU User integer
+;   0 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

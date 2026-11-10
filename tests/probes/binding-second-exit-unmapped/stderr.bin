@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+WARN: changing binding for t from VI02 to VI03
+INFO: Opt::Linear        __v_FIX_5  1/1
+INFO: Opt::Linear            other  1/1
+INFO: Opt::Linear        __v_FIX_4  2/2
+INFO: skip target emit. .coz it's no longer visible
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

@@ -1,0 +1,31 @@
+{
+  "binary_sha256": "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274",
+  "guest_argv": [
+    "/bin/vcl",
+    "-t1",
+    "-uFLOW",
+    "/work/flow-merge-export.vcl"
+  ],
+  "input_sha256": "0a51c8aa540825d7de2841407be17f7ead66fc3777de9b6a439b0ba072bc93a4",
+  "stdin_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "time_scale": 1.0,
+  "wall_timeout_seconds": 30.0,
+  "qiling_version": "1.4.6",
+  "unicorn_version": "2.1.4",
+  "exit_code": 0,
+  "exit_status": 0,
+  "guest_exited": true,
+  "emulator_timeout": false,
+  "wall_seconds": 0.2103642919973936,
+  "cpu_seconds": 0.24894800000000003,
+  "stdout_sha256": "498636b1d8be03f2caea67c36d06f7da899ddd7eb8ff1047a3de482ab7157aac",
+  "stderr_sha256": "e320077ba3dd715745a37cad572a802cfea0dd8452a9380c8e973dcf94108953",
+  "stdout_bytes": 961,
+  "stderr_bytes": 195,
+  "emulator_error": false,
+  "alarms": {
+    "armed": 2,
+    "fired": 0,
+    "unhandled": 0
+  }
+}
