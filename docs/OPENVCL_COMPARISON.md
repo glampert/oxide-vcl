@@ -1,6 +1,6 @@
 # Code generation compared with openvcl
 
-How the code oxide-vcl generates compares with openvcl's, on eleven programs
+How the code oxide-vcl generates compares with [openvcl](https://github.com/ps2dev/openvcl)'s, on eleven programs
 from the public corpus (`tests/corpus`): both quake2-ps2 and all three
 doom3-bfg-ps2 renderer programs, both ps2gl programs, two tyra pipelines and
 two of openvcl's own programs. The versions are oxide-vcl 0.1.0 and openvcl

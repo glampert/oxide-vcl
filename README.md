@@ -22,11 +22,11 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
 - Defects of the original that the port reproduces, and proposed opt-in
   fixes, are in [VCL_BUGS.md](docs/VCL_BUGS.md).
 
-## Performance against openvcl
+## Performance against [openvcl](https://github.com/ps2dev/openvcl)
 
 On eleven public corpus programs (quake2-ps2, doom3-bfg-ps2, ps2gl, tyra and
-openvcl's own), scored by openvcl's own static cost analyzer, openvcl 0.4.0's
-code needs 1.33x to 1.75x the estimated cycles of oxide-vcl's in eight, and
+openvcl's own), scored by openvcl's own static cost analyzer, **openvcl 0.4.0's
+code needs 1.33x to 1.75x the estimated cycles of oxide-vcl's** in eight, and
 the smallest, a 6-cycle pass-through, is level. In the other two the totals
 favour openvcl only because they count each wind-down copy of oxide-vcl's
 software-pipelined loops once; the loop that repeats per vertex is 1.95x to
@@ -34,9 +34,7 @@ software-pipelined loops once; the loop that repeats per vertex is 1.95x to
 gain comes from pairing lower-pipe loads, stores and integer updates with
 upper-pipe arithmetic and from filling latencies with independent work,
 where openvcl issues mostly one pipe at a time and pads with `nop` rows.
-openvcl also drops the `clipw` instructions from both tyra programs. Method,
-tables and the tool that reproduces them:
-[OPENVCL_COMPARISON.md](docs/OPENVCL_COMPARISON.md).
+See: [OPENVCL_COMPARISON.md](docs/OPENVCL_COMPARISON.md) for a detailed breakdown.
 
 ## Original artifact (not included here)
 
