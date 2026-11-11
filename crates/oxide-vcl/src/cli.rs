@@ -43,6 +43,8 @@ pub struct Arguments {
     /// Print the version and stop (`-v`, `--version`).
     pub version: bool,
     pub quiet: bool,
+    /// Fail the run when it prints a warning (`--warnings-as-errors`).
+    pub warnings_as_errors: bool,
     /// `file(line): error: message` diagnostics (`-p`).
     pub ms_diagnostics: bool,
     /// Run the C preprocessor first (`-G`).
@@ -112,8 +114,13 @@ impl CliError {
         u32::MAX
     }
 
+    /// vcl's status 255, or 2 in oxide mode (the usual status of a usage
+    /// error).
     pub const fn exit_status(&self) -> u8 {
-        unix_exit_status(self.raw_exit_code())
+        match self.mode {
+            vcl::Mode::Vcl => unix_exit_status(self.raw_exit_code()),
+            vcl::Mode::Oxide => 2,
+        }
     }
 }
 
@@ -138,6 +145,16 @@ where
 {
     let arguments: Vec<String> = arguments.into_iter().map(Into::into).collect();
     let mut options = Arguments::default();
+    // An error stops the parse where it is, so the mode is looked up first,
+    // anywhere on the line, for the error to be reported in it.
+    if let Some(mode) = arguments
+        .iter()
+        .filter_map(|argument| argument.strip_prefix("--mode="))
+        .filter_map(vcl::Mode::from_name)
+        .next_back()
+    {
+        options.compile.mode = mode;
+    }
     let mut index = 0;
     while let Some(argument) = arguments.get(index).filter(|value| value.starts_with('-')) {
         // oxide-vcl's own options, in both modes; vcl 1.4beta7 has no long
@@ -150,6 +167,11 @@ where
             "--version" | "-v" => {
                 options.version = true;
                 return Ok(options);
+            }
+            "--warnings-as-errors" => {
+                options.warnings_as_errors = true;
+                index += 1;
+                continue;
             }
             _ => {}
         }
@@ -353,6 +375,26 @@ mod tests {
                 vcl::Message::Cli(CliMessage::BadArgument { .. })
             ));
         }
+    }
+
+    #[test]
+    fn warnings_as_errors_is_a_long_option() {
+        let options = parse(["--warnings-as-errors", "-q", "file.vcl"]).unwrap();
+        assert!(options.warnings_as_errors && options.quiet);
+        assert_eq!(options.input.as_deref(), Some("file.vcl"));
+        assert!(!parse(["file.vcl"]).unwrap().warnings_as_errors);
+        assert!(parse(["--warnings-as-error"]).is_err());
+    }
+
+    #[test]
+    fn command_line_errors_use_the_mode_given_anywhere() {
+        let error = parse(["-x", "--mode=oxide"]).unwrap_err();
+        assert_eq!(error.mode, vcl::Mode::Oxide);
+        assert_eq!(error.exit_status(), 2);
+        let error = parse(["-o", "out.vsm", "--mode=oxide", "file.vcl"]).unwrap_err();
+        assert_eq!(error.mode, vcl::Mode::Oxide);
+        let error = parse(["-x"]).unwrap_err();
+        assert_eq!((error.mode, error.exit_status()), (vcl::Mode::Vcl, 255));
     }
 
     #[test]

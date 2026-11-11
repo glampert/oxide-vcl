@@ -108,11 +108,22 @@ enum RunError {
     Driver(DriverMessage),
     /// The program did not compile.
     Compile(Vec<vcl::CompileError>),
+    /// `--warnings-as-errors`, and warnings were printed.
+    Warnings,
 }
 
 impl From<DriverMessage> for RunError {
     fn from(message: DriverMessage) -> Self {
         Self::Driver(message)
+    }
+}
+
+/// The input's name in diagnostics.
+fn input_name(arguments: &Arguments) -> &str {
+    match (&arguments.input, arguments.mode()) {
+        (Some(path), _) => path,
+        (None, vcl::Mode::Vcl) => "_stdin_",
+        (None, vcl::Mode::Oxide) => "<stdin>",
     }
 }
 
@@ -133,30 +144,93 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
     };
     let source = preprocess(source, arguments, reporter)?;
     let source = String::from_utf8(source).map_err(|_| DriverMessage::NotUtf8)?;
+    reporter.set_source(input_name(arguments), &source);
     let filename = arguments.input.as_deref().unwrap_or("_stdin_");
     let output = vcl::compile(&source, filename, &arguments.compile).map_err(RunError::Compile)?;
     for warning in &output.warnings {
         reporter.notice(warning);
     }
-    if let Some(path) = &arguments.output {
-        std::fs::write(path, output.assembly.as_bytes()).map_err(|e| {
-            DriverMessage::WriteOutput {
-                path: path.clone(),
-                error: e.to_string(),
-            }
-        })?;
-    } else {
+    // Warnings from the command line count too.
+    if arguments.warnings_as_errors && reporter.warnings() > 0 {
+        return Err(RunError::Warnings);
+    }
+    let failed = |path: &str, e: io::Error| DriverMessage::WriteOutput {
+        path: path.to_string(),
+        error: e.to_string(),
+    };
+    let to_stdout = |reporter: &mut Reporter| {
         reporter
             .assembly(&output.assembly)
             .map_err(|e| DriverMessage::WriteStandardOutput {
                 error: e.to_string(),
-            })?;
+            })
+    };
+    match arguments.mode() {
+        // The listing, then the header, each written in place.
+        vcl::Mode::Vcl => {
+            if let Some(path) = &arguments.output {
+                std::fs::write(path, output.assembly.as_bytes()).map_err(|e| failed(path, e))?;
+            } else {
+                to_stdout(reporter)?;
+            }
+            if let Some(path) = &arguments.header {
+                std::fs::write(path, output.header.as_bytes()).map_err(|e| failed(path, e))?;
+            }
+        }
+        // All files or none, so that a failed run never leaves a new but
+        // incomplete target for make to take as up to date.
+        vcl::Mode::Oxide => {
+            let mut files = Vec::new();
+            if let Some(path) = &arguments.output {
+                files.push((path.as_str(), output.assembly.as_bytes()));
+            }
+            if let Some(path) = &arguments.header {
+                files.push((path.as_str(), output.header.as_bytes()));
+            }
+            write_all_or_nothing(&files)?;
+            if arguments.output.is_none() {
+                to_stdout(reporter)?;
+            }
+        }
     }
-    if let Some(path) = &arguments.header {
-        std::fs::write(path, output.header.as_bytes()).map_err(|e| DriverMessage::WriteOutput {
-            path: path.clone(),
-            error: e.to_string(),
-        })?;
+    Ok(())
+}
+
+/// Write each file to a temporary file beside it, then rename them all into
+/// place. A failed write leaves every target as it was.
+fn write_all_or_nothing(files: &[(&str, &[u8])]) -> Result<(), DriverMessage> {
+    let failed = |path: &str, error: io::Error| DriverMessage::WriteOutput {
+        path: path.to_string(),
+        error: error.to_string(),
+    };
+    let mut staged: Vec<(PathBuf, &str)> = Vec::new();
+    let discard = |staged: &[(PathBuf, &str)]| {
+        for (temporary, _) in staged {
+            let _ = std::fs::remove_file(temporary);
+        }
+    };
+    for &(path, bytes) in files {
+        let target = std::path::Path::new(path);
+        let Some(name) = target.file_name() else {
+            discard(&staged);
+            return Err(failed(path, io::Error::from(io::ErrorKind::InvalidInput)));
+        };
+        let mut temporary_name = std::ffi::OsString::from(".");
+        temporary_name.push(name);
+        temporary_name.push(format!(".{}.tmp", std::process::id()));
+        let temporary = target.with_file_name(temporary_name);
+        if let Err(error) = std::fs::write(&temporary, bytes) {
+            let _ = std::fs::remove_file(&temporary);
+            discard(&staged);
+            return Err(failed(path, error));
+        }
+        staged.push((temporary, path));
+    }
+    for (index, (temporary, path)) in staged.iter().enumerate() {
+        if let Err(error) = std::fs::rename(temporary, path) {
+            discard(&staged[index..]);
+            return Err(failed(path, error));
+        }
     }
     Ok(())
 }
@@ -175,6 +249,7 @@ fn main() {
         }
     };
     reporter.set_mode(arguments.mode());
+    reporter.set_warnings_as_errors(arguments.warnings_as_errors);
 
     for notice in &arguments.notices {
         reporter.notice(notice);
@@ -192,28 +267,40 @@ fn main() {
         return;
     }
 
+    // vcl exits with 255 on every failure but one; oxide mode with 1.
+    let failure_status = match arguments.mode() {
+        vcl::Mode::Vcl => 255,
+        vcl::Mode::Oxide => 1,
+    };
     match run(&arguments, &mut reporter) {
         Ok(()) => {}
         Err(RunError::Compile(errors)) => {
-            // vcl's copy detector fails with an error but exits with status 0.
-            if let Some(error) = errors.iter().find(|error| error.exit_status() == 0) {
+            // vcl's copy detector fails with an error but exits with status
+            // 0; oxide mode treats it as the error it is.
+            if arguments.mode() == vcl::Mode::Vcl
+                && let Some(error) = errors.iter().find(|error| error.exit_status() == 0)
+            {
                 reporter.copy_detection_failure(&error.diagnostic());
                 return;
             }
             let diagnostics: Vec<Diagnostic> = errors.iter().map(|e| e.diagnostic()).collect();
             let style = if arguments.ms_diagnostics {
                 ErrorStyle::Microsoft {
-                    file: arguments.input.as_deref().unwrap_or("_stdin_"),
+                    file: input_name(&arguments),
                 }
             } else {
                 ErrorStyle::Lines
             };
             reporter.compile_errors(&diagnostics, style);
-            std::process::exit(255);
+            std::process::exit(failure_status);
+        }
+        Err(RunError::Warnings) => {
+            reporter.warnings_failed();
+            std::process::exit(failure_status);
         }
         Err(RunError::Driver(message)) => {
             reporter.failure(&Diagnostic::error(message));
-            std::process::exit(255);
+            std::process::exit(failure_status);
         }
     }
 }

@@ -6,8 +6,10 @@
 //!
 //! - [`Mode::Vcl`] (the default) keeps vcl 1.4beta7's wording and layout,
 //!   which the tests assert;
-//! - [`Mode::Oxide`] is free to word and lay out messages better. Until a
-//!   message has its own oxide wording it uses the vcl one.
+//! - [`Mode::Oxide`] words every message its own way (`oxide.rs`), prints
+//!   it as `file(line): severity: text` with the source line, a caret under
+//!   the token it is about and a suggested fix, and ends a failed run with a
+//!   count instead of vcl's abort line.
 //!
 //! [`Reporter`] owns standard output and standard error. The driver writes
 //! everything through it: notices, warnings, errors, the help screen and the
@@ -18,6 +20,9 @@ use std::fmt;
 use std::io::{self, Write};
 
 use crate::allocator::allocation::AllocationError;
+
+mod oxide;
+pub use oxide::Wording;
 
 /// Which compiler this is: vcl 1.4beta7 exactly, or oxide-vcl with its own
 /// fixes, optimizations and messages.
@@ -102,6 +107,14 @@ impl Diagnostic {
         self.message.text(mode)
     }
 
+    /// The severity the message is printed with in `mode`.
+    pub fn severity_in(&self, mode: Mode) -> Severity {
+        match mode {
+            Mode::Vcl => self.severity,
+            Mode::Oxide => oxide::severity(&self.message, self.severity),
+        }
+    }
+
     /// The prefix the line starts with in `mode` (`ERROR: ` and so on).
     pub fn prefix(&self, mode: Mode) -> &'static str {
         match mode {
@@ -161,9 +174,14 @@ impl Message {
         }
     }
 
-    /// oxide-vcl's wording. A message without its own uses the vcl one.
+    /// oxide-vcl's wording.
     pub fn oxide_text(&self) -> String {
-        self.vcl_text()
+        self.wording().text
+    }
+
+    /// oxide-vcl's wording with the token it is about and a suggested fix.
+    pub fn wording(&self) -> Wording {
+        oxide::wording(self)
     }
 
     /// A prefix other than the severity's, as vcl prints it (`USER: `, or
@@ -319,6 +337,8 @@ pub enum DriverMessage {
     BasicProcessingFailed,
     /// The last line of a failed run, on standard output.
     Abort,
+    /// `--warnings-as-errors` failing a run that printed warnings.
+    WarningsAsErrors,
 }
 
 impl DriverMessage {
@@ -357,6 +377,10 @@ impl DriverMessage {
                 "failed to do basic operation processing".into()
             }
             DriverMessage::Abort => "something went wrong, vcl's outta here.".into(),
+            // oxide-vcl's own option, so its own message.
+            DriverMessage::WarningsAsErrors => {
+                "warnings treated as errors (--warnings-as-errors)".into()
+            }
         }
     }
 }
@@ -747,11 +771,23 @@ pub enum ErrorStyle<'a> {
 }
 
 /// The writer for everything the driver prints. In [`Mode::Vcl`] each method
-/// reproduces vcl 1.4beta7's layout byte for byte as the port prints it.
+/// reproduces vcl 1.4beta7's layout byte for byte as the port prints it; in
+/// [`Mode::Oxide`] every diagnostic is `location: severity: text` with its
+/// source line and a suggested fix (see [`Reporter::set_source`]).
 pub struct Reporter<O: Write = io::Stdout, E: Write = io::Stderr> {
     mode: Mode,
     out: O,
     err: E,
+    source: Option<Source>,
+    warnings_as_errors: bool,
+    errors: usize,
+    warnings: usize,
+}
+
+/// The program being compiled, for oxide mode's locations and source lines.
+struct Source {
+    file: String,
+    lines: Vec<String>,
 }
 
 impl Reporter {
@@ -763,7 +799,15 @@ impl Reporter {
 
 impl<O: Write, E: Write> Reporter<O, E> {
     pub fn new(mode: Mode, out: O, err: E) -> Self {
-        Self { mode, out, err }
+        Self {
+            mode,
+            out,
+            err,
+            source: None,
+            warnings_as_errors: false,
+            errors: 0,
+            warnings: 0,
+        }
     }
 
     pub fn mode(&self) -> Mode {
@@ -774,6 +818,26 @@ impl<O: Write, E: Write> Reporter<O, E> {
         self.mode = mode;
     }
 
+    /// The source file's name and the text the compiler reads (after
+    /// preprocessing), which oxide mode quotes under each diagnostic.
+    pub fn set_source(&mut self, file: &str, text: &str) {
+        self.source = Some(Source {
+            file: file.to_string(),
+            lines: text.lines().map(str::to_string).collect(),
+        });
+    }
+
+    /// `--warnings-as-errors`: oxide mode prints each warning as an error.
+    pub fn set_warnings_as_errors(&mut self, enabled: bool) {
+        self.warnings_as_errors = enabled;
+    }
+
+    /// The warnings printed so far, before `--warnings-as-errors` promotes
+    /// them.
+    pub fn warnings(&self) -> usize {
+        self.warnings
+    }
+
     /// The writers, for tests that capture output.
     pub fn into_inner(self) -> (O, E) {
         (self.out, self.err)
@@ -781,6 +845,13 @@ impl<O: Write, E: Write> Reporter<O, E> {
 
     /// A notice or warning on standard error: `PREFIX: text`.
     pub fn notice(&mut self, diagnostic: &Diagnostic) {
+        if self.mode == Mode::Oxide {
+            self.render(diagnostic);
+            return;
+        }
+        if diagnostic.severity == Severity::Warning {
+            self.warnings += 1;
+        }
         let line = match &diagnostic.message {
             Message::Compile(message) if diagnostic.line != 0 && message.vcl_line_in_text() => {
                 diagnostic.located(self.mode)
@@ -793,6 +864,10 @@ impl<O: Write, E: Write> Reporter<O, E> {
     /// A command-line error, after its notices: the message and then the
     /// abort line on standard output.
     pub fn command_line_error(&mut self, diagnostic: &Diagnostic) {
+        if self.mode == Mode::Oxide {
+            self.render(diagnostic);
+            return;
+        }
         // The port ends the message with a blank line.
         self.stderr(format_args!(
             "{}{}\n\n",
@@ -804,6 +879,10 @@ impl<O: Write, E: Write> Reporter<O, E> {
 
     /// A failure that stops the run: the error, then the abort line.
     pub fn failure(&mut self, diagnostic: &Diagnostic) {
+        if self.mode == Mode::Oxide {
+            self.render(diagnostic);
+            return;
+        }
         self.stderr(format_args!(
             "{}{}\n",
             diagnostic.prefix(self.mode),
@@ -813,8 +892,15 @@ impl<O: Write, E: Write> Reporter<O, E> {
     }
 
     /// Compile errors, one per line under a single `ERROR: ` prefix, then
-    /// the abort line.
+    /// the abort line. Oxide mode prints each in full, then the count.
     pub fn compile_errors(&mut self, errors: &[Diagnostic], style: ErrorStyle<'_>) {
+        if self.mode == Mode::Oxide {
+            for error in errors {
+                self.render(error);
+            }
+            self.summary();
+            return;
+        }
         let lines: Vec<String> = errors
             .iter()
             .map(|error| match style {
@@ -826,6 +912,16 @@ impl<O: Write, E: Write> Reporter<O, E> {
             .collect();
         self.stderr(format_args!("ERROR: {}\n", lines.join("\n")));
         self.abort();
+    }
+
+    /// `--warnings-as-errors` failing a run whose only problems were
+    /// warnings, already printed.
+    pub fn warnings_failed(&mut self) {
+        if self.mode == Mode::Oxide {
+            self.summary();
+        } else {
+            self.failure(&Diagnostic::error(DriverMessage::WarningsAsErrors));
+        }
     }
 
     /// vcl's copy-detector failure, which exits with status 0: the start-up
@@ -879,10 +975,136 @@ impl<O: Write, E: Write> Reporter<O, E> {
         self.out.flush()
     }
 
+    /// One diagnostic in oxide layout:
+    ///
+    /// ```text
+    /// prog.vcl(7): error: unknown instruction 'ad'
+    ///     7 |     ad res, src, src
+    ///       |     ^^
+    ///       = help: did you mean 'add'?
+    /// ```
+    ///
+    /// Source diagnostics are located by file and line (the file alone when
+    /// there is no line); command-line and driver ones by `oxide-vcl`.
+    fn render(&mut self, diagnostic: &Diagnostic) {
+        let mut severity = diagnostic.severity_in(Mode::Oxide);
+        let mut suffix = "";
+        if severity == Severity::Warning {
+            self.warnings += 1;
+            if self.warnings_as_errors {
+                severity = Severity::Error;
+                suffix = " [--warnings-as-errors]";
+            }
+        }
+        if severity == Severity::Error {
+            self.errors += 1;
+        }
+        let label = match severity {
+            Severity::Info => "note",
+            Severity::Warning => "warning",
+            Severity::Error => "error",
+        };
+        let wording = diagnostic.message.wording();
+        let in_source = matches!(diagnostic.message, Message::Parse(_) | Message::Compile(_));
+        let source = self.source.as_ref().filter(|_| in_source);
+        let location = match source {
+            Some(source) if diagnostic.line != 0 => format!("{}({})", source.file, diagnostic.line),
+            Some(source) => source.file.clone(),
+            None => "oxide-vcl".to_string(),
+        };
+        let mut text = format!("{location}: {label}: {}{suffix}\n", wording.text);
+        let quoted = source
+            .and_then(|source| source.lines.get(diagnostic.line.checked_sub(1)?))
+            .map(|line| expand_tabs(line.trim_end()));
+        let gutter = " ".repeat(diagnostic.line.to_string().len() + 4);
+        if let Some(line) = &quoted {
+            text.push_str(&format!(
+                "{:>width$} | {line}\n",
+                diagnostic.line,
+                width = gutter.len() - 1
+            ));
+            if let Some((start, length)) = wording
+                .subject
+                .as_deref()
+                .and_then(|subject| find_token(line, subject))
+            {
+                text.push_str(&format!(
+                    "{gutter}| {}{}\n",
+                    " ".repeat(start),
+                    "^".repeat(length)
+                ));
+            }
+        }
+        if let Some(help) = &wording.help {
+            let indent = if quoted.is_some() {
+                gutter.as_str()
+            } else {
+                "  "
+            };
+            text.push_str(&format!("{indent}= help: {help}\n"));
+        }
+        self.stderr(format_args!("{text}"));
+    }
+
+    /// Oxide mode's last line of a failed compile.
+    fn summary(&mut self) {
+        let plural = |count: usize, word: &str| {
+            format!("{count} {word}{}", if count == 1 { "" } else { "s" })
+        };
+        let errors = plural(self.errors.max(1), "error");
+        // Under --warnings-as-errors the warnings were counted as errors.
+        let warnings = if self.warnings_as_errors {
+            0
+        } else {
+            self.warnings
+        };
+        let counts = if warnings == 0 {
+            errors
+        } else {
+            format!("{errors}, {}", plural(warnings, "warning"))
+        };
+        self.stderr(format_args!("oxide-vcl: {counts}; no output written\n"));
+    }
+
     fn stderr(&mut self, text: fmt::Arguments<'_>) {
         let _ = self.err.write_fmt(text);
         let _ = self.err.flush();
     }
+}
+
+/// Tabs as spaces to the next multiple of four, so a caret line lines up.
+fn expand_tabs(line: &str) -> String {
+    let mut expanded = String::new();
+    for c in line.chars() {
+        if c == '\t' {
+            expanded.push(' ');
+            while !expanded.len().is_multiple_of(4) {
+                expanded.push(' ');
+            }
+        } else {
+            expanded.push(c);
+        }
+    }
+    expanded
+}
+
+/// Where `token` appears in `line`, ignoring case: preferably as a whole
+/// word, else anywhere. Returns the start and length in characters.
+fn find_token(line: &str, token: &str) -> Option<(usize, usize)> {
+    if token.is_empty() || !line.is_ascii() || !token.is_ascii() {
+        return None;
+    }
+    let haystack = line.to_ascii_lowercase();
+    let needle = token.to_ascii_lowercase();
+    let word = |c: Option<char>| c.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_');
+    let matches: Vec<usize> = haystack.match_indices(&needle).map(|(at, _)| at).collect();
+    let whole = matches.iter().copied().find(|&at| {
+        !word(haystack[..at].chars().next_back())
+            && !word(haystack[at + needle.len()..].chars().next())
+    });
+    whole
+        .or_else(|| matches.first().copied())
+        .map(|at| (at, needle.len()))
 }
 
 /// Print a developer trace line on standard error. Traces are switched on by
@@ -1015,6 +1237,110 @@ mod tests {
              ERROR: failed to detect moves!\n\
              ERROR: failed to do basic operation processing\n"
         );
+    }
+
+    fn capture_oxide(
+        warnings_as_errors: bool,
+        report: impl FnOnce(&mut Reporter<Vec<u8>, Vec<u8>>),
+    ) -> String {
+        let mut reporter = Reporter::new(Mode::Oxide, Vec::new(), Vec::new());
+        reporter.set_source("prog.vcl", "--enter\n\tad res, src, src\n--endenter\n");
+        reporter.set_warnings_as_errors(warnings_as_errors);
+        report(&mut reporter);
+        let (out, err) = reporter.into_inner();
+        assert!(
+            out.is_empty(),
+            "oxide mode prints nothing on stdout for diagnostics"
+        );
+        String::from_utf8(err).unwrap()
+    }
+
+    #[test]
+    fn oxide_errors_quote_the_line_and_underline_the_token() {
+        let error = Diagnostic::error(ParseMessage::UnknownInstruction {
+            opcode: "ad".into(),
+        })
+        .at(2);
+        let err = capture_oxide(false, |reporter| {
+            reporter.compile_errors(&[error], ErrorStyle::Lines)
+        });
+        assert_eq!(
+            err,
+            "prog.vcl(2): error: unknown instruction 'ad'\n   \
+             2 |     ad res, src, src\n     \
+             |     ^^\n     \
+             = help: did you mean 'add'?\n\
+             oxide-vcl: 1 error; no output written\n"
+        );
+    }
+
+    #[test]
+    fn oxide_locates_by_file_alone_without_a_line() {
+        let err = capture_oxide(false, |reporter| {
+            reporter.notice(&Diagnostic::warning(ParseMessage::NoExit));
+            reporter.notice(&Diagnostic::info(CliMessage::AlwaysOn));
+        });
+        assert_eq!(
+            err,
+            "prog.vcl: warning: the program has no --exit block\n  \
+             = help: end it with --exit ... --endexit (or --cont), declaring its outputs with out_vf/out_vi\n\
+             oxide-vcl: note: -a has no effect: what it enabled is always on\n"
+        );
+    }
+
+    #[test]
+    fn warnings_as_errors_promote_in_oxide_and_count() {
+        let warning = Diagnostic::warning(CliMessage::PruneDeprecated);
+        let err = capture_oxide(true, |reporter| {
+            reporter.notice(&warning);
+            assert_eq!(reporter.warnings(), 1);
+            reporter.warnings_failed();
+        });
+        assert_eq!(
+            err,
+            "oxide-vcl: error: -P is deprecated and has no effect [--warnings-as-errors]\n  \
+             = help: remove it from the command line\n\
+             oxide-vcl: 1 error; no output written\n"
+        );
+        // Without the flag, warnings are counted beside the errors.
+        let err = capture_oxide(false, |reporter| {
+            reporter.notice(&warning);
+            reporter.compile_errors(
+                &[Diagnostic::error(ParseMessage::EmptyLabel).at(9)],
+                ErrorStyle::Lines,
+            );
+        });
+        assert!(
+            err.ends_with(
+                "prog.vcl(9): error: a label with no name\n\
+                           oxide-vcl: 1 error, 1 warning; no output written\n"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn vcl_mode_fails_warnings_with_its_own_error() {
+        let (out, err) = capture(|reporter| {
+            reporter.set_warnings_as_errors(true);
+            reporter.notice(&Diagnostic::warning(CliMessage::PruneDeprecated));
+            reporter.warnings_failed();
+        });
+        assert_eq!(
+            err,
+            "WARNING:  prune disabled (not) this options was deprecated, and now is disabled\n\
+             ERROR: warnings treated as errors (--warnings-as-errors)\n"
+        );
+        assert_eq!(out, "ERROR: something went wrong, vcl's outta here.\n");
+    }
+
+    #[test]
+    fn tokens_are_found_as_words_first() {
+        assert_eq!(find_token("add cat, caty, cat", "cat"), Some((4, 3)));
+        assert_eq!(find_token("add caty, src, src", "CATY"), Some((4, 4)));
+        assert_eq!(find_token("addx res, src", "src"), Some((10, 3)));
+        assert_eq!(find_token("nop", "add"), None);
+        assert_eq!(expand_tabs("\tad\tx"), "    ad  x");
     }
 
     #[test]

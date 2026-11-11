@@ -71,8 +71,8 @@ scheduling or allocation changed.
   `options.mode == Mode::Oxide`, leaving the vcl path unchanged.
 - No `println!`/`eprintln!` outside `crates/vcl/src/diagnostics.rs`: messages
   are `vcl::diagnostics` enum variants (vcl wording in `vcl_text`, oxide
-  wording in `oxide_text`), printed through `Reporter`; developer traces use
-  `vcl::trace!`.
+  wording, subject and suggested fix in `diagnostics/oxide.rs`), printed
+  through `Reporter`; developer traces use `vcl::trace!`.
 - Every behaviour fix gets a test that runs without local data (an inline
   program, or a probe in `tests/probes`) and, where an original run exists, a
   comparison with it.

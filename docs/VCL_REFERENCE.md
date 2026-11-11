@@ -747,13 +747,14 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-h`, `--help` | Print the help screen. |
 | `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
 | `--mode=vcl` | Behave and report exactly as vcl 1.4beta7. The default. |
-| `--mode=oxide` | Enable oxide-vcl's own behaviour: fixes, optimizations and reworded messages that break compatibility with vcl 1.4beta7. It currently behaves and reports as `--mode=vcl`. |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its own diagnostics and exit statuses (see [Exit status and messages](#exit-status-and-messages)), and future fixes and optimizations. |
+| `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 
 The preprocessing stages run in the order `-G`, `-g`, `-g+`, each on the
 previous stage's output; any combination may be given.
 
-`--mode` is oxide-vcl's own option; vcl 1.4beta7 has no long options and
-rejects it as an unknown switch.
+`--mode` and `--warnings-as-errors` are oxide-vcl's own options; vcl
+1.4beta7 has no long options and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
 time limit; `oxide-vcl` has none), `-S`, `-D`, `-Q` and `-a`. `-P` and `-Z` only
@@ -771,12 +772,52 @@ cat skin.vcl | oxide-vcl -q > skin.vsm        # filter mode
 
 ### Exit status and messages
 
-`oxide-vcl` exits 0 on success and 255 on failure. Errors print as
-`ERROR: line N: message`, followed by
-`ERROR: something went wrong, vcl's outta here.` on standard output, as vcl
-does. Warnings print as `WARNING: ...` and informational messages as
-`INFO: ...`; `-q` hides the latter. These are the vcl-mode messages;
-`--mode=oxide` may word and lay them out differently.
+In vcl mode (the default) `oxide-vcl` reports as vcl does. It exits 0 on
+success and 255 on failure. Errors print as `ERROR: line N: message` on
+standard error (`ERROR: file(N): error: message` with `-p`), followed by
+`ERROR: something went wrong, vcl's outta here.` on standard output.
+Warnings print as `WARNING: ...` and informational messages as `INFO: ...`;
+`-q` hides the latter. One failure keeps vcl's status 0: a copy into the
+constant register VI00 or VF00 prints its error but exits 0.
+
+`--mode=oxide` has its own messages, all on standard error, in the
+`file(line): severity: message` form that editors and IDEs read, with the
+source line, a caret under the token at fault and, where there is one, a
+suggested fix:
+
+```text
+skin.vcl(12): error: unknown instruction 'ad'
+  12 |     ad res, src, src
+     |     ^^
+     = help: did you mean 'add'?
+oxide-vcl: 1 error; no output written
+```
+
+Messages without a source line start with the file name, or with
+`oxide-vcl:` for the command line and files. Severities are `error`,
+`warning` and `note` (`-q` hides notes). A failed compile ends with the
+number of errors. Oxide mode exits 0 on success, 1 when the program fails to
+compile, a file can't be read or written, or a warning fails the run, and 2
+for a bad command line. A copy into the constant register is an error (1).
+
+`--warnings-as-errors` fails a run that prints any warning, after printing
+every warning and error. In oxide mode each warning prints as an error,
+marked `[--warnings-as-errors]`; vcl mode prints the warnings unchanged, then
+`ERROR: warnings treated as errors (--warnings-as-errors)` and vcl's abort
+line, with status 255.
+
+A failed run never writes its output: there is no assembly on standard
+output, and no `-o` listing or `-j` header, and a file from an earlier run is
+left as it was. Oxide mode also writes the listing and the header together,
+through temporary files beside them, so a failure partway leaves neither.
+With make, use `-o` rather than redirecting standard output: the shell
+creates a redirected target even when the compile fails, and its new
+timestamp makes the target look up to date.
+
+```make
+%.vsm: %.vcl
+	oxide-vcl --mode=oxide --warnings-as-errors -o$@ $<
+```
 
 ### Reading the output
 
