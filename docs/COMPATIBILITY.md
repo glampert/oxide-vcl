@@ -92,8 +92,10 @@ where the known boundary lies.
   missing.
 - Generated labels, diagnostic formatting, statistics, preprocessing flags and
   label-header output follow the recovered paths only in part
-  ([OUTPUT_FORMAT.md](OUTPUT_FORMAT.md)). Banners, optimizer comments,
-  statistics and diagnostics can differ even where the instruction pairs match.
+  ([OUTPUT_FORMAT.md](OUTPUT_FORMAT.md)). In vcl mode the listing carries
+  vcl's banners, table comments, register statistics and `-c` comments, but
+  not its loop optimizer report; the bracketed numbers of a table comment
+  and some stall notes can differ, as can diagnostics.
 - Some valid programs remain outside complete compiler coverage.
 
 ## Comparing outputs

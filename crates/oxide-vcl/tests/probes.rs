@@ -37,6 +37,10 @@ const KNOWN_DIFFERENCES: &[(&str, &str)] = &[
     ),
     // Port differences.
     (
+        "comments-raw",
+        "a raw block's registers are reassigned to VF02 where vcl picks VF03",
+    ),
+    (
         "cli-symbolic",
         "-s prints the port's register-web names (__web_N), not vcl's",
     ),

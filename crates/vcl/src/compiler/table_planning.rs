@@ -350,6 +350,7 @@ pub(super) fn run_wrangle(table: &mut WrangledTable, block_id: usize) -> Option<
         );
     }
     table.end = outcome.rows.len();
+    table.strategy = Some(outcome.strategy);
     table.rows = outcome.rows;
     table.allocation.clear();
     for &(register, physical) in &outcome.allocation {

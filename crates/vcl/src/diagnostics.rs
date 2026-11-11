@@ -839,9 +839,20 @@ impl<O: Write, E: Write> Reporter<O, E> {
         self.stderr(format_args!("{text}"));
     }
 
-    /// The assembly listing, on standard output.
+    /// The assembly listing, on standard output. In vcl mode it sits between
+    /// vcl's `VCL CODE` banner and five closing separators, which an `-o`
+    /// file does not get (observed from vcl 1.4beta7, `cli-output-file`).
     pub fn assembly(&mut self, text: &str) -> io::Result<()> {
+        const SEPARATOR: &str = ";-------------------------\n";
+        if self.mode == Mode::Vcl {
+            let banner =
+                format!("{SEPARATOR}{SEPARATOR};-----VCL CODE------------\n{SEPARATOR}{SEPARATOR}");
+            self.out.write_all(banner.as_bytes())?;
+        }
         self.out.write_all(text.as_bytes())?;
+        if self.mode == Mode::Vcl {
+            self.out.write_all(SEPARATOR.repeat(5).as_bytes())?;
+        }
         self.out.flush()
     }
 

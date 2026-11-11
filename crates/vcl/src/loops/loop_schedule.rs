@@ -931,6 +931,7 @@ mod tests {
             rows: vec![[None; 2]; 4],
             period: Some(4),
             search_nodes: 0,
+            strategy: schedule::Strategy::Normal2,
         };
         assert_eq!(
             validate_ages(&problem, &schedule),

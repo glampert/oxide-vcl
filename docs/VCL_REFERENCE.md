@@ -718,7 +718,7 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-o<file>` | Write the assembly to `file`. |
 | `-j<file>` | Also write a header of the program's global labels and their offsets, e.g. `ScaleVector_Entry = 0`. |
 | `-m[<address>]` | Wrap the code in an MPG packet at `address` (default 0), like `.mpg`. |
-| `-c` | Emit the source lines as comments in the output. |
+| `-c` | Comment each row with the source's register names: the commented copy, then the row, then a blank line. |
 | `-s` | Emit symbolic register names instead of assigning registers. |
 | `-f` | Omit `.align` lines, like `.noaligns`. |
 | `-e` | Do not set E bits on the empty pairs VCL adds at exits. |

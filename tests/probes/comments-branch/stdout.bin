@@ -1,0 +1,40 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_C_4:
+; _LNOPT_w=[ normal2 ] 2 [4 0] 2   [__v_C_4]
+;         mul           res,src,src                                  ibeq          flag,VI00,skip                      
+          mul           VF02,VF01,VF01                               ibeq          VI01,VI00,skip                      
+
+;         NOP                                                        NOP                                               
+          NOP                                                        NOP                                               
+
+; _LNOPT_w=[ normal2 ] 3 [4 0] 3   [__v_C_5]
+;         NOP                                                        NOP                                               
+          NOP                                                        NOP                                               
+
+;         NOP[E]                                                     NOP                                               
+          NOP[E]                                                     NOP                                               
+
+;         add           res,res,src                                  NOP                                               
+          add           VF02,VF02,VF01                               NOP                                               
+
+skip:
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=7
+; register stats:
+;   2 VU User integer
+;   2 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

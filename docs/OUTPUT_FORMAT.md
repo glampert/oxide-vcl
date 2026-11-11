@@ -102,6 +102,45 @@ four-component use of one VF register contributes one to that pool's count.
 Symbolic formatting uses the original register name and does not update the
 markers.
 
+## Listing comments in the port
+
+In vcl mode (the default) the port prints vcl's comments; `--mode=oxide`
+keeps its own shorter listing (`; flowMon::Emit() Rust reconstruction`, no
+banners, table comments or statistics, and `; source line N` for `-c`).
+
+- Standard output is wrapped in the five-line `VCL CODE` banner and five
+  closing separators; an `-o` file is not (`cli-output-file`).
+- The listing opens with `; =====` and the emitter line. Where vcl names
+  itself (`vcl 1.4beta7 produced this code:`) the port names itself and its
+  version, the one line it deliberately does not reproduce.
+- Each emitted stream starts with its table comment,
+  `; _LNOPT_w=[ strategy ] printed [a b] walked   [name]`, or `_LPOPT_w` for
+  a loop kernel from the loop optimizer. The strategy is the one whose table
+  won, empty for tables kept as they are (raw code, installed loop parts);
+  `printed` counts the printed rows and `walked` adds the compressed ones.
+  The name is the stream's first label, printed or not, a loop part's name,
+  or `__v_<unique>_<uid>`; an empty stream after `--cont` takes the next uid.
+  An empty stream that ends at an exit has no comment (`comments-branch`,
+  `branch-forward-conditional`): its rows are the exit's padding.
+- After `iCount`, the register statistics count the distinct VI and VF
+  registers the listing names, VI00 and VF00 included; this matches every
+  probe and public corpus program.
+- A newline precedes an exit macro line, which is indented by ten spaces,
+  and pass-through text has a newline before and after it.
+- With `-c`, each row prints first as a comment with the source's register
+  names (field selections attached, `vecx`; physical names in capitals, as
+  in raw code's `VF04` and in `VI00`), then the row itself one space further
+  in, then a blank line. Each walked row that is not printed is a bare `; `
+  line before the next printed row. A stall note ends both copies. An exit's
+  padding stream keeps the plain layout (`comments-*` probes,
+  `crates/oxide-vcl/tests/source_comments.rs`).
+
+Not reproduced yet: the loop optimizer's report (`; === __LP__ ...`, one line
+per strategy), stall notes the port does not detect, and the bracketed pair
+of a table comment, where the port prints the wrangled table's lower bound,
+or the walked count for a table without one, and zero (a loop kernel repeats
+the first value).
+
 ## Instruction-specific emitters
 
 The slot writer chooses a formatting hook from the instruction descriptor. A

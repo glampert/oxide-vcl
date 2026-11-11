@@ -51,11 +51,7 @@ pub(super) fn normal_loop_plan(
     block_id: usize,
     unique: &str,
     lpgen: Option<&LpgenContext>,
-) -> Option<(
-    crate::loops::pipeline::LoopSchedule,
-    Vec<crate::loops::loop_ir::SourceOperation>,
-    KernelPins,
-)> {
+) -> Option<NormalLoopPlan> {
     use crate::loops::loop_schedule::{self, Control, Effect};
     let block = &source.blocks[block_id];
     let minimum = block.loop_hints.minimum?;
@@ -116,7 +112,7 @@ pub(super) fn normal_loop_plan(
             return None;
         }
         let mut sources = annotated.sources;
-        let (period, operations, pins) =
+        let (period, operations, pins, strategy) =
             lpgen_schedule(context, block_id, &mut sources, source.instructions.len())?;
         return Some((
             crate::loops::pipeline::LoopSchedule {
@@ -132,6 +128,7 @@ pub(super) fn normal_loop_plan(
             },
             sources,
             pins,
+            Some(strategy),
         ));
     }
     let mut body = Vec::new();
@@ -310,6 +307,7 @@ pub(super) fn normal_loop_plan(
         },
         annotated.sources,
         KernelPins::new(),
+        Some(scheduled.schedule.strategy),
     ))
 }
 
@@ -363,6 +361,16 @@ pub(super) fn lpgen_context(
 /// operation ID, write, register name).
 pub(super) type KernelPins = BTreeMap<(usize, bool, String), String>;
 
+/// A normal loop's schedule, its source operations, the loop allocation's
+/// pins, and the loop optimizer strategy that won (none for loops scheduled
+/// without the loop optimizer).
+pub(super) type NormalLoopPlan = (
+    crate::loops::pipeline::LoopSchedule,
+    Vec<crate::loops::loop_ir::SourceOperation>,
+    KernelPins,
+    Option<crate::scheduler::schedule::Strategy>,
+);
+
 /// Schedule a normal loop body with the lpgen port on the
 /// webbed region. Retargeted operands are rewritten in `sources` (by operand
 /// index) and synthesized moves appended with IDs from `next_id` on.
@@ -371,7 +379,12 @@ pub(super) fn lpgen_schedule(
     block_id: usize,
     sources: &mut Vec<crate::loops::loop_ir::SourceOperation>,
     next_id: usize,
-) -> Option<(u16, Vec<crate::loops::pipeline::LoopOperation>, KernelPins)> {
+) -> Option<(
+    u16,
+    Vec<crate::loops::pipeline::LoopOperation>,
+    KernelPins,
+    crate::scheduler::schedule::Strategy,
+)> {
     use crate::loops::pipeline::LoopOperation;
     use crate::scheduler::schedule::Pipe;
     use crate::scheduler::wrangle::Direction as WDirection;
@@ -715,7 +728,12 @@ pub(super) fn lpgen_schedule(
         .map(|index| live[index])
         .collect();
     sources.retain(|source| !removed.contains(&source.id));
-    Some((u16::try_from(period).ok()?, operations, pins))
+    Some((
+        u16::try_from(period).ok()?,
+        operations,
+        pins,
+        outcome.strategy,
+    ))
 }
 
 /// Expand explicitly staged raw self loops before rebuilding source flow.
@@ -804,7 +822,7 @@ pub(super) fn expand_software_loops(
         {
             return Err(error(0, CompileMessage::StagedRawLoopTarget));
         }
-        let (mut schedule, sources, pins) = if let Some(normal) = normal {
+        let (mut schedule, sources, pins, loop_strategy) = if let Some(normal) = normal {
             normal
         } else {
             let mut rows: Vec<[Option<usize>; 2]> = Vec::new();
@@ -888,7 +906,7 @@ pub(super) fn expand_software_loops(
                 unique: unique.into(),
                 name: target.clone(),
             };
-            (schedule, sources, KernelPins::new())
+            (schedule, sources, KernelPins::new(), None)
         };
         if block.loop_hints.minimum.is_none() {
             schedule.known_safe = 10000;
@@ -1016,7 +1034,13 @@ pub(super) fn expand_software_loops(
                         TableMode::Linear
                     },
                     installed: !staged && lpgen && !matches!(part.kind, PartKind::Kernel),
+                    kernel_strategy: if matches!(part.kind, PartKind::Kernel) {
+                        loop_strategy
+                    } else {
+                        None
+                    },
                 }),
+                part_name: Some(part.name.clone()),
                 ..Block::default()
             });
         }

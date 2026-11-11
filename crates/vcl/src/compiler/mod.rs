@@ -230,6 +230,9 @@ struct SelectedTable {
     /// A prologue/epilogue part installed from the loop optimizer: its rows
     /// are kept (no strategy search) and go through the late raw reduction.
     installed: bool,
+    /// For a loop kernel scheduled by the loop optimizer: the strategy that
+    /// won (vcl prints the kernel as an `_LPOPT_` table).
+    kernel_strategy: Option<crate::scheduler::schedule::Strategy>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -251,6 +254,11 @@ struct Block {
     /// Selected issue slots establish paired-read ownership during flow. Only
     /// linear generated parts admit subsequent extent/empty-row reduction.
     selected_table: Option<SelectedTable>,
+    /// The stream's flow uid, which names an unlabelled stream
+    /// (`__v_<unique>_<uid>`).
+    stream: Option<u16>,
+    /// The name vcl's optimizer comment gives a generated loop part.
+    part_name: Option<String>,
 }
 
 #[derive(Clone, Default)]
@@ -1008,6 +1016,7 @@ impl Source {
                     current.instructions.push(located);
                     current.block().operations.push(id);
                     current.stream.get_or_insert(uids[index]);
+                    current.block().stream.get_or_insert(uids[index]);
                     if is_branch {
                         if current.instructions[id].instruction.mode == ParseMode::Raw {
                             raw_delay = Some((line, 0));
@@ -1126,9 +1135,19 @@ pub fn compile(
     program.parse_program(parsed).map_err(|e| vec![e])?;
     let mut output = Compiled::default();
     output.warnings.append(&mut program.warnings);
-    output
-        .assembly
-        .push_str("; flowMon::Emit() Rust reconstruction\n");
+    if options.mode == crate::Mode::Vcl {
+        // vcl's emitter banner, with oxide-vcl's name and version where vcl
+        // names itself.
+        output.assembly.push_str(&format!(
+            "; =================================================\n\
+             ; flowMon::Emit() oxide-vcl {} produced this code:\n",
+            crate::VERSION
+        ));
+    } else {
+        output
+            .assembly
+            .push_str("; flowMon::Emit() Rust reconstruction\n");
+    }
     // Prologue: old syntax or an explicit `.vu`, unless MPG output.
     if (program.syntax == Syntax::Old || program.vu_directive) && program.mpg.is_none() {
         output.assembly.push_str("\t\t.vu\n");
@@ -1226,7 +1245,42 @@ pub fn compile(
     output
         .assembly
         .push_str(&format!(";\tiCount={}\n", output.instruction_pairs));
+    if options.mode == crate::Mode::Vcl {
+        let (integer, float) = register_counts(&output.assembly);
+        output.assembly.push_str(&format!(
+            "; register stats:\n;{integer:4} VU User integer\n;{float:4} VU User floating point\n"
+        ));
+    }
     Ok(output)
+}
+
+/// vcl's register statistics: the distinct integer and floating-point
+/// registers the listing names, VI00 and VF00 included (observed from vcl
+/// 1.4beta7 on every probe and public corpus program).
+fn register_counts(assembly: &str) -> (usize, usize) {
+    let mut integer = BTreeSet::new();
+    let mut float = BTreeSet::new();
+    for line in assembly.lines() {
+        let code = line.split(';').next().unwrap_or_default().as_bytes();
+        for index in 0..code.len().saturating_sub(3) {
+            let previous = index.checked_sub(1).map(|i| code[i]);
+            if previous.is_some_and(|byte| byte.is_ascii_alphanumeric() || byte == b'_') {
+                continue;
+            }
+            let digits = &code[index + 2..index + 4];
+            if !digits.iter().all(u8::is_ascii_digit)
+                || code.get(index + 4).is_some_and(u8::is_ascii_digit)
+            {
+                continue;
+            }
+            match &code[index..index + 2] {
+                b"VI" => integer.insert(digits.to_vec()),
+                b"VF" => float.insert(digits.to_vec()),
+                _ => false,
+            };
+        }
+    }
+    (integer.len(), float.len())
 }
 
 // ----------------------------------------------
@@ -1298,5 +1352,46 @@ mod visibility_tests {
         let source = scopes(&[(false, &["T"])]);
         assert_eq!(name(&source, "t"), "t");
         assert_eq!(name(&source, "T"), "1T");
+    }
+}
+
+#[cfg(test)]
+mod listing_comment_tests {
+    use super::*;
+
+    #[test]
+    fn register_stats_count_distinct_registers_with_fields() {
+        let listing = "__v_A_4:\n\
+                       ; _LNOPT_w=[ normal2 ] 2 [2 0] 2   [__v_A_4]\n         \
+                       div           Q,VF00w,VF04w       NOP\n         \
+                       mul.xyz       VF04,VF04,Q         iaddiu        VI01,VI00,0x00000012\n\
+                       ;\tiCount=2\n";
+        // VF00 and VF04; VI00 and VI01. Comment lines and immediates do not count.
+        assert_eq!(register_counts(listing), (2, 2));
+    }
+
+    #[test]
+    fn table_comments_follow_vcls_layout() {
+        let linear = TableNote {
+            strategy: Some(schedule::Strategy::Normal2),
+            lower_bound: Some(4),
+            ..TableNote::default()
+        };
+        assert_eq!(
+            linear.comment(3, 3, "__v_ADDRESS_4"),
+            "; _LNOPT_w=[ normal2 ] 3 [4 0] 3   [__v_ADDRESS_4]\n"
+        );
+        assert_eq!(
+            TableNote::default().comment(5, 5, "EXPL_FIX_loop__ENTRY_POINT"),
+            "; _LNOPT_w=[ ] 5 [5 0] 5   [EXPL_FIX_loop__ENTRY_POINT]\n"
+        );
+        let kernel = TableNote {
+            kernel_strategy: Some(schedule::Strategy::LinearDumb),
+            ..TableNote::default()
+        };
+        assert_eq!(
+            kernel.comment(5, 5, "EXPL_FIX_loop__MAIN_LOOP"),
+            "; _LPOPT_w=[ ldumb ] 5 [5 5] 5   [EXPL_FIX_loop__MAIN_LOOP]\n"
+        );
     }
 }

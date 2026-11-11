@@ -358,6 +358,8 @@ pub struct Schedule {
     pub rows: Vec<[Option<usize>; 2]>,
     pub period: Option<u16>,
     pub search_nodes: usize,
+    /// The strategy that produced the schedule.
+    pub strategy: Strategy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -869,6 +871,7 @@ pub fn schedule(
         rows,
         period: problem.period,
         search_nodes: search.nodes,
+        strategy: options.strategy,
     })
 }
 

@@ -379,6 +379,7 @@ mod tests {
             rows: Vec::new(),
             mode: TableMode::Linear,
             installed: false,
+            kernel_strategy: None,
         });
         assert_eq!(
             assign(&program, &region, &graph, &analysis).unwrap().forced,

@@ -826,6 +826,14 @@ pub(super) fn construct_register_webs(
     for (index, web) in plan.webs.iter().enumerate() {
         let original = *web.registers.first().expect("web has a source identity");
         let family = program.registers.named(original).family;
+        // A later pass (after loop expansion) builds webs from the previous
+        // pass's `__web_N` registers, whose names it reuses: keep the source
+        // register the earlier web came from.
+        let original = region
+            .web_sources
+            .get(&original)
+            .copied()
+            .unwrap_or(original);
         let id = program.registers.get(&format!("__web_{index}"), family);
         result.web_sources.insert(id, original);
         if let Some(base) = web.forced_base {

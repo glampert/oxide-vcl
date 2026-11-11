@@ -385,6 +385,8 @@ pub(super) fn compile_region_candidate(
         }
     }
     let mut schedules: Vec<Option<Vec<[Option<usize>; 2]>>> = Vec::new();
+    // What vcl's optimizer comment reports for each block's table.
+    let mut notes: Vec<TableNote> = Vec::new();
     let mut wrangled_tables: BTreeMap<usize, WrangledTable> = BTreeMap::new();
     let mut planned = if !options.dumb
         && candidate.strategy.is_none()
@@ -419,6 +421,7 @@ pub(super) fn compile_region_candidate(
     for (block_id, block) in emission_blocks.iter().enumerate() {
         if !analysis.reachable.contains(&block_id) || hidden.contains(&block_id) {
             schedules.push(None);
+            notes.push(TableNote::default());
             block_ranges.push(None);
             continue;
         }
@@ -691,7 +694,9 @@ pub(super) fn compile_region_candidate(
             && live
                 .iter()
                 .all(|&id| region.instructions[id].instruction.mode == ParseMode::Raw);
+        let mut note = TableNote::default();
         let mut rows = if let Some(fixed) = &block.selected_table {
+            note.kernel_strategy = fixed.kernel_strategy;
             fixed
                 .rows
                 .iter()
@@ -749,6 +754,8 @@ pub(super) fn compile_region_candidate(
                 .filter(|table| table.live == live)
                 .map(|table| (table.rows.clone(), table));
             if let Some((rows, table)) = wrangled {
+                note.strategy = table.strategy;
+                note.lower_bound = Some(table.lower_bound);
                 wrangled_tables.insert(block_id, table);
                 for (row, pair) in rows.iter().enumerate() {
                     for &local_id in pair.iter().flatten() {
@@ -773,6 +780,7 @@ pub(super) fn compile_region_candidate(
                     schedule::schedule_best(&problem, &config)
                 }
                 .map_err(|e| internal(0, e))?;
+                note.strategy = Some(schedule.strategy);
                 for (local_id, placement) in schedule.placements.iter().enumerate() {
                     absolute_positions
                         .insert(live[local_id], total_rows + usize::from(placement.cycle));
@@ -908,6 +916,7 @@ pub(super) fn compile_region_candidate(
         block_ranges.push(Some(total_rows..total_rows + rows.len()));
         total_rows += rows.len();
         schedules.push(Some(rows));
+        notes.push(note);
     }
     let operations: Vec<_> = region
         .instructions
@@ -1667,6 +1676,7 @@ pub(super) fn compile_region_candidate(
         .map(|label| label.to_ascii_lowercase())
         .collect();
     let mut offset = output.instruction_pairs;
+    let mut last_stream: Option<u16> = None;
     for (block_id, block) in emission_blocks.iter().enumerate() {
         let Some(rows) = &schedules[block_id] else {
             continue;
@@ -1676,14 +1686,17 @@ pub(super) fn compile_region_candidate(
                 .labels
                 .iter()
                 .any(|label| referenced.contains(&label.to_ascii_lowercase()));
+        let generated_name = |stream: u16| {
+            let name = format!("__v_{unique}_{stream}");
+            if program.unique_labels {
+                format!("{unique}_{name}")
+            } else {
+                name
+            }
+        };
         if block.labels.is_empty() {
             if let (0, Some(stream)) = (block_id, region.stream) {
-                let name = format!("__v_{unique}_{stream}");
-                let name = if program.unique_labels {
-                    format!("{unique}_{name}")
-                } else {
-                    name
-                };
+                let name = generated_name(stream);
                 output.assembly.push_str(&format!("{name}:\n"));
             }
         } else if visible {
@@ -1711,8 +1724,53 @@ pub(super) fn compile_region_candidate(
             options,
             plans.get(&block_id),
         )?;
+        // An empty stream (after `--cont`, say) takes the uid after the
+        // previous stream's.
+        let stream = block
+            .stream
+            .or_else(|| last_stream.map(|uid| uid + 1))
+            .or(region.stream);
+        last_stream = stream;
+        // An empty stream that ends at an exit has no table of its own: its
+        // rows are the exit's padding, printed without a comment (observed
+        // from vcl 1.4beta7, `branch-forward-conditional`).
+        let commented = !(block_id != 0
+            && block.part_name.is_none()
+            && block.operations.is_empty()
+            && matches!(block.end, End::Exit { .. }));
+        if options.mode == crate::Mode::Vcl && commented {
+            // A stream is named after its first label, printed or not (the
+            // labels kept on a block are those that start its stream), or
+            // after its uid.
+            let name = block
+                .part_name
+                .clone()
+                .or_else(|| block.labels.first().cloned())
+                .or_else(|| stream.map(generated_name))
+                .unwrap_or_default();
+            let mut note = notes[block_id];
+            if block.operations.is_empty() {
+                note.lower_bound = Some(0);
+            }
+            output
+                .assembly
+                .push_str(&note.comment(finished.rows.len(), rows.len(), &name));
+        }
+        // vcl's `-c` layout (observed from vcl 1.4beta7, `comments-*`): each
+        // row as a comment with source register names, the row itself one
+        // space further in, and a blank line; each walked row that is not
+        // printed is a bare `; ` line. An exit's padding stream keeps the
+        // plain layout.
+        let source_comments = options.comments && options.mode == crate::Mode::Vcl && commented;
+        let mut next_origin = 0;
         for (row_id, timed) in finished.rows.iter().enumerate() {
             let row = &timed.instructions;
+            if source_comments {
+                for _ in next_origin..finished.origins[row_id] {
+                    output.assembly.push_str("; \n");
+                }
+                next_origin = finished.origins[row_id] + 1;
+            }
             let end_bit = program.end_bit
                 && matches!(block.end, End::Exit { macro_text: None } | End::Continue)
                 && finished.origins[row_id] + 2 == rows.len();
@@ -1729,6 +1787,7 @@ pub(super) fn compile_region_candidate(
                 extra
             };
             text[0].push_str(&crate::emit::modifier_suffix(nop_extra));
+            let mut symbolic = text.clone();
             for pipe in 0..2 {
                 if let Some(id) = row[pipe] {
                     let located = &region.instructions[id];
@@ -1742,6 +1801,11 @@ pub(super) fn compile_region_candidate(
                         instruction.operands[*operand].immediate = Some(text.clone());
                     }
                     let mut replacements = replacements;
+                    let mut sources: Vec<_> = located
+                        .operands
+                        .iter()
+                        .map(|id| id.map(|id| source_name(program, region, id)))
+                        .collect();
                     if let Some(kind) = instruction.generated_copy {
                         let descriptor = kind.resolved_descriptor(if pipe == 0 {
                             schedule::Pipe::Upper
@@ -1760,6 +1824,7 @@ pub(super) fn compile_region_candidate(
                         instruction.mnemonic = "max".into();
                         instruction.operands.push(instruction.operands[1].clone());
                         replacements.push(replacements[1].clone());
+                        sources.push(sources[1].clone());
                     }
                     text[pipe] = crate::emit::instruction(
                         &instruction,
@@ -1767,7 +1832,14 @@ pub(super) fn compile_region_candidate(
                         if pipe == 0 { extra } else { 0 },
                     )
                     .map_err(|e| internal(located.line, e))?;
-                    if options.comments {
+                    if source_comments {
+                        symbolic[pipe] = crate::emit::instruction(
+                            &instruction,
+                            &sources,
+                            if pipe == 0 { extra } else { 0 },
+                        )
+                        .map_err(|e| internal(located.line, e))?;
+                    } else if options.comments && options.mode == crate::Mode::Oxide {
                         output
                             .assembly
                             .push_str(&format!("; source line {}\n", located.line));
@@ -1780,18 +1852,24 @@ pub(super) fn compile_region_candidate(
                     &finished.physical_names,
                     if sync.issue_slot() == 0 { extra } else { 0 },
                 )?;
+                symbolic[sync.issue_slot()] = text[sync.issue_slot()].clone();
             }
-            output
-                .assembly
-                .push_str(&crate::emit::pair(&text[0], &text[1]));
             let stalls = finished.replay.stalls[row_id];
             let count = stalls.latency + stalls.throughput + stalls.synchronization;
-            if count != 0 {
+            let stall = if count != 0 {
+                format!("       ;\tSTALL_LATENCY ?{count}")
+            } else {
+                String::new()
+            };
+            let pair = crate::emit::pair(&text[0], &text[1]);
+            if source_comments {
+                let comment = crate::emit::pair(&symbolic[0], &symbolic[1]);
                 output
                     .assembly
-                    .push_str(&format!("       ;\tSTALL_LATENCY ?{count}"));
+                    .push_str(&format!(";{comment}{stall}\n {pair}{stall}\n\n"));
+            } else {
+                output.assembly.push_str(&format!("{pair}{stall}\n"));
             }
-            output.assembly.push('\n');
             output.instruction_pairs += 1;
             offset += 1;
         }
@@ -1799,15 +1877,83 @@ pub(super) fn compile_region_candidate(
             macro_text: Some(text),
         } = &block.end
         {
-            output.assembly.push_str(text);
-            if !text.ends_with('\n') {
-                output.assembly.push('\n');
+            if options.mode == crate::Mode::Vcl {
+                // A leading newline, then the macro line indented by ten
+                // spaces (observed from vcl 1.4beta7, `exitm-replaces-exit`,
+                // `label-exitm`).
+                output.assembly.push_str(&format!("\n          {text}\n"));
+            } else {
+                output.assembly.push_str(text);
+                if !text.ends_with('\n') {
+                    output.assembly.push('\n');
+                }
             }
         }
+    }
+    // vcl writes a newline before and after a pass-through block (observed
+    // from vcl 1.4beta7, `label-passthrough`).
+    let vcl = options.mode == crate::Mode::Vcl && !region.raw_text.is_empty();
+    if vcl {
+        output.assembly.push('\n');
     }
     for text in &region.raw_text {
         output.assembly.push_str(text);
         output.assembly.push('\n');
     }
+    if vcl {
+        output.assembly.push('\n');
+    }
     Ok(())
+}
+
+/// A register's name as the source spells it, for vcl's `-c` comments: a
+/// web split from a source register takes that register's name, and a
+/// physical register name prints in capitals (`VI00`, raw code's `VF04`).
+fn source_name(program: &Source, region: &Region, id: usize) -> String {
+    let id = region.web_sources.get(&id).copied().unwrap_or(id);
+    let name = &program.registers.named(id).name;
+    let lower = name.to_ascii_lowercase();
+    let physical = (lower.starts_with("vf") || lower.starts_with("vi"))
+        && lower.len() == 4
+        && lower[2..].bytes().all(|byte| byte.is_ascii_digit());
+    if physical {
+        name.to_ascii_uppercase()
+    } else {
+        name.clone()
+    }
+}
+
+/// What vcl's optimizer comment (`; _LNOPT_w=...`) reports for one table.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct TableNote {
+    /// The linear strategy whose table won; none for tables kept as they
+    /// are (raw code, installed loop parts).
+    pub(super) strategy: Option<schedule::Strategy>,
+    /// A loop kernel's winning loop strategy (an `_LPOPT_` table).
+    pub(super) kernel_strategy: Option<schedule::Strategy>,
+    /// The wrangled table's lower bound.
+    pub(super) lower_bound: Option<i32>,
+}
+
+impl TableNote {
+    /// The comment line: `; _LNOPT_w=[ strategy ] printed [a b] walked   [name]`
+    /// (observed from vcl 1.4beta7; `docs/OUTPUT_FORMAT.md`). `printed` is
+    /// the rows printed and `walked` the rows walked, skipped ones included.
+    /// The bracketed pair is reproduced only in part: `a` is the wrangled
+    /// table's lower bound, or `walked` for a table without one, and `b` is
+    /// zero (a loop kernel repeats `a`).
+    pub(super) fn comment(&self, printed: usize, walked: usize, name: &str) -> String {
+        let (kind, strategy) = match self.kernel_strategy {
+            Some(strategy) => ('P', Some(strategy)),
+            None => ('N', self.strategy),
+        };
+        let strategy = strategy.map_or(String::new(), |s| format!("{} ", s.name()));
+        let first = if walked == 0 {
+            0
+        } else {
+            self.lower_bound.map_or(walked as i64, i64::from)
+        };
+        let second = if kind == 'P' { first } else { 0 };
+        format!("; _L{kind}OPT_w=[ {strategy}] {printed} [{first} {second}] {walked}   [{name}]\n")
+    }
 }

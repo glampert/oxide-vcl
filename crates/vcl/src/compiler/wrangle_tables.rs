@@ -31,6 +31,8 @@ pub(super) struct WrangledTable {
     /// Local allocation of table-local virtual registers: program register
     /// to physical index.
     pub(super) allocation: BTreeMap<usize, usize>,
+    /// The linear strategy whose table won.
+    pub(super) strategy: Option<crate::scheduler::schedule::Strategy>,
 }
 
 #[derive(Clone, Debug)]
@@ -866,6 +868,7 @@ pub(super) fn build_wrangle_table_span(
         affine,
         pools,
         allocation: BTreeMap::new(),
+        strategy: None,
     })
 }
 
