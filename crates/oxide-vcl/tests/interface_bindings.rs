@@ -144,3 +144,59 @@ fn rebinding_warns_like_the_original() {
         }
     }
 }
+
+/// A web bound to VF00 is VF00: a write into it is removed and its reader
+/// reads VF00 (observed from vcl 1.4beta7, `dead-write-zero-read`), while a
+/// copy into it fails the copy detector even when another exit binds the
+/// name elsewhere (`copy-output-zero-exits`).
+#[test]
+fn a_web_bound_to_vf00_is_vf00() {
+    let read = ".init_vf_all\n\
+                .init_vi_all\n\
+                --enter\n\
+                in_vf src(vf01)\n\
+                --endenter\n\
+                add res, src, src\n\
+                add other, res, res\n\
+                --exit\n\
+                out_vf res(vf00)\n\
+                out_vf other(vf02)\n\
+                --endexit\n";
+    let options = cli::parse(["-t1", "-uB"].map(String::from).to_vec())
+        .unwrap()
+        .compile;
+    let compiled = vcl::compile(read, "read.vcl", &options).unwrap();
+    let code: Vec<String> = compiled
+        .assembly
+        .lines()
+        .map(|line| line.split(';').next().unwrap().split_whitespace().collect())
+        .filter(|line: &String| line.starts_with("add") || line.starts_with("NOP"))
+        .collect();
+    assert_eq!(code[0], "add[E]VF02,VF00,VF00NOP", "{}", compiled.assembly);
+
+    let exits = ".init_vf_all\n\
+                 .init_vi_all\n\
+                 --enter\n\
+                 in_vi flag(vi01)\n\
+                 in_vf src(vf01)\n\
+                 --endenter\n\
+                 ibeq flag, vi00, other\n\
+                 move res, src\n\
+                 --exit\n\
+                 out_vf res(vf00)\n\
+                 --endexit\n\
+                 other:\n\
+                 sub res, src, src\n\
+                 --exit\n\
+                 out_vf res(vf02)\n\
+                 --endexit\n";
+    let errors = vcl::compile(exits, "exits.vcl", &options).unwrap_err();
+    assert_eq!(errors[0].exit_status(), 0);
+    assert_eq!(errors[0].line, 8);
+    assert!(
+        errors[0]
+            .message
+            .to_string()
+            .contains("const zero register")
+    );
+}

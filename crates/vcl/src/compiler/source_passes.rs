@@ -3,6 +3,19 @@
 
 use super::*;
 
+/// Copy detection skips fixed raw tables, which keep their encodings.
+fn copies_allowed(source: &Region, block: &Block) -> bool {
+    block.selected_table.as_ref().map_or_else(
+        || {
+            block.operations.iter().all(|&id| {
+                source.instructions[id].instruction.mode == ParseMode::Vcl
+                    || source.instructions[id].instruction.raw_reorder
+            })
+        },
+        |table| table.mode != TableMode::Fixed,
+    )
+}
+
 /// Detect copies after pruning, when secondary flag-output observations are
 /// known. Fixed raw tables retain their original instruction encodings.
 pub(super) fn normalize_copies(
@@ -14,16 +27,7 @@ pub(super) fn normalize_copies(
     let analysis = graph.analyze().map_err(|e| internal(0, e))?;
     let mut result = source.clone();
     for block in &source.blocks {
-        let allowed = block.selected_table.as_ref().map_or_else(
-            || {
-                block.operations.iter().all(|&id| {
-                    source.instructions[id].instruction.mode == ParseMode::Vcl
-                        || source.instructions[id].instruction.raw_reorder
-                })
-            },
-            |table| table.mode != TableMode::Fixed,
-        );
-        if !allowed {
+        if !copies_allowed(source, block) {
             continue;
         }
         for &id in &block.operations {
@@ -73,9 +77,7 @@ pub(super) fn normalize_copies(
             let Some(destination) = ordinary else {
                 return Err(error(located.line, CompileMessage::MoveDestinationUnbound));
             };
-            if program.registers.named(destination).physical == Some(0)
-                || source.zero_bound.contains(&destination)
-            {
+            if program.registers.named(destination).physical == Some(0) {
                 return Err(CompileError {
                     line: located.line,
                     message: CompileMessage::ZeroCopyDestination.into(),
@@ -912,6 +914,125 @@ pub(super) fn construct_register_webs(
         }
     }
     Ok(result)
+}
+
+/// A web bound to register 0 (an ENTER or EXIT mapping to VF00 or VI00,
+/// given or inherited) is that constant register, observed from vcl
+/// 1.4beta7 (`dead-write-zero-*` probes):
+///
+/// - A copy into it, or an IADDI, IADDIU or ISUBIU with a numeric immediate
+///   (any value, not only zero), fails the copy detector
+///   (`copy-output-zero-binding`, `dead-write-zero-iaddiu`).
+/// - Any other write into it is removed like a write spelled VF00, so its
+///   readers read VF00 and what only fed it is pruned in turn
+///   (`dead-write-zero-read`, `dead-write-zero-chain`). A write whose flags
+///   are read stays, as one spelled VF00 does (`dead-write-zero-flags`).
+///
+/// The binding is the web's, not the name's: one exit of several can bind
+/// its web to VF00 (`dead-write-zero-exits`). vcl gathers webs before it
+/// detects copies, so a web bound to two bases fails first.
+///
+/// Returns the region with such operands spelled as the zero register and
+/// their ENTER/EXIT entries dropped, for another pruning pass, or `None`
+/// when no web is bound to register 0.
+pub(super) fn spell_zero_webs(
+    program: &mut Source,
+    region: &Region,
+    analysis: &flow::Analysis,
+) -> Result<Option<Region>, CompileError> {
+    let webs = construct_register_webs(&mut program.clone(), region, analysis)?;
+    let zero: BTreeSet<usize> = webs
+        .forced
+        .iter()
+        .filter(|&(_, &base)| base == 0)
+        .map(|(&web, _)| web)
+        .collect();
+    if zero.is_empty() {
+        return Ok(None);
+    }
+    for block in &region.blocks {
+        let allowed = copies_allowed(region, block);
+        for &id in &block.operations {
+            let located = &webs.instructions[id];
+            if !located
+                .operands
+                .first()
+                .copied()
+                .flatten()
+                .is_some_and(|destination| zero.contains(&destination))
+            {
+                continue;
+            }
+            let numeric_immediate = matches!(located.instruction.metadata.index, 109 | 110 | 112)
+                && located
+                    .instruction
+                    .operands
+                    .get(2)
+                    .and_then(|operand| operand.immediate.as_deref())
+                    .and_then(|text| crate::parser::expression::evaluate(text).ok())
+                    .and_then(|value| value.number())
+                    .is_some();
+            if located.instruction.generated_copy.is_some() || (allowed && numeric_immediate) {
+                return Err(CompileError {
+                    line: located.line,
+                    message: CompileMessage::ZeroCopyDestination.into(),
+                    kind: CompileErrorKind::ZeroCopyDestination,
+                });
+            }
+        }
+    }
+    let mut result = region.clone();
+    for (id, located) in webs.instructions.iter().enumerate() {
+        let spelled: Vec<_> = located
+            .operands
+            .iter()
+            .enumerate()
+            .filter(|(_, register)| register.is_some_and(|register| zero.contains(&register)))
+            .map(|(index, _)| index)
+            .collect();
+        if spelled.is_empty() {
+            continue;
+        }
+        let mut instruction = region.instructions[id].instruction.clone();
+        for index in spelled {
+            let operand = &mut instruction.operands[index];
+            let kind = family(operand.class).unwrap_or(Family::Vector);
+            operand.register = Some(physical_name(kind, 0).to_ascii_lowercase());
+        }
+        result.instructions[id] = program.lower(instruction, located.line)?;
+    }
+    let kept = |access: &Access| !zero.contains(&access.register);
+    result.inputs = region
+        .inputs
+        .iter()
+        .zip(&webs.inputs)
+        .filter(|(_, web)| kept(web))
+        .map(|(access, _)| *access)
+        .collect();
+    result.forced.retain(|register, _| {
+        result
+            .inputs
+            .iter()
+            .any(|access| access.register == *register)
+            || !region
+                .inputs
+                .iter()
+                .any(|access| access.register == *register)
+    });
+    for (block, web_block) in result.blocks.iter_mut().zip(&webs.blocks) {
+        block.outputs = block
+            .outputs
+            .iter()
+            .zip(&web_block.outputs)
+            .filter(|(_, web)| kept(web))
+            .map(|(access, _)| *access)
+            .collect();
+        let outputs = &block.outputs;
+        block
+            .output_forced
+            .retain(|register, _| outputs.iter().any(|access| access.register == *register));
+    }
+    Ok(Some(result))
 }
 
 /// Hardware register identity from the original register table

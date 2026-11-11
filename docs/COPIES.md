@@ -149,29 +149,34 @@ ERROR: failed to do basic operation processing
 The process exits with status **zero**. The same source in fixed raw mode compiles,
 so the outcome comes from the move-detection gate.
 
-The destination does not have to be spelled VF00 or VI00. A copy into a name
-whose interface binding is register 0 fails the same way, observed from vcl
-1.4beta7:
+The destination does not have to be spelled VF00 or VI00. vcl gathers
+register webs before it detects copies, and a copy whose destination web is
+bound to register 0 by an ENTER or EXIT mapping, given or inherited, fails the
+same way. Observed from vcl 1.4beta7:
 
 - `copy-output-zero-binding` (`move res, vf00` with `out_vf res(vf00)`) and
   `copy-output-zero-binding-int` (`iaddiu res, src, 0` with `out_vi res(vi00)`).
-  The copy is dead, since an output bound to the zero register is no use, but
-  dead-code removal keeps it and the detector then rejects it. A dead copy
-  spelled with VF00 or VI00 in VCL code is removed instead and compiles.
-- The binding that counts is the name's binding when its region's source ends:
-  `copy-output-zero-rebound` (ENTER VF02, EXIT VF00) fails,
-  `copy-output-zero-unbound` (ENTER VF00, EXIT VF02) compiles. A later region's
-  rebinding does not count (`copy-output-zero-later-region`), while an earlier
-  region's binding that an unmapped EXIT inherits does
-  (`copy-output-zero-inherited`).
+  The copy survives dead-code removal, and the detector then rejects it. A
+  dead copy spelled with VF00 or VI00 in VCL code is removed instead and
+  compiles.
+- The binding is the web's, not the name's. `copy-output-zero-rebound` (ENTER
+  VF02, EXIT VF00) fails, and `copy-output-zero-unbound` (ENTER VF00, EXIT
+  VF02) compiles. `copy-output-zero-exits` fails: its copy reaches an exit
+  bound to VF00, although another exit binds the name to VF02 later.
+  `copy-output-zero-later-region` (a later region's rebinding) compiles, and
+  `copy-output-zero-inherited` (an earlier region's VF00 inherited by an
+  unmapped EXIT) fails.
+- IADDI, IADDIU and ISUBIU with any numeric immediate count as copies here,
+  not only immediate 0 (`dead-write-zero-iaddiu`). A symbolic immediate does
+  not (`dead-write-zero-iaddiu-symbol`), and `isub res, src, src` does
+  (`dead-write-zero-isub`).
 - A web bound to two bases fails first with the `regweb` error, at status 255
-  (`copy-output-zero-two-bases`), because vcl gathers register webs before it
-  detects copies.
+  (`copy-output-zero-two-bases`).
 
-The port snapshots the names bound to register 0 at the end of each region
-(`Region::zero_bound`) and checks them along with the spelled destination.
-When the detector fails, it builds the region's webs once to report a
-conflicting-bases error first.
+Any other write into such a web is removed: see
+[PRUNING.md](PRUNING.md#writes-into-a-web-bound-to-register-0). The port
+builds the webs once after its second copy pass (`spell_zero_webs`) to make
+both checks.
 
 The library returns a typed compilation error. The CLI reproduces the status zero,
 empty stdout and exact stderr for the retained invocation; these are literal

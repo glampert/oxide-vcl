@@ -71,6 +71,25 @@ differ: LQI stays because its address-register update is used, its unneeded
 virtual VF result can target VF00, and the implicit read/write link for the
 updated integer base remains.
 
+## Writes into a web bound to register 0
+
+A web that an ENTER or EXIT mapping binds to VF00 or VI00 is that constant
+register, observed from vcl 1.4beta7 (`dead-write-zero-*` probes). A write
+into it is removed (`INFO2: REMOVE INST`) like a write spelled VF00, even when
+something reads it, and those readers read VF00 (`dead-write-zero-read`).
+What only fed the write is then pruned too (`dead-write-zero-chain`). This
+holds for loads and integer results (`dead-write-zero-load`,
+`dead-write-zero-int`), inside loops (`dead-write-zero-loop`) and for one
+exit's web among several (`dead-write-zero-exits`,
+`dead-write-zero-exits-last`). A write whose status flags are read stays, and
+its result goes to a scratch register, as for a destination spelled VF00
+(`dead-write-zero-flags`). A copy into such a web is a copy-detector error
+instead ([COPIES.md](COPIES.md#diagnostic-failure-with-process-status-zero)).
+
+The port finds these webs after its second copy pass (`spell_zero_webs` in
+`source_passes.rs`). It spells their operands as VF00 or VI00, drops their
+ENTER and EXIT entries, and prunes again.
+
 ## Port implementation
 
 `crates/vcl/src/analysis/prune.rs` separates graph propagation from physical

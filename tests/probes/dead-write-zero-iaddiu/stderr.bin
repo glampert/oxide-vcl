@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+ERROR: found a move to a const zero register
+ERROR: failed to detect moves!
+ERROR: failed to do basic operation processing

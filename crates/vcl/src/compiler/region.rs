@@ -179,27 +179,7 @@ pub(super) fn compile_region_candidate(
     };
     let mut expanded_program = program.clone();
     let source_pruned = coalesce_immediates(&mut expanded_program, &source_pruned)?;
-    let source_pruned = match normalize_copies(&mut expanded_program, &source_pruned) {
-        Err(zero) if zero.kind == CompileErrorKind::ZeroCopyDestination => {
-            // The original gathers register webs before it detects copies:
-            // one web bound to two bases fails there first, even when it is
-            // also a copy into a name bound to VF00 (observed from vcl
-            // 1.4beta7, `copy-output-zero-binding` and its two-exit variant).
-            let graph = build_flow_graph(&expanded_program, &source_pruned)?;
-            let analysis = graph.analyze().map_err(|e| internal(0, e))?;
-            if let Err(conflict) =
-                construct_register_webs(&mut expanded_program.clone(), &source_pruned, &analysis)
-                && matches!(
-                    conflict.message,
-                    Message::Compile(CompileMessage::ConflictingBases { .. })
-                )
-            {
-                return Err(conflict);
-            }
-            return Err(zero);
-        }
-        normalized => normalized?,
-    };
+    let source_pruned = normalize_copies(&mut expanded_program, &source_pruned)?;
     // Copies present before loop expansion; only these meet the original's pruning
     // identity check (a zero-delta `iaddiu VI03,VI03,0` that coalescing
     // leaves in a ps2gl fast epilogue stays).
@@ -246,9 +226,21 @@ pub(super) fn compile_region_candidate(
     let pruned_region = prune_source_region(program, region, &analysis)?;
     let mut copy_program = program.clone();
     let pruned_region = normalize_copies(&mut copy_program, &pruned_region)?;
-    let program = &copy_program;
-    let graph = build_flow_graph(program, &pruned_region)?;
+    let graph = build_flow_graph(&copy_program, &pruned_region)?;
     let analysis = graph.analyze().map_err(|e| internal(0, e))?;
+    let (pruned_region, analysis) =
+        match spell_zero_webs(&mut copy_program, &pruned_region, &analysis)? {
+            Some(spelled) => {
+                let graph = build_flow_graph(&copy_program, &spelled)?;
+                let analysis = graph.analyze().map_err(|e| internal(0, e))?;
+                let pruned = prune_source_region(&copy_program, &spelled, &analysis)?;
+                let graph = build_flow_graph(&copy_program, &pruned)?;
+                let analysis = graph.analyze().map_err(|e| internal(0, e))?;
+                (pruned, analysis)
+            }
+            None => (pruned_region, analysis),
+        };
+    let program = &copy_program;
     let mut web_program = program.clone();
     let mut web_region = construct_register_webs(&mut web_program, &pruned_region, &analysis)?;
     // The original's pruning removes a copy (a move with a move ID) whose

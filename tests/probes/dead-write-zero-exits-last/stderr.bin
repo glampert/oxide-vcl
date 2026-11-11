@@ -1,0 +1,9 @@
+INFO: OS_Init(Linux)
+WARN: changing binding for res from VF02 to VF00
+INFO2: REMOVE INST:   ---> [***{sub}***] {res},{src},{src} 
+INFO: Opt::Linear          __v_B_5  1/4
+INFO: Opt::Linear            other  0/0
+INFO: Opt::Linear          __v_B_4  2/2
+INFO: skip target emit. .coz it's no longer visible
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

@@ -1,0 +1,4 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST:   ---> [***{add}***] {res},{src},{src} 
+INFO: Opt::Linear              top  4/4
+INFO: OS_End(Linux)
