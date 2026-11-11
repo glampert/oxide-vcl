@@ -43,7 +43,8 @@ mode:
 diagnostics:
   -q             quiet: print only warnings and errors
   -p             Microsoft-style errors: file(line): error: message
-  -h             print this help
+  -h, --help     print this help
+  -v, --version  print the version
 
 accepted for compatibility, without effect:
   -t<seconds>    optimizer time limit (this optimizer has none)

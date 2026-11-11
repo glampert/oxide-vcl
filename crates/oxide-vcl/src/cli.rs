@@ -14,7 +14,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The UTC date this driver was built (see `build.rs`).
 pub const BUILD_DATE: &str = env!("VCL_BUILD_DATE");
 
-/// The help screen printed by `-h`.
+/// The line printed by `-v` and `--version`.
+pub fn version() -> String {
+    format!("oxide-vcl {VERSION}, built {BUILD_DATE}\n")
+}
+
+/// The help screen printed by `-h` and `--help`.
 pub fn help() -> String {
     include_str!("help.txt")
         .replace("{version}", VERSION)
@@ -33,7 +38,10 @@ pub struct Arguments {
     pub output: Option<String>,
     /// Label header file (`-j`).
     pub header: Option<String>,
+    /// Print the help screen and stop (`-h`, `--help`).
     pub help: bool,
+    /// Print the version and stop (`-v`, `--version`).
+    pub version: bool,
     pub quiet: bool,
     /// `file(line): error: message` diagnostics (`-p`).
     pub ms_diagnostics: bool,
@@ -132,6 +140,19 @@ where
     let mut options = Arguments::default();
     let mut index = 0;
     while let Some(argument) = arguments.get(index).filter(|value| value.starts_with('-')) {
+        // oxide-vcl's own options, in both modes; vcl 1.4beta7 has no long
+        // options and no -v.
+        match argument.as_str() {
+            "--help" => {
+                options.help = true;
+                return Ok(options);
+            }
+            "--version" | "-v" => {
+                options.version = true;
+                return Ok(options);
+            }
+            _ => {}
+        }
         // oxide-vcl's own option; vcl 1.4beta7 has no long options.
         if let Some(name) = argument.strip_prefix("--mode=") {
             let Some(mode) = vcl::Mode::from_name(name) else {
@@ -319,10 +340,14 @@ mod tests {
 
     #[test]
     fn help_is_immediate_and_case_aliases_are_explicit() {
-        for flag in ["-h", "-H", "-help", "-Hanything"] {
+        for flag in ["-h", "-H", "-help", "-Hanything", "--help"] {
             assert!(parse([flag, "--invalid", "one", "two"]).unwrap().help);
         }
-        for flag in ["--help", "--version", "-v", "--", "-", "-N"] {
+        for flag in ["-v", "--version"] {
+            let options = parse([flag, "--invalid"]).unwrap();
+            assert!(options.version && !options.help);
+        }
+        for flag in ["--helpme", "--versions", "-vx", "--", "-", "-N"] {
             assert!(matches!(
                 parse([flag]).unwrap_err().message(),
                 vcl::Message::Cli(CliMessage::BadArgument { .. })

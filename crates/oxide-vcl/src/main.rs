@@ -180,6 +180,11 @@ fn main() {
         reporter.notice(notice);
     }
 
+    if arguments.version {
+        reporter.version(&cli::version());
+        return;
+    }
+
     if arguments.help {
         if !arguments.quiet {
             reporter.help(&cli::help());

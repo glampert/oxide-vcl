@@ -196,3 +196,24 @@ fn help_names_both_modes() {
     assert!(help.stderr.contains("--mode=vcl") && help.stderr.contains("--mode=oxide"));
     assert_eq!(run("help-quiet", &["-q", "-h"], &[]).stderr, "");
 }
+
+#[test]
+fn long_help_and_version() {
+    let help = run("help-long", &["--help"], &[]);
+    assert_eq!(help.status, 0);
+    assert_eq!(help.stderr, run("help-short", &["-h"], &[]).stderr);
+    for (name, flag) in [("version-short", "-v"), ("version-long", "--version")] {
+        for quiet in [false, true] {
+            let flags: &[&str] = if quiet { &["-q", flag] } else { &[flag] };
+            let output = run(name, flags, &[]);
+            assert_eq!(output.status, 0);
+            assert_eq!(output.stderr, "");
+            assert!(
+                output
+                    .stdout
+                    .starts_with(&format!("oxide-vcl {}", vcl_cli::VERSION))
+            );
+            assert_eq!(output.stdout.lines().count(), 1);
+        }
+    }
+}

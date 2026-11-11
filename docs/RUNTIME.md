@@ -169,6 +169,8 @@ the port. Flags the port accepts without effect are listed separately.
 
 - `-h`, `-H`, and even `-help` print help and exit immediately. `--help`,
   `--version`, and `-v` are rejected, despite `-v` appearing in the usage line.
+  The port accepts them in both modes as its own options: `--help` is `-h`,
+  and `-v`/`--version` print the port's version on standard output.
 - The second byte selects the switch. Most switches ignore remaining bytes;
   `-quiet` enables `-q`. Attached values are required for `-o`, `-j`, `-u`,
   `-m`, and `-t`; a bare `-o` gives an empty output filename.

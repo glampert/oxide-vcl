@@ -744,7 +744,8 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-M` | Timid memory access mode: keep every pair of loads and stores that touch overlapping fields in program order (see [Memory order and tags](#memory-order-and-tags)). |
 | `-q` | Quiet: print only warnings and errors. |
 | `-p` | Microsoft-style errors: `file(line): error: message`. |
-| `-h` | Print the help screen. |
+| `-h`, `--help` | Print the help screen. |
+| `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
 | `--mode=vcl` | Behave and report exactly as vcl 1.4beta7. The default. |
 | `--mode=oxide` | Enable oxide-vcl's own behaviour: fixes, optimizations and reworded messages that break compatibility with vcl 1.4beta7. It currently behaves and reports as `--mode=vcl`. |
 

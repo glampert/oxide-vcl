@@ -851,6 +851,12 @@ impl<O: Write, E: Write> Reporter<O, E> {
         let _ = self.out.flush();
     }
 
+    /// The version line (`-v`), on standard output whatever `-q` says.
+    pub fn version(&mut self, text: &str) {
+        let _ = self.out.write_all(text.as_bytes());
+        let _ = self.out.flush();
+    }
+
     /// The help screen, on standard error.
     pub fn help(&mut self, text: &str) {
         self.stderr(format_args!("{text}"));
