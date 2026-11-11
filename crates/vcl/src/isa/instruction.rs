@@ -10,8 +10,6 @@ mod generated {
 
 pub use generated::INSTRUCTIONS;
 
-pub const SOURCE_SHA256: &str = "83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274";
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Syntax {
     #[default]
