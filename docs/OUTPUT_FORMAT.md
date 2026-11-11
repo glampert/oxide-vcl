@@ -105,7 +105,7 @@ markers.
 ## Listing comments in the port
 
 In vcl mode (the default) the port prints vcl's comments; `--mode=oxide`
-keeps its own shorter listing (`; flowMon::Emit() Rust reconstruction`, no
+keeps its own shorter listing (`; oxide-vcl {VERSION} produced this code`, no
 banners, table comments or statistics, and `; source line N` for `-c`).
 
 - Standard output is wrapped in the five-line `VCL CODE` banner and five
