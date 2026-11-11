@@ -795,6 +795,7 @@ fn unconditional_branch(target: &str) -> Instruction {
             immediate: Some(target.into()),
             immediate_kind: metadata.operands[0].immediate_kind,
             tags: Vec::new(),
+            field_letters: None,
         }],
         mode: ParseMode::Raw,
         raw_reorder: false,

@@ -122,9 +122,14 @@ hardware register or resource: `acc`, `i`, `q`, `p`, `r`, `clip`, `clipa`,
 registers (`can't use r as a name for one of the VU User floating point`), and
 all but `i`, `q`, `p` and `r` for integer registers. In memory operands `p`
 and `q` fail too: `ilw.w n, 3(p)` gives `failed to decode memory operand
-'3(p)'`. In the classic syntax a trailing `x`, `y`, `z` or `w` can be read as
-a field (`sticky` is `stick` with field y), so avoid names ending in one, and
-single-letter names `x`, `y`, `z` and `w`. Tags must not be
+'3(p)'`. In the classic syntax a vector
+register name's trailing `x`, `y`, `z` and `w` are read as fields, in
+instructions and in `in_vf`/`out_vf` alike: `sticky` is register `stick` with
+field y, and `copy` is `cop`. vcl compiles this silently and `oxide-vcl`
+compiles it the same way with a warning, `WARNING: line N: 'copy' is read as
+register 'cop' with field y: ...`; with `--mode=oxide` it is an error. Avoid
+names ending in one of these letters, and single-letter names `x`, `y`, `z`
+and `w`. Tags must not be
 instruction names either: in `lq v, 0(src):frame:b` the `b` is read as the
 branch instruction and the line is rejected.
 

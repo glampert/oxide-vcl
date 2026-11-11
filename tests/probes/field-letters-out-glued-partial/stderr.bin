@@ -1,0 +1,7 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_F_5 res.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register res is used before set at instruction(s) :
+INFO:    (field(s) : W)   ---> {out_vf} [***{resxyz(vf02)}***] 
+INFO: OS_End(Linux)

@@ -143,6 +143,10 @@ pub struct Operand {
     /// Original operand conversion selector survives opcode normalization.
     pub immediate_kind: u8,
     pub tags: Vec<String>,
+    /// The whole token when old syntax read the trailing x/y/z/w letters of
+    /// a symbolic name as a field selection with no dot before them (`copy`
+    /// as `cop` with field y): most likely a misspelt name.
+    pub field_letters: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -996,6 +1000,7 @@ fn parse_operands(
                 immediate: None,
                 immediate_kind: spec.immediate_kind,
                 tags: Vec::new(),
+                field_letters: None,
             });
         } else {
             result.push(parse_operand(
@@ -1114,6 +1119,7 @@ fn parse_operand(
         immediate: None,
         immediate_kind: spec.immediate_kind,
         tags,
+        field_letters: None,
     };
     match spec.class {
         27 => {
@@ -1161,22 +1167,39 @@ fn parse_operand(
             operand_mask = Some(mask);
             register = name.to_string();
         }
-    } else if syntax == Syntax::Old && matches!(spec.class, 1 | 3 | 11 | 13..=16) {
+    } else if syntax == Syntax::Old && matches!(spec.class, 1 | 3 | 11 | 13..=16 | 35) {
         // The original scans a maximal case-insensitive trailing lane string
-        // and strips that string and its optional preceding dot.
+        // and strips that string and its optional preceding dot, in vector
+        // interface operands too: `in_vf caty(vf01)` binds `cat`. A name made
+        // only of lane letters stays whole.
         let start = register
             .trim_end_matches(['x', 'X', 'y', 'Y', 'z', 'Z', 'w', 'W'])
             .len();
-        if start < register.len() {
+        if start > 0 && start < register.len() {
             let fields = &register[start..];
             let mask = Mask::parse(fields).expect("trimmed suffix contains only lane letters");
             if mask.0.count_ones() as usize != fields.len() {
                 return Err(ParseMessage::DuplicateComponent);
             }
-            operand_mask = Some(mask);
+            let token = register.clone();
             register.truncate(start);
-            if register.ends_with('.') {
+            let dotted = register.ends_with('.');
+            // An interface operand takes its fields only from a dotted
+            // suffix (`res.xyz`); glued letters (`resxyz`) only shorten the
+            // name and the operand keeps every field (observed from vcl
+            // 1.4beta7, `field-letters-*`).
+            if dotted || spec.class != 35 {
+                operand_mask = Some(mask);
+            }
+            if dotted {
                 register.pop();
+            } else if matches!(spec.class, 1 | 35)
+                && physical_register(&register, true).is_none()
+                && physical_register(&register, false).is_none()
+            {
+                // An ordinary or interface operand: a broadcast (`scalex`)
+                // selects its field this way, but these do not.
+                operand.field_letters = Some(token);
             }
         }
     } else if let Some((name, suffix)) = register.rsplit_once('.') {

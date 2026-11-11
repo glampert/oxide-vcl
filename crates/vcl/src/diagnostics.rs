@@ -574,6 +574,14 @@ pub enum CompileMessage {
     LoopPeriodRange,
     UnknownSynthetic,
     ContWithEndMode,
+    /// Old syntax read a symbolic name's trailing letters as a field
+    /// selection: `token` is the name as written, `name` and `fields` how it
+    /// was read.
+    FieldLettersInName {
+        token: String,
+        name: String,
+        fields: String,
+    },
     // Raw code.
     RawBranchDelay,
     RawBranchDelayBeforeBoundary,
@@ -654,6 +662,14 @@ impl CompileMessage {
             LoopPeriodRange => "loop period exceeds supported schedule range".into(),
             UnknownSynthetic => "unknown synthetic instruction".into(),
             ContWithEndMode => "CONT directive encountered - but end mode isn't null".into(),
+            // oxide-vcl's own message: vcl reads the name the same way silently.
+            FieldLettersInName {
+                token,
+                name,
+                fields,
+            } => format!(
+                "'{token}' is read as register '{name}' with field {fields}: old syntax takes a name's trailing x, y, z and w as fields; rename it, or write '{name}.{fields}' if the field is meant"
+            ),
             RawBranchDelay => "raw branch requires one explicit delay pair".into(),
             RawBranchDelayBeforeBoundary => {
                 "raw branch requires one explicit delay pair before a boundary".into()
@@ -702,6 +718,7 @@ impl CompileMessage {
             CompileMessage::LoopCsKnownCount
                 | CompileMessage::LoopCsSafeCount
                 | CompileMessage::LoopAbsCount
+                | CompileMessage::FieldLettersInName { .. }
         )
     }
 }

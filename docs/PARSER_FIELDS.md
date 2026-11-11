@@ -25,9 +25,29 @@ port handles those classes the same way:
 
 The syntax is ambiguous: in old syntax `matrix` in a vector operation means
 `matri` with X selected. A probe that declares `matri` confirms this. New
-syntax keeps `matrix` whole. Interface register classes have separate decoding
-rules and do not strip all trailing lane letters. This applies only to the
-ordinary and fixed-field old vector classes.
+syntax keeps `matrix` whole.
+
+Vector interface operands (`in_vf`, `out_vf`) strip the same trailing string
+from the name (observed from vcl 1.4beta7, `field-letters-*` probes):
+`in_vf caty(vf01)` binds `cat`, so the program's uses of `caty` all refer to
+one register. Only a dotted suffix selects an interface operand's fields:
+`out_vf res.xyz(vf02)` reads XYZ, while `out_vf resxyz(vf02)` reads all of
+`res` and is rejected after an `add.xyz res, ...` (`res.w` used before set).
+Integer interface operands keep the whole name (`in_vi county`), and a name
+made only of lane letters (`xyzw`) stays whole in every class.
+
+When an instruction has an explicit mask, a selection that differs from it is
+overridden by that mask (vcl warns `getNextInstruction: forced mod bits!`):
+`move.xyzw copy, first` writes all of `cop`. Without an explicit mask the
+selection must agree with the other operands', or the line is rejected (`bad
+mod bits`).
+
+A name read this way is almost always a misspelling. In vcl mode the port
+compiles it as vcl does and warns once per name, at its first line
+(`'copy' is read as register 'cop' with field y: ...`); in oxide mode it is an
+error. Selections that are clearly meant do not warn: a broadcast (`scalex`),
+a dotted suffix (`res.xyz`) and a physical register (`vf03xyz`)
+(`crates/oxide-vcl/tests/field_letters.rs`).
 
 ## Numeric brackets are register names
 

@@ -672,6 +672,7 @@ pub(super) fn lpgen_schedule(
             immediate: None,
             immediate_kind: 0,
             tags: Vec::new(),
+            field_letters: None,
         };
         let metadata = &instruction::INSTRUCTIONS[descriptor];
         let instruction = Instruction {

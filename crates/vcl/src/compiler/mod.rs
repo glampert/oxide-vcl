@@ -330,7 +330,10 @@ struct Source {
     mpg: Option<String>,
     unique_labels: bool,
     unique_prefix: Option<String>,
+    mode: crate::Mode,
     warnings: Vec<Diagnostic>,
+    /// Names already warned about for their trailing field letters.
+    field_letter_names: BTreeSet<String>,
     /// Each name's current base binding (register ID to physical number),
     /// the register's binding in the original decoder. Every
     /// mapped IN/OUT operand replaces it; an unmapped one takes it. It
@@ -481,7 +484,9 @@ impl Source {
             unique_prefix: None,
             visibility: Vec::new(),
             scopes_opened: 0,
+            mode: options.mode,
             warnings: Vec::new(),
+            field_letter_names: BTreeSet::new(),
             bindings: BTreeMap::new(),
         }
     }
@@ -508,6 +513,31 @@ impl Source {
         mut instruction: Instruction,
         line: usize,
     ) -> Result<Located, CompileError> {
+        // Old syntax reads a symbolic name's trailing x/y/z/w as a field
+        // selection (`copy` as `cop` with field y). vcl compiles that
+        // silently; in vcl mode the port compiles it the same way and warns,
+        // in oxide mode it is an error. The note is cleared so that copies
+        // of the instruction (loop clones) do not repeat it.
+        for operand in &mut instruction.operands {
+            let Some(token) = operand.field_letters.take() else {
+                continue;
+            };
+            let message = CompileMessage::FieldLettersInName {
+                name: operand.register.clone().unwrap_or_default(),
+                fields: token[operand.register.as_ref().map_or(0, String::len)..].to_string(),
+                token,
+            };
+            match self.mode {
+                crate::Mode::Vcl => {
+                    if let CompileMessage::FieldLettersInName { token, .. } = &message
+                        && self.field_letter_names.insert(token.clone())
+                    {
+                        self.warnings.push(Diagnostic::warning(message).at(line));
+                    }
+                }
+                crate::Mode::Oxide => return Err(error(line, message)),
+            }
+        }
         // Symbolic names may not be spelled like a hardware resource
         // (observed from vcl 1.4beta7): every resource is reserved for VF
         // names, and all but the scalar I, Q, P and R for VI names.

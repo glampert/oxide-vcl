@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+WARN: getNextInstruction: forced mod bits!
+INFO: Opt::Linear          __v_F_4  1/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)
