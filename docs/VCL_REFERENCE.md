@@ -176,7 +176,9 @@ out_vf.xy c(vf03)
 ```
 
 In new syntax, the accumulator may only be the first operand, and a scalar
-only the third. `.syntax old` switches back.
+only the third. Names keep their trailing letters (`caty` is one name), and
+an interface's fields go on the instruction (`out_vf.xy c(vf03)`), not the
+name: `out_vf c.xy(vf03)` is rejected. `.syntax old` switches back.
 
 ### Memory operands
 

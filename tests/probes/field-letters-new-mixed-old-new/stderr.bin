@@ -1,0 +1,11 @@
+INFO: OS_Init(Linux)
+WARN: getNextInstruction: forced mod bits!
+INFO: UBS: __v_F_4 caty.0
+INFO: UBS: __v_F_4 caty.1
+INFO: UBS: __v_F_4 caty.2
+INFO: UBS: __v_F_4 caty.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register caty is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {add} {res},[***{caty}***],{src} 
+INFO: OS_End(Linux)

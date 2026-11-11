@@ -1,0 +1,10 @@
+INFO: OS_Init(Linux)
+INFO: UBS: __v_F_4 scalex.0
+INFO: UBS: __v_F_4 scalex.1
+INFO: UBS: __v_F_4 scalex.2
+INFO: UBS: __v_F_4 scalex.3
+USER: vcl thinks it found problem(s) in the input source:
+INFO: uh-oh, VCL thinks the following operands were used before set:
+INFO: Used before set : INFO: register scalex is used before set at instruction(s) :
+INFO:    (field(s) : XYZW)   ---> {add} {res},{src},[***{scalex}***] 
+INFO: OS_End(Linux)

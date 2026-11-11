@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+USER: can't use '.' in the name of a register : 'cnt.x'
+USER: can't use cnt.x as a name for one of the VU User integer
+USER: oDecode: not find register 'cnt.x' from VU User integer
+USER: couldn't decode instruction .. problem is at:
+  ---> {in_vi} [***{cnt.x(vi01)}***] 
+USER: expected format is: in_vi	vi_reg[(base_reg)]
+INFO: OS_End(Linux)

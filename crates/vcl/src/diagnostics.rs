@@ -420,7 +420,7 @@ pub enum ParseMessage {
     ForcedRegisterNotPhysical { register: String },
     EmptyRegisterName,
     RegisterNameTooLong { name: String },
-    InvalidRegisterCharacter { name: String },
+    InvalidRegisterCharacter { character: char, name: String },
     ReservedRegisterName { name: String },
     DuplicateLabel { name: String },
     VisibilityMismatch,
@@ -508,8 +508,8 @@ impl ParseMessage {
             }
             EmptyRegisterName => "empty register name".into(),
             RegisterNameTooLong { name } => format!("register name '{name}' is too long"),
-            InvalidRegisterCharacter { name } => {
-                format!("invalid character in register name '{name}'")
+            InvalidRegisterCharacter { character, name } => {
+                format!("can't use '{character}' in the name of a register : '{name}'")
             }
             ReservedRegisterName { name } => {
                 format!("instruction name '{name}' is reserved as a register name")

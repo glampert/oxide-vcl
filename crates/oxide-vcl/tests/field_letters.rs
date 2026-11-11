@@ -189,3 +189,151 @@ fn glued_interface_letters_keep_every_field() {
         "{errors:?}"
     );
 }
+
+// ----------------------------------------------
+// New syntax
+// ----------------------------------------------
+
+/// New syntax selects fields with brackets (`m[x]`) and instruction
+/// suffixes, so a name keeps its trailing letters: `caty` is `caty` on every
+/// side, in both modes and without a warning (observed from vcl 1.4beta7,
+/// `field-letters-new-*`).
+#[test]
+fn new_syntax_keeps_names_whole() {
+    let body = |declaration: &str, statement: &str, output: &str| {
+        format!(
+            ".init_vf_all\n\
+             --enter\n\
+             {declaration}\n\
+             --endenter\n\
+             {statement}\n\
+             --exit\n\
+             {output}\n\
+             --endexit\n"
+        )
+    };
+    for fields in ["x", "y", "z", "w", "yz"] {
+        let name = format!("cat{fields}");
+        let sources = [
+            body(
+                &format!("in_vf {name}(vf01)"),
+                &format!("add res, {name}, {name}"),
+                "out_vf res(vf02)",
+            ),
+            body(
+                "in_vf src(vf01)",
+                &format!("add {name}, src, src"),
+                &format!("out_vf {name}(vf02)"),
+            ),
+        ];
+        for source in &sources {
+            for mode in [Mode::Vcl, Mode::Oxide] {
+                // `.syntax new` and `-n` alike.
+                for (text, new_syntax) in [
+                    (format!(".syntax new\n{source}"), false),
+                    (source.clone(), true),
+                ] {
+                    let options = Options {
+                        mode,
+                        new_syntax,
+                        ..Options::default()
+                    };
+                    let compiled = vcl::compile(&text, "f.vcl", &options)
+                        .unwrap_or_else(|errors| panic!("{name} {mode}: {errors:?}"));
+                    assert_eq!(
+                        rows(&compiled.assembly)[0],
+                        "add[E] VF02,VF01,VF01 NOP",
+                        "{name}"
+                    );
+                    assert!(
+                        compiled.warnings.is_empty(),
+                        "{name}: {:?}",
+                        compiled.warnings
+                    );
+                }
+            }
+        }
+    }
+    let source = ".syntax new\n.init_vf_all\n--enter\nin_vf first(vf01)\n--endenter\n\
+                  move copy, first\n--exit\nout_vf copy(vf05)\n--endexit\n";
+    for mode in [Mode::Vcl, Mode::Oxide] {
+        let compiled = vcl::compile(source, "f.vcl", &options(mode)).unwrap();
+        assert_eq!(rows(&compiled.assembly)[0], "max[E] VF05,VF01,VF01 NOP");
+        assert!(compiled.warnings.is_empty());
+    }
+}
+
+/// A glued broadcast is just another name in new syntax.
+#[test]
+fn new_syntax_glued_broadcast_is_a_name() {
+    let source = ".syntax new\n.init_vf_all\n--enter\nin_vf src(vf01)\nin_vf scale(vf02)\n\
+                  --endenter\nadd res, src, scalex\n--exit\nout_vf res(vf03)\n--endexit\n";
+    let errors = vcl::compile(source, "f.vcl", &options(Mode::Vcl)).unwrap_err();
+    assert!(
+        errors[0].to_string().contains("scalex.x used before set"),
+        "{errors:?}"
+    );
+}
+
+/// Interface names take no dotted fields in new syntax, nor integer ones in
+/// either syntax: vcl rejects the name (`field-letters-new-out-dotted`,
+/// `field-letters-new-in-dotted`, `field-letters-new-in-vi-dotted`,
+/// `field-letters-in-vi-dotted`). New syntax writes `out_vf.xyz res(vf02)`.
+#[test]
+fn dotted_interface_names_are_rejected() {
+    let cases = [
+        (
+            ".syntax new\n.init_vf_all\n--enter\nin_vf src(vf01)\n--endenter\n\
+             add.xyz res, src, src\n--exit\nout_vf res.xyz(vf02)\n--endexit\n",
+            8,
+            "res.xyz",
+        ),
+        (
+            ".syntax new\n.init_vf_all\n--enter\nin_vf src.xyz(vf01)\n--endenter\n\
+             add.xyz res, src, src\n--exit\nout_vf.xyz res(vf02)\n--endexit\n",
+            4,
+            "src.xyz",
+        ),
+        (
+            ".syntax new\n.init_vi_all\n--enter\nin_vi cnt.x(vi01)\n--endenter\n\
+             iaddiu cnt, cnt, 1\n--exit\nout_vi cnt(vi02)\n--endexit\n",
+            4,
+            "cnt.x",
+        ),
+        (
+            ".init_vi_all\n--enter\nin_vi cnt.x(vi01)\n--endenter\n\
+             iaddiu cnt, cnt, 1\n--exit\nout_vi cnt(vi02)\n--endexit\n",
+            3,
+            "cnt.x",
+        ),
+    ];
+    for (source, line, name) in cases {
+        for mode in [Mode::Vcl, Mode::Oxide] {
+            let errors = vcl::compile(source, "f.vcl", &options(mode)).unwrap_err();
+            assert_eq!(errors[0].line, line, "{name}");
+            assert_eq!(
+                errors[0].to_string(),
+                format!("line {line}: can't use '.' in the name of a register : '{name}'")
+            );
+        }
+    }
+    // The new-syntax spelling compiles.
+    let source = ".syntax new\n.init_vf_all\n--enter\nin_vf src(vf01)\n--endenter\n\
+                  add.xyz res, src, src\n--exit\nout_vf.xyz res(vf02)\n--endexit\n";
+    assert!(vcl::compile(source, "f.vcl", &options(Mode::Vcl)).is_ok());
+}
+
+/// Each syntax reads the name its own way, so a name that ends in a field
+/// letter cannot cross from old to new syntax: old-syntax `caty` is `cat`,
+/// new-syntax `caty` is another register (`field-letters-new-mixed-old-new`).
+#[test]
+fn a_name_does_not_cross_syntaxes() {
+    let source = ".init_vf_all\n--enter\nin_vf src(vf01)\n--endenter\n\
+                  add.xyzw caty, src, src\n.syntax new\nadd res, caty, src\n\
+                  --exit\nout_vf res(vf02)\n--endexit\n";
+    let errors = vcl::compile(source, "f.vcl", &options(Mode::Vcl)).unwrap_err();
+    assert!(
+        errors[0].to_string().contains("caty.x used before set"),
+        "{errors:?}"
+    );
+}

@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+USER: can't use '.' in the name of a register : 'src.y'
+USER: can't use src.y as a name for one of the VU User floating point
+USER: oDecode: not find register 'src.y' from VU User floating point
+USER: couldn't decode instruction .. problem is at:
+  ---> {add.y} {res},[***{src.y}***],{src.y} 
+USER: expected format is: add.[xyzw]	vf_reg,vf_reg,vec_reg
+INFO: OS_End(Linux)

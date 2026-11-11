@@ -1,0 +1,8 @@
+INFO: OS_Init(Linux)
+USER: can't use '.' in the name of a register : 'res.xyz'
+USER: can't use res.xyz as a name for one of the VU User floating point
+USER: oDecode: not find register 'res.xyz' from VU User floating point
+USER: couldn't decode instruction .. problem is at:
+  ---> {out_vf} [***{res.xyz(vf02)}***] 
+USER: expected format is: out_vf.[xyzw]	vf_reg[.xyzw][(base_reg)]
+INFO: OS_End(Linux)

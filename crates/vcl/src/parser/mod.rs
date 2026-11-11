@@ -1202,7 +1202,14 @@ fn parse_operand(
                 operand.field_letters = Some(token);
             }
         }
-    } else if let Some((name, suffix)) = register.rsplit_once('.') {
+    } else if let Some((name, suffix)) = register
+        .rsplit_once('.')
+        // An interface name takes no dotted fields except an old-syntax
+        // vector one: vcl rejects `in_vi cnt.x(vi01)`, and in new syntax
+        // `out_vf res.xyz(vf02)`, with its invalid-character error (observed
+        // from vcl 1.4beta7, `field-letters-new-*`).
+        .filter(|_| !(spec.class == 36 || (spec.class == 35 && syntax == Syntax::New)))
+    {
         operand_mask = Some(Mask::parse(suffix).ok_or(ParseMessage::InvalidOperandMask)?);
         register = name.into();
     }
@@ -1274,11 +1281,14 @@ fn validate_register_name(name: &str) -> Result<(), ParseMessage> {
     if name.len() >= 63 {
         return Err(ParseMessage::RegisterNameTooLong { name: name.into() });
     }
-    if !name
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || b"[]_$".contains(&byte))
+    if let Some(character) = name
+        .chars()
+        .find(|&c| !(c.is_ascii_alphanumeric() || "[]_$".contains(c)))
     {
-        return Err(ParseMessage::InvalidRegisterCharacter { name: name.into() });
+        return Err(ParseMessage::InvalidRegisterCharacter {
+            character,
+            name: name.into(),
+        });
     }
     if name.len() >= 2 && instruction::lookup(name, Syntax::New).is_some() {
         return Err(ParseMessage::ReservedRegisterName { name: name.into() });
@@ -1510,7 +1520,10 @@ mod tests {
         let instructions = instructions(&program);
         assert_eq!(instructions.len(), 2);
         assert_eq!(program.statements[1].line, 4);
-        rejected("add b,a,a # note", "register name");
+        rejected(
+            "add b,a,a # note",
+            "can't use '#' in the name of a register : 'a#note'",
+        );
     }
 
     #[test]
@@ -1986,7 +1999,10 @@ mod tests {
         rejected("add b,,a,a", ParseMessage::UnexpectedComma);
         rejected("add b,a", "missing operand");
         rejected("in_vf x(no_such_register)", "not physical");
-        rejected("add toolong-name,a,a", "register name");
+        rejected(
+            "add toolong-name,a,a",
+            "can't use '-' in the name of a register",
+        );
         rejected("add mul,a,a", "reserved");
     }
 

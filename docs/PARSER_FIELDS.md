@@ -33,8 +33,20 @@ from the name (observed from vcl 1.4beta7, `field-letters-*` probes):
 one register. Only a dotted suffix selects an interface operand's fields:
 `out_vf res.xyz(vf02)` reads XYZ, while `out_vf resxyz(vf02)` reads all of
 `res` and is rejected after an `add.xyz res, ...` (`res.w` used before set).
-Integer interface operands keep the whole name (`in_vi county`), and a name
-made only of lane letters (`xyzw`) stays whole in every class.
+Integer interface operands keep the whole name (`in_vi county`) and take no
+dotted fields: `in_vi cnt.x(vi01)` is rejected with `can't use '.' in the name
+of a register : 'cnt.x'`, the error vcl gives any invalid character (`#` in
+`a#note`). A name made only of lane letters (`xyzw`) stays whole in every
+class.
+
+New syntax keeps every name whole, in instructions and interfaces alike
+(`field-letters-new-*`): `caty` is `caty`, nothing warns in either mode, and a
+glued broadcast such as `scalex` is just another name. Fields are selected by
+brackets (`m[x]`) and by the instruction suffix (`out_vf.xyz res(vf02)`); a
+dotted interface name (`out_vf res.xyz(vf02)`, `in_vf src.xyz(vf01)`) is
+rejected with the invalid-character error. Because each syntax reads a name
+its own way, a name ending in a field letter does not cross a `.syntax new`:
+old-syntax `caty` is `cat`, and new-syntax `caty` is another register.
 
 When an instruction has an explicit mask, a selection that differs from it is
 overridden by that mask (vcl warns `getNextInstruction: forced mod bits!`):
