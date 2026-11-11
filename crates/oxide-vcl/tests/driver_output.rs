@@ -316,34 +316,52 @@ fn loop_hint_warnings_carry_their_line() {
 }
 
 /// vcl's copy detector rejects a copy into VI00 but exits with status 0
-/// (`copy-reorder-constant-dest`); oxide mode fails the run.
+/// (`copy-reorder-constant-dest`), and so a copy into a name an EXIT binds to
+/// VF00 (`copy-output-zero-binding`); oxide mode fails the run.
 #[test]
 fn a_copy_into_the_constant_register_fails_in_oxide_mode() {
-    let source = ".init_vf_all\n.init_vi_all\n--enter\nin_vf source(vf01)\nin_vi base(vi01)\n\
-                  --endenter\n.vsm reorder\nnop iaddiu vi00,base,0\n.endvsm\n--exit\n\
-                  out_vi base(vi01)\n--endexit\n";
-    let files = [("copy.vcl", source)];
-    let vcl = run("copy-zero", &["-oout.vsm", "copy.vcl"], &files);
-    assert_eq!(vcl.status, 0);
-    assert!(
-        vcl.stderr
-            .contains("ERROR: found a move to a const zero register\n")
-    );
-    let oxide = run(
-        "copy-zero-oxide",
-        &in_oxide(&["-oout.vsm", "copy.vcl"]),
-        &files,
-    );
-    assert_eq!(oxide.status, 1);
-    assert!(
-        oxide.stderr.starts_with(
-            "copy.vcl(8): error: this copy writes to the constant register (vf00 or vi00)\n"
-        ),
-        "{}",
-        oxide.stderr
-    );
-    for run in [vcl, oxide] {
-        assert_eq!(run.file("out.vsm"), None);
+    let raw = ".init_vf_all\n.init_vi_all\n--enter\nin_vf source(vf01)\nin_vi base(vi01)\n\
+               --endenter\n.vsm reorder\nnop iaddiu vi00,base,0\n.endvsm\n--exit\n\
+               out_vi base(vi01)\n--endexit\n";
+    let bound = ".init_vf_all\n\
+                 .init_vi_all\n\
+                 --enter\n\
+                 in_vf src(vf01)\n\
+                 --endenter\n\
+                 move res, vf00\n\
+                 --exit\n\
+                 out_vf res(vf00)\n\
+                 --endexit\n";
+    for (name, source, line) in [("raw", raw, 8), ("bound", bound, 6)] {
+        let files = [("copy.vcl", source)];
+        let vcl = run(
+            &format!("copy-zero-{name}"),
+            &["-oout.vsm", "copy.vcl"],
+            &files,
+        );
+        assert_eq!(vcl.status, 0, "{name}");
+        assert!(
+            vcl.stderr
+                .contains("ERROR: found a move to a const zero register\n"),
+            "{name}: {}",
+            vcl.stderr
+        );
+        let oxide = run(
+            &format!("copy-zero-{name}-oxide"),
+            &in_oxide(&["-oout.vsm", "copy.vcl"]),
+            &files,
+        );
+        assert_eq!(oxide.status, 1, "{name}");
+        assert!(
+            oxide.stderr.starts_with(&format!(
+                "copy.vcl({line}): error: this copy writes to the constant register (vf00 or vi00)\n"
+            )),
+            "{name}: {}",
+            oxide.stderr
+        );
+        for run in [vcl, oxide] {
+            assert_eq!(run.file("out.vsm"), None, "{name}");
+        }
     }
 }
 

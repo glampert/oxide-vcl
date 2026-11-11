@@ -73,7 +73,9 @@ pub(super) fn normalize_copies(
             let Some(destination) = ordinary else {
                 return Err(error(located.line, CompileMessage::MoveDestinationUnbound));
             };
-            if program.registers.named(destination).physical == Some(0) {
+            if program.registers.named(destination).physical == Some(0)
+                || source.zero_bound.contains(&destination)
+            {
                 return Err(CompileError {
                     line: located.line,
                     message: CompileMessage::ZeroCopyDestination.into(),

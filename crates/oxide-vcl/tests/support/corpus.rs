@@ -148,6 +148,15 @@ pub fn compare(case: &Case) -> Result<(), String> {
             "port accepts, the original exits {}",
             case.exit_code
         )),
+        // The copy detector's abort: an ERROR, no listing and exit 0, which
+        // the driver reproduces from `CompileError::exit_status`.
+        Err(errors)
+            if case.exit_code == 0
+                && normalized(&case.expected).is_empty()
+                && errors.iter().all(|error| error.exit_status() == 0) =>
+        {
+            Ok(())
+        }
         Err(errors) if case.exit_code == 0 => Err(format!(
             "port rejects what the original accepts: {errors:?}"
         )),

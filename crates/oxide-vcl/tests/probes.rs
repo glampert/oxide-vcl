@@ -31,10 +31,6 @@ const KNOWN_DIFFERENCES: &[(&str, &str)] = &[
         "cli-same-file",
         "-o naming the input is a command-line error",
     ),
-    (
-        "copy-reorder-constant-dest",
-        "a library error that the driver reports with the original's exit 0",
-    ),
     // Port differences.
     (
         "comments-raw",

@@ -149,6 +149,30 @@ ERROR: failed to do basic operation processing
 The process exits with status **zero**. The same source in fixed raw mode compiles,
 so the outcome comes from the move-detection gate.
 
+The destination does not have to be spelled VF00 or VI00. A copy into a name
+whose interface binding is register 0 fails the same way, observed from vcl
+1.4beta7:
+
+- `copy-output-zero-binding` (`move res, vf00` with `out_vf res(vf00)`) and
+  `copy-output-zero-binding-int` (`iaddiu res, src, 0` with `out_vi res(vi00)`).
+  The copy is dead, since an output bound to the zero register is no use, but
+  dead-code removal keeps it and the detector then rejects it. A dead copy
+  spelled with VF00 or VI00 in VCL code is removed instead and compiles.
+- The binding that counts is the name's binding when its region's source ends:
+  `copy-output-zero-rebound` (ENTER VF02, EXIT VF00) fails,
+  `copy-output-zero-unbound` (ENTER VF00, EXIT VF02) compiles. A later region's
+  rebinding does not count (`copy-output-zero-later-region`), while an earlier
+  region's binding that an unmapped EXIT inherits does
+  (`copy-output-zero-inherited`).
+- A web bound to two bases fails first with the `regweb` error, at status 255
+  (`copy-output-zero-two-bases`), because vcl gathers register webs before it
+  detects copies.
+
+The port snapshots the names bound to register 0 at the end of each region
+(`Region::zero_bound`) and checks them along with the spelled destination.
+When the detector fails, it builds the region's webs once to report a
+conflicting-bases error first.
+
 The library returns a typed compilation error. The CLI reproduces the status zero,
 empty stdout and exact stderr for the retained invocation; these are literal
 compatibility diagnostics, not a claim that the executable runs on Linux. Ordinary

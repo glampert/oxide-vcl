@@ -1,0 +1,5 @@
+INFO: OS_Init(Linux)
+WARN: changing binding for res from VF02 to VF00
+ERROR: found a move to a const zero register
+ERROR: failed to detect moves!
+ERROR: failed to do basic operation processing

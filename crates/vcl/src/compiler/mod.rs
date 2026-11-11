@@ -267,6 +267,12 @@ struct Region {
     blocks: Vec<Block>,
     inputs: Vec<Access>,
     forced: BTreeMap<usize, usize>,
+    /// Names whose base binding is register 0 (VF00 or VI00) when the
+    /// region's source ends: a copy into one of them is an error even
+    /// though no instruction names VF00 (observed from vcl 1.4beta7,
+    /// `copy-output-zero-binding`; a later region's rebinding does not
+    /// count, an earlier one inherited by an unmapped EXIT does).
+    zero_bound: BTreeSet<usize>,
     raw_text: Vec<String>,
     /// Physical register (as a register ID) bound to one access of an
     /// instruction: (instruction, write, register). Set on installed loop
@@ -643,6 +649,15 @@ impl Source {
         })
     }
 
+    /// The names currently bound to register 0.
+    fn zero_bound(&self) -> BTreeSet<usize> {
+        self.bindings
+            .iter()
+            .filter(|&(_, &base)| base == 0)
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
     fn parse_program(&mut self, program: parser::Program) -> Result<(), CompileError> {
         let mut current = Region::default();
         let mut binding = None;
@@ -828,6 +843,7 @@ impl Source {
                         match synthetic {
                             Synthetic::Enter => {
                                 if current.nonempty() {
+                                    current.zero_bound = self.zero_bound();
                                     self.regions.push(current);
                                     current = Region::default();
                                 }
@@ -1069,6 +1085,7 @@ impl Source {
             return Err(error(0, CompileMessage::RawBranchDelay));
         }
         if current.nonempty() {
+            current.zero_bound = self.zero_bound();
             self.regions.push(current);
         }
         // A synthetic exit can fold into its immediately preceding code
