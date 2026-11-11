@@ -106,7 +106,7 @@ pub(super) fn coalesce_immediates(
     program: &mut Source,
     source: &Region,
 ) -> Result<Region, CompileError> {
-    use crate::analysis::induction::{self, Consumer, Definition as Setter, Operation, User};
+    use crate::analysis::induction;
     let mut result = source.clone();
     let order: Vec<_> = result
         .blocks
@@ -119,47 +119,11 @@ pub(super) fn coalesce_immediates(
         .enumerate()
         .flat_map(|(block, value)| value.operations.iter().map(move |&id| (id, block)))
         .collect();
-    let view = |id: usize, located: &Located| {
-        let operand = match located.instruction.metadata.index {
-            id::IADDI | id::IADDIU | id::ISUBIU => 2,
-            _ => 1,
-        };
-        let immediate = located
-            .instruction
-            .operands
-            .get(operand)
-            .and_then(|operand| operand.immediate.as_deref())
-            .and_then(|source| crate::parser::expression::evaluate(source).ok())
-            .and_then(|value| value.number())
-            .map(|number| number.to_i32());
-        Operation {
-            id,
-            instruction: located.instruction.metadata.index,
-            immediate,
-        }
-    };
-    fn rewrite(
-        program: &mut Source,
-        region: &mut Region,
-        change: &crate::analysis::induction::Rewrite,
-    ) -> Result<(), CompileError> {
-        let id = change.after.id;
-        let mut instruction = region.instructions[id].instruction.clone();
-        instruction.metadata = &instruction::INSTRUCTIONS[usize::from(change.after.instruction)];
-        instruction.mnemonic = instruction.metadata.name.into();
-        let operand = &mut instruction.operands[usize::from(change.immediate_operand)];
-        operand.immediate = change.after.immediate.map(|value| value.to_string());
-        if operand.class == class::IMMEDIATE {
-            operand.text = operand.immediate.clone().unwrap_or_default();
-        }
-        region.instructions[id] = program.lower(instruction, region.instructions[id].line)?;
-        Ok(())
-    }
     for &id in &order {
-        let original = view(id, &result.instructions[id]);
+        let original = induction_view(id, &result.instructions[id]);
         let normalized = induction::normalize_iaddi(original);
         if original != normalized {
-            rewrite(
+            rewrite_induction(
                 program,
                 &mut result,
                 &induction::Rewrite {
@@ -170,11 +134,92 @@ pub(super) fn coalesce_immediates(
             )?;
         }
     }
+
     // All supported rewrites retain register operands, masks and latencies.
     // Reaching-definition identities therefore remain valid while numeric
     // constants move. Rebuild flow later when copy normalization changes IR.
     let graph = build_flow_graph(program, &result)?;
     let analysis = graph.analyze().map_err(|e| internal(0, e))?;
+    let sites = immediate_consumer_sites(program, &result, &order, &owners, &analysis);
+    let escaping: BTreeSet<_> = analysis
+        .outputs
+        .iter()
+        .flat_map(|output| &output.definitions)
+        .filter_map(|definition| match definition {
+            Definition::Operation(id) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    let limit = order.len().saturating_mul(order.len()).saturating_add(1);
+    for _ in 0..limit {
+        let mut changed = false;
+        for &id in &order {
+            changed |= coalesce_producer(program, &mut result, id, &sites, &escaping)?;
+        }
+        if !changed {
+            return Ok(result);
+        }
+    }
+
+    Err(internal(
+        0,
+        "VI immediate coalescing exceeded its transformation budget",
+    ))
+}
+
+/// The induction analysis' view of an instruction: its opcode and the value
+/// of its immediate operand.
+fn induction_view(id: usize, located: &Located) -> crate::analysis::induction::Operation {
+    let operand = match located.instruction.metadata.index {
+        id::IADDI | id::IADDIU | id::ISUBIU => 2,
+        _ => 1,
+    };
+    let immediate = located
+        .instruction
+        .operands
+        .get(operand)
+        .and_then(|operand| operand.immediate.as_deref())
+        .and_then(|source| crate::parser::expression::evaluate(source).ok())
+        .and_then(|value| value.number())
+        .map(|number| number.to_i32());
+    crate::analysis::induction::Operation {
+        id,
+        instruction: located.instruction.metadata.index,
+        immediate,
+    }
+}
+
+/// Apply an induction rewrite to its instruction, lowering it again.
+fn rewrite_induction(
+    program: &mut Source,
+    region: &mut Region,
+    change: &crate::analysis::induction::Rewrite,
+) -> Result<(), CompileError> {
+    let id = change.after.id;
+    let mut instruction = region.instructions[id].instruction.clone();
+    instruction.metadata = &instruction::INSTRUCTIONS[usize::from(change.after.instruction)];
+    instruction.mnemonic = instruction.metadata.name.into();
+    let operand = &mut instruction.operands[usize::from(change.immediate_operand)];
+    operand.immediate = change.after.immediate.map(|value| value.to_string());
+    if operand.class == class::IMMEDIATE {
+        operand.text = operand.immediate.clone().unwrap_or_default();
+    }
+    region.instructions[id] = program.lower(instruction, region.instructions[id].line)?;
+    Ok(())
+}
+
+/// Per producer, its VI readers: (consumer, operand, reaching setters).
+type ConsumerSites = BTreeMap<usize, Vec<(usize, u8, Vec<crate::analysis::induction::Definition>)>>;
+
+/// Where each producer's value is read as a VI operand.
+fn immediate_consumer_sites(
+    program: &Source,
+    result: &Region,
+    order: &[usize],
+    owners: &BTreeMap<usize, usize>,
+    analysis: &flow::Analysis,
+) -> ConsumerSites {
+    use crate::analysis::induction::Definition as Setter;
     let reads: BTreeMap<_, _> = analysis
         .reads
         .iter()
@@ -185,15 +230,15 @@ pub(super) fn coalesce_immediates(
             )
         })
         .collect();
-    let mut sites = BTreeMap::<usize, Vec<(usize, u8, Vec<Setter>)>>::new();
-    for &consumer in &order {
+    let mut sites = ConsumerSites::new();
+    for &consumer in order {
         // A dead clone (an expanded part's unread copy) is pruned before
         // this cleanup in the original and is no user.
         if !analysis.live_operations.contains(&consumer) {
             continue;
         }
         let block = &result.blocks[owners[&consumer]];
-        let flow_id = flow_owner(&result, block, consumer);
+        let flow_id = flow_owner(result, block, consumer);
         for (operand_id, operand) in result.instructions[consumer]
             .instruction
             .operands
@@ -230,63 +275,55 @@ pub(super) fn coalesce_immediates(
             }
         }
     }
-    let escaping: BTreeSet<_> = analysis
-        .outputs
-        .iter()
-        .flat_map(|output| &output.definitions)
-        .filter_map(|definition| match definition {
-            Definition::Operation(id) => Some(*id),
-            _ => None,
+    sites
+}
+
+/// Plan and apply the coalescing of one producer's immediate into its
+/// consumers; whether anything changed.
+fn coalesce_producer(
+    program: &mut Source,
+    result: &mut Region,
+    id: usize,
+    sites: &ConsumerSites,
+    escaping: &BTreeSet<usize>,
+) -> Result<bool, CompileError> {
+    use crate::analysis::induction::{self, Consumer, User};
+    let producer = induction_view(id, &result.instructions[id]);
+    if !matches!(producer.instruction, 110 | 112)
+        || producer.immediate.is_none_or(|value| value == 0)
+    {
+        return Ok(false);
+    }
+    let mut users: Vec<_> = sites
+        .get(&id)
+        .into_iter()
+        .flatten()
+        .map(|(consumer, operand, reaching)| {
+            User::Instruction(Consumer {
+                operation: induction_view(*consumer, &result.instructions[*consumer]),
+                read_operand: *operand,
+                reaching: reaching.clone(),
+            })
         })
         .collect();
-    let limit = order.len().saturating_mul(order.len()).saturating_add(1);
-    for _ in 0..limit {
-        let mut changed = false;
-        for &id in &order {
-            let producer = view(id, &result.instructions[id]);
-            if !matches!(producer.instruction, 110 | 112)
-                || producer.immediate.is_none_or(|value| value == 0)
-            {
-                continue;
-            }
-            let mut users: Vec<_> = sites
-                .get(&id)
-                .into_iter()
-                .flatten()
-                .map(|(consumer, operand, reaching)| {
-                    User::Instruction(Consumer {
-                        operation: view(*consumer, &result.instructions[*consumer]),
-                        read_operand: *operand,
-                        reaching: reaching.clone(),
-                    })
-                })
-                .collect();
-            if escaping.contains(&id) {
-                users.push(User::EscapingOutput);
-            }
-            if std::env::var_os("VCL_COALESCE_TRACE").is_some() {
-                crate::trace!(
-                    "coalesce {id} {} line {} users {users:?}",
-                    result.instructions[id].instruction.mnemonic,
-                    result.instructions[id].line
-                );
-            }
-            if let Some(plan) = induction::plan(producer, &users).map_err(|e| internal(0, e))? {
-                for change in std::iter::once(&plan.producer).chain(&plan.consumers) {
-                    rewrite(program, &mut result, change)?;
-                }
-                changed = true;
-            }
-        }
-        if !changed {
-            return Ok(result);
-        }
+    if escaping.contains(&id) {
+        users.push(User::EscapingOutput);
+    }
+    if std::env::var_os("VCL_COALESCE_TRACE").is_some() {
+        crate::trace!(
+            "coalesce {id} {} line {} users {users:?}",
+            result.instructions[id].instruction.mnemonic,
+            result.instructions[id].line
+        );
     }
 
-    Err(internal(
-        0,
-        "VI immediate coalescing exceeded its transformation budget",
-    ))
+    let Some(plan) = induction::plan(producer, &users).map_err(|e| internal(0, e))? else {
+        return Ok(false);
+    };
+    for change in std::iter::once(&plan.producer).chain(&plan.consumers) {
+        rewrite_induction(program, result, change)?;
+    }
+    Ok(true)
 }
 
 /// Redundant-branch removal of the original: an ordinary (non-raw,
@@ -360,7 +397,33 @@ pub(super) fn prune_source_region(
     region: &Region,
     analysis: &flow::Analysis,
 ) -> Result<Region, CompileError> {
-    use crate::analysis::prune::{self, ExpandedOperand, LiveRoot, UseEdge};
+    use crate::analysis::prune;
+    let expanded = expand_for_pruning(region);
+    let ids = expanded_register_ids(program, &expanded);
+    let edges = use_edges(region, analysis, &expanded, &ids);
+    let roots = live_roots(analysis, &expanded, &ids);
+    let keep = region
+        .instructions
+        .iter()
+        .enumerate()
+        .filter_map(|(id, located)| located.effects.side_effect.then_some(id))
+        .collect();
+    let liveness =
+        prune::propagate(&expanded, &edges, &roots, &keep).map_err(|e| internal(0, e))?;
+
+    let mut result = region.clone();
+    for (id, pruned) in liveness.pruned.iter().enumerate() {
+        apply_pruned(program, &mut result.instructions[id], pruned, &ids[id]);
+    }
+    for block in &mut result.blocks {
+        block.operations.retain(|&id| liveness.retained[id]);
+    }
+    Ok(result)
+}
+
+/// Every instruction of the region in the pruning analysis' operand form.
+fn expand_for_pruning(region: &Region) -> Vec<crate::analysis::prune::ExpandedInstruction> {
+    use crate::analysis::prune::{self, ExpandedOperand};
     let mut expanded: Vec<_> = region
         .instructions
         .iter()
@@ -387,7 +450,15 @@ pub(super) fn prune_source_region(
             .collect();
         instruction.operands.extend(updates);
     }
-    let ids: Vec<Vec<_>> = expanded
+    expanded
+}
+
+/// The program register of each expanded operand, if it has one.
+fn expanded_register_ids(
+    program: &Source,
+    expanded: &[crate::analysis::prune::ExpandedInstruction],
+) -> Vec<Vec<Option<usize>>> {
+    expanded
         .iter()
         .map(|instruction| {
             instruction
@@ -406,7 +477,17 @@ pub(super) fn prune_source_region(
                 })
                 .collect()
         })
-        .collect();
+        .collect()
+}
+
+/// The producer-to-consumer edges of every register component read.
+fn use_edges(
+    region: &Region,
+    analysis: &flow::Analysis,
+    expanded: &[crate::analysis::prune::ExpandedInstruction],
+    ids: &[Vec<Option<usize>>],
+) -> Vec<crate::analysis::prune::UseEdge> {
+    use crate::analysis::prune::UseEdge;
     let reads: BTreeMap<_, _> = analysis
         .reads
         .iter()
@@ -444,139 +525,145 @@ pub(super) fn prune_source_region(
                 if operand.mask & components == 0 {
                     continue;
                 }
-                if let Some(definitions) = reads.get(&(flow_id, register, part)) {
-                    for definition in *definitions {
-                        if let Definition::Operation(producer) = definition {
-                            for (output, setter) in expanded[*producer].operands.iter().enumerate()
-                            {
-                                if setter.direction == Direction::Write
-                                    && ids[*producer][output] == Some(register)
-                                    && setter.mask & components != 0
-                                {
-                                    edges.push(UseEdge {
-                                        producer: *producer,
-                                        output_operand: output,
-                                        consumer,
-                                        input_operand: input,
-                                        components,
-                                    });
-                                }
-                            }
+                let Some(definitions) = reads.get(&(flow_id, register, part)) else {
+                    continue;
+                };
+                for definition in *definitions {
+                    let Definition::Operation(producer) = definition else {
+                        continue;
+                    };
+                    for (output, setter) in expanded[*producer].operands.iter().enumerate() {
+                        if setter.direction == Direction::Write
+                            && ids[*producer][output] == Some(register)
+                            && setter.mask & components != 0
+                        {
+                            edges.push(UseEdge {
+                                producer: *producer,
+                                output_operand: output,
+                                consumer,
+                                input_operand: input,
+                                components,
+                            });
                         }
                     }
                 }
             }
         }
     }
+    edges
+}
+
+/// The writes that reach the region's outputs.
+fn live_roots(
+    analysis: &flow::Analysis,
+    expanded: &[crate::analysis::prune::ExpandedInstruction],
+    ids: &[Vec<Option<usize>>],
+) -> Vec<crate::analysis::prune::LiveRoot> {
+    use crate::analysis::prune::LiveRoot;
     let mut roots = Vec::new();
     for output in &analysis.outputs {
         for definition in &output.definitions {
-            if let Definition::Operation(id) = definition {
-                for (operand, setter) in expanded[*id].operands.iter().enumerate() {
-                    if setter.direction == Direction::Write
-                        && ids[*id][operand] == Some(output.register)
-                        && setter.mask & (1 << output.component) != 0
-                    {
-                        roots.push(LiveRoot {
-                            instruction: *id,
-                            output_operand: operand,
-                            components: 1 << output.component,
-                        });
-                    }
-                }
-            }
-        }
-    }
-    let keep = region
-        .instructions
-        .iter()
-        .enumerate()
-        .filter_map(|(id, located)| located.effects.side_effect.then_some(id))
-        .collect();
-    let liveness =
-        prune::propagate(&expanded, &edges, &roots, &keep).map_err(|e| internal(0, e))?;
-    let mut result = region.clone();
-    for (id, pruned) in liveness.pruned.iter().enumerate() {
-        let located = &mut result.instructions[id];
-        located.instruction = pruned.instruction.clone();
-        let mut zero: BTreeSet<_> = pruned
-            .zero_outputs
-            .iter()
-            .copied()
-            .filter(|&operand| located.instruction.operands[operand].direction == Direction::Write)
-            .collect();
-        // A dead VF result loses its source binding when the original web is
-        // pruned, including a source-spelled physical destination. The later
-        // flag-cap pass can assign a fresh scratch destination if necessary.
-        if !located.effects.side_effect {
-            for (index, operand) in pruned.expanded.iter().enumerate() {
-                // Class 11 is the xyz-only destination of OPMSUB.
-                if matches!(operand.class, class::VECTOR | class::VECTOR_XYZ)
-                    && operand.direction == Direction::Write
-                    && pruned.live_output_masks[index] == 0
-                    && located.instruction.operands[operand.source_operand].direction
-                        == Direction::Write
-                    && operand
-                        .register
-                        .as_deref()
-                        .and_then(|name| physical(name, Family::Vector))
-                        .is_none_or(|id| program.allowed_vf[id] & operand.mask == operand.mask)
-                {
-                    zero.insert(operand.source_operand);
-                }
-            }
-        }
-        for &operand in &zero {
-            let kind =
-                family(located.instruction.operands[operand].class).unwrap_or(Family::Vector);
-            let name = if kind == Family::Integer {
-                "vi00"
-            } else {
-                "vf00"
-            };
-            located.operands[operand] = program
-                .registers
-                .ids
-                .get(&(kind, name.to_string()))
-                .copied();
-        }
-        let mut effects = Effects {
-            side_effect: located.effects.side_effect,
-            ..Effects::default()
-        };
-        for (index, operand) in pruned.expanded.iter().enumerate() {
-            let register = if zero.contains(&operand.source_operand) {
-                located.operands[operand.source_operand]
-            } else {
-                ids[id][index]
-            };
-            let Some(register) = register else { continue };
-            let mask = if operand.direction == Direction::Read {
-                pruned.input_masks[index]
-            } else {
-                operand.mask
-            };
-            if mask == 0 {
+            let Definition::Operation(id) = definition else {
                 continue;
-            }
-            let access = Access { register, mask };
-            match operand.direction {
-                Direction::Read => effects.reads.push(access),
-                Direction::Write => {
-                    effects.writes.push(access);
-                    effects
-                        .latencies
-                        .insert(register, operand.latency.max(0) as u16);
+            };
+            for (operand, setter) in expanded[*id].operands.iter().enumerate() {
+                if setter.direction == Direction::Write
+                    && ids[*id][operand] == Some(output.register)
+                    && setter.mask & (1 << output.component) != 0
+                {
+                    roots.push(LiveRoot {
+                        instruction: *id,
+                        output_operand: operand,
+                        components: 1 << output.component,
+                    });
                 }
-                Direction::Unknown => {}
             }
         }
-        located.effects = effects;
     }
-    for block in &mut result.blocks {
-        block.operations.retain(|&id| liveness.retained[id]);
+    roots
+}
+
+/// Replace an instruction with its pruned form and recompute its effects.
+fn apply_pruned(
+    program: &Source,
+    located: &mut Located,
+    pruned: &crate::analysis::prune::Pruned,
+    ids: &[Option<usize>],
+) {
+    located.instruction = pruned.instruction.clone();
+    let mut zero: BTreeSet<_> = pruned
+        .zero_outputs
+        .iter()
+        .copied()
+        .filter(|&operand| located.instruction.operands[operand].direction == Direction::Write)
+        .collect();
+    // A dead VF result loses its source binding when the original web is
+    // pruned, including a source-spelled physical destination. The later
+    // flag-cap pass can assign a fresh scratch destination if necessary.
+    if !located.effects.side_effect {
+        for (index, operand) in pruned.expanded.iter().enumerate() {
+            // Class 11 is the xyz-only destination of OPMSUB.
+            if matches!(operand.class, class::VECTOR | class::VECTOR_XYZ)
+                && operand.direction == Direction::Write
+                && pruned.live_output_masks[index] == 0
+                && located.instruction.operands[operand.source_operand].direction
+                    == Direction::Write
+                && operand
+                    .register
+                    .as_deref()
+                    .and_then(|name| physical(name, Family::Vector))
+                    .is_none_or(|id| program.allowed_vf[id] & operand.mask == operand.mask)
+            {
+                zero.insert(operand.source_operand);
+            }
+        }
     }
-    Ok(result)
+    for &operand in &zero {
+        let kind = family(located.instruction.operands[operand].class).unwrap_or(Family::Vector);
+        let name = if kind == Family::Integer {
+            "vi00"
+        } else {
+            "vf00"
+        };
+        located.operands[operand] = program
+            .registers
+            .ids
+            .get(&(kind, name.to_string()))
+            .copied();
+    }
+
+    let mut effects = Effects {
+        side_effect: located.effects.side_effect,
+        ..Effects::default()
+    };
+    for (index, operand) in pruned.expanded.iter().enumerate() {
+        let register = if zero.contains(&operand.source_operand) {
+            located.operands[operand.source_operand]
+        } else {
+            ids[index]
+        };
+        let Some(register) = register else { continue };
+        let mask = if operand.direction == Direction::Read {
+            pruned.input_masks[index]
+        } else {
+            operand.mask
+        };
+        if mask == 0 {
+            continue;
+        }
+        let access = Access { register, mask };
+        match operand.direction {
+            Direction::Read => effects.reads.push(access),
+            Direction::Write => {
+                effects.writes.push(access);
+                effects
+                    .latencies
+                    .insert(register, operand.latency.max(0) as u16);
+            }
+            Direction::Unknown => {}
+        }
+    }
+    located.effects = effects;
 }
 
 /// Replace source-name identities with connected definition/use webs. A
@@ -587,36 +674,8 @@ pub(super) fn construct_register_webs(
     region: &Region,
     analysis: &flow::Analysis,
 ) -> Result<Region, CompileError> {
-    use crate::analysis::web::{self, Binding, ExitBinding, Operand};
-    let forwardable = |id: usize, mask: u8| {
-        let register = program.registers.named(id);
-        match register.family {
-            Family::Hardware => false,
-            Family::Vector | Family::Integer => register.physical.is_none_or(|physical| {
-                let pool = if register.family == Family::Vector {
-                    &program.allowed_vf
-                } else {
-                    &program.allowed_vi
-                };
-                physical != 0 && pool[physical] & mask == mask
-            }),
-        }
-    };
-    let base_id = |id: usize, base: usize| {
-        let family = program.registers.named(id).family;
-        program
-            .registers
-            .ids
-            .get(&(family, physical_name(family, base).to_ascii_lowercase()))
-            .copied()
-    };
-    let interface_base = |id: usize| {
-        let register = program.registers.named(id);
-        register
-            .physical
-            .or_else(|| region.forced.get(&id).copied())
-            .and_then(|base| base_id(id, base))
-    };
+    use crate::analysis::web;
+    let context = WebContext { program, region };
     let active: BTreeSet<_> = region
         .blocks
         .iter()
@@ -632,104 +691,16 @@ pub(super) fn construct_register_webs(
                 (Direction::Write, &located.effects.writes),
             ] {
                 for access in accesses {
-                    let linked_operand = (direction == Direction::Write
-                        && located.instruction.operands.iter().enumerate().any(
-                            |(index, operand)| {
-                                matches!(
-                                    operand.class,
-                                    class::ADDRESS_INCREMENT | class::ADDRESS_DECREMENT
-                                ) && located.operands[index] == Some(access.register)
-                            },
-                        ))
-                    .then(|| {
-                        operands.iter().position(|operand: &Operand| {
-                            operand.direction == Direction::Read
-                                && operand.register == access.register
-                        })
-                    })
-                    .flatten();
-                    // FCAND/FCEQ/FCOR decode only `vi01` (operand class 34):
-                    // its web stays on VI01 although the spelling is pooled.
-                    let forced_base = located
-                        .instruction
-                        .operands
-                        .iter()
-                        .enumerate()
-                        .any(|(index, operand)| {
-                            operand.class == class::INTEGER_FLAG
-                                && located.operands[index] == Some(access.register)
-                        })
-                        .then(|| interface_base(access.register))
-                        .flatten()
-                        .or_else(|| {
-                            region
-                                .pinned
-                                .get(&(id, direction == Direction::Write, access.register))
-                                .copied()
-                        });
-                    operands.push(Operand {
-                        register: access.register,
-                        mask: access.mask,
-                        direction,
-                        forwardable: forwardable(access.register, access.mask),
-                        forced_base,
-                        linked_operand,
-                    });
+                    let operand = context.web_operand(id, located, direction, access, &operands);
+                    operands.push(operand);
                 }
             }
         }
         operations.push(operands);
     }
-    let input_indices: Vec<_> = region
-        .inputs
-        .iter()
-        .enumerate()
-        .filter(|(_, access)| forwardable(access.register, access.mask))
-        .map(|(index, _)| index)
-        .collect();
-    let inputs: Vec<_> = input_indices
-        .iter()
-        .map(|&index| {
-            let access = region.inputs[index];
-            Binding {
-                register: access.register,
-                mask: access.mask,
-                forced_base: interface_base(access.register),
-            }
-        })
-        .collect();
-    let output_indices: Vec<_> = region
-        .blocks
-        .iter()
-        .enumerate()
-        .flat_map(|(block, value)| {
-            value
-                .outputs
-                .iter()
-                .enumerate()
-                .map(move |(index, access)| (block, index, access))
-        })
-        .filter(|(_, _, access)| forwardable(access.register, access.mask))
-        .map(|(block, index, _)| (block, index))
-        .collect();
-    let outputs: Vec<_> = output_indices
-        .iter()
-        .map(|&(block, index)| {
-            let access = region.blocks[block].outputs[index];
-            let forced_base = match region.blocks[block].output_forced.get(&access.register) {
-                Some(&base) if program.registers.named(access.register).physical.is_none() => {
-                    base_id(access.register, base)
-                }
-                _ => interface_base(access.register),
-            };
-            ExitBinding {
-                block,
-                register: access.register,
-                mask: access.mask,
-                forced_base,
-            }
-        })
-        .collect();
+    let (input_indices, inputs) = context.web_inputs();
+    let (output_indices, outputs) = context.web_outputs();
+
     // Flow transfers a raw pair's reads at its first operation. The web builder
     // still needs the same old definitions under each operand's source ID.
     let mut web_analysis = analysis.clone();
@@ -752,11 +723,231 @@ pub(super) fn construct_register_webs(
         }
     }
     let plan = web::plan(&operations, &inputs, &outputs, &web_analysis);
+    trace_missing_web_read(program, region, &web_analysis, &plan);
+    let plan = plan.map_err(|e| match e {
+        // One web reaches two interface bindings (`regweb`).
+        web::WebError::ConflictingBases { first, second } => error(
+            0,
+            CompileMessage::ConflictingBases {
+                first: program.registers.named(first).name.to_ascii_uppercase(),
+                second: program.registers.named(second).name.to_ascii_uppercase(),
+            },
+        ),
+        e => internal(0, e),
+    })?;
+
+    let mut result = region.clone();
+    result.forced.clear();
+    let web_registers = create_web_registers(program, region, &plan, &mut result);
+    for (id, located) in result.instructions.iter_mut().enumerate() {
+        if !active.contains(&id) {
+            continue;
+        }
+        let mapped: Vec<_> = operations[id]
+            .iter()
+            .enumerate()
+            .map(|(index, operand)| {
+                plan.operands[id][index].map_or(operand.register, |web| web_registers[web])
+            })
+            .collect();
+        remap_operands(program, located, &operations[id], &mapped);
+        remap_effects(located, &mapped);
+    }
+    for (index, &source) in input_indices.iter().enumerate() {
+        if let Some(web) = plan.inputs[index] {
+            result.inputs[source].register = web_registers[web];
+        }
+    }
+    for (index, &(block, source)) in output_indices.iter().enumerate() {
+        if let Some(web) = plan.outputs[index] {
+            result.blocks[block].outputs[source].register = web_registers[web];
+        }
+    }
+    Ok(result)
+}
+
+/// The program and region a web plan is built from.
+struct WebContext<'a> {
+    program: &'a Source,
+    region: &'a Region,
+}
+
+impl WebContext<'_> {
+    fn forwardable(&self, id: usize, mask: u8) -> bool {
+        let program = self.program;
+        let register = program.registers.named(id);
+        match register.family {
+            Family::Hardware => false,
+            Family::Vector | Family::Integer => register.physical.is_none_or(|physical| {
+                let pool = if register.family == Family::Vector {
+                    &program.allowed_vf
+                } else {
+                    &program.allowed_vi
+                };
+                physical != 0 && pool[physical] & mask == mask
+            }),
+        }
+    }
+
+    fn base_id(&self, id: usize, base: usize) -> Option<usize> {
+        let family = self.program.registers.named(id).family;
+        self.program
+            .registers
+            .ids
+            .get(&(family, physical_name(family, base).to_ascii_lowercase()))
+            .copied()
+    }
+
+    fn interface_base(&self, id: usize) -> Option<usize> {
+        let register = self.program.registers.named(id);
+        register
+            .physical
+            .or_else(|| self.region.forced.get(&id).copied())
+            .and_then(|base| self.base_id(id, base))
+    }
+
+    /// The web operand of one register access of an instruction;
+    /// `operands` are those already built for the instruction.
+    fn web_operand(
+        &self,
+        id: usize,
+        located: &Located,
+        direction: Direction,
+        access: &Access,
+        operands: &[crate::analysis::web::Operand],
+    ) -> crate::analysis::web::Operand {
+        let linked_operand = (direction == Direction::Write
+            && located
+                .instruction
+                .operands
+                .iter()
+                .enumerate()
+                .any(|(index, operand)| {
+                    matches!(
+                        operand.class,
+                        class::ADDRESS_INCREMENT | class::ADDRESS_DECREMENT
+                    ) && located.operands[index] == Some(access.register)
+                }))
+        .then(|| {
+            operands.iter().position(|operand| {
+                operand.direction == Direction::Read && operand.register == access.register
+            })
+        })
+        .flatten();
+        // FCAND/FCEQ/FCOR decode only `vi01` (operand class 34):
+        // its web stays on VI01 although the spelling is pooled.
+        let forced_base = located
+            .instruction
+            .operands
+            .iter()
+            .enumerate()
+            .any(|(index, operand)| {
+                operand.class == class::INTEGER_FLAG
+                    && located.operands[index] == Some(access.register)
+            })
+            .then(|| self.interface_base(access.register))
+            .flatten()
+            .or_else(|| {
+                self.region
+                    .pinned
+                    .get(&(id, direction == Direction::Write, access.register))
+                    .copied()
+            });
+        crate::analysis::web::Operand {
+            register: access.register,
+            mask: access.mask,
+            direction,
+            forwardable: self.forwardable(access.register, access.mask),
+            forced_base,
+            linked_operand,
+        }
+    }
+
+    /// The region's forwardable inputs, with their indices in the region.
+    fn web_inputs(&self) -> (Vec<usize>, Vec<crate::analysis::web::Binding>) {
+        use crate::analysis::web::Binding;
+        let region = self.region;
+        let input_indices: Vec<_> = region
+            .inputs
+            .iter()
+            .enumerate()
+            .filter(|(_, access)| self.forwardable(access.register, access.mask))
+            .map(|(index, _)| index)
+            .collect();
+        let inputs: Vec<_> = input_indices
+            .iter()
+            .map(|&index| {
+                let access = region.inputs[index];
+                Binding {
+                    register: access.register,
+                    mask: access.mask,
+                    forced_base: self.interface_base(access.register),
+                }
+            })
+            .collect();
+        (input_indices, inputs)
+    }
+
+    /// The forwardable block outputs, with their (block, index) positions.
+    fn web_outputs(&self) -> (Vec<(usize, usize)>, Vec<crate::analysis::web::ExitBinding>) {
+        use crate::analysis::web::ExitBinding;
+        let region = self.region;
+        let output_indices: Vec<_> = region
+            .blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(block, value)| {
+                value
+                    .outputs
+                    .iter()
+                    .enumerate()
+                    .map(move |(index, access)| (block, index, access))
+            })
+            .filter(|(_, _, access)| self.forwardable(access.register, access.mask))
+            .map(|(block, index, _)| (block, index))
+            .collect();
+        let outputs: Vec<_> = output_indices
+            .iter()
+            .map(|&(block, index)| {
+                let access = region.blocks[block].outputs[index];
+                let forced_base = match region.blocks[block].output_forced.get(&access.register) {
+                    Some(&base)
+                        if self
+                            .program
+                            .registers
+                            .named(access.register)
+                            .physical
+                            .is_none() =>
+                    {
+                        self.base_id(access.register, base)
+                    }
+                    _ => self.interface_base(access.register),
+                };
+                ExitBinding {
+                    block,
+                    register: access.register,
+                    mask: access.mask,
+                    forced_base,
+                }
+            })
+            .collect();
+        (output_indices, outputs)
+    }
+}
+
+/// Print the details of a missing read in the web plan (`VCL_WEB_DEBUG`).
+fn trace_missing_web_read(
+    program: &Source,
+    region: &Region,
+    web_analysis: &flow::Analysis,
+    plan: &Result<crate::analysis::web::Plan, crate::analysis::web::WebError>,
+) {
+    use crate::analysis::web;
     if let Err(web::WebError::MissingRead {
         operation,
         register,
         component,
-    }) = &plan
+    }) = plan
         && std::env::var_os("VCL_WEB_DEBUG").is_some()
     {
         let located = &region.instructions[*operation];
@@ -822,19 +1013,16 @@ pub(super) fn construct_register_webs(
             );
         }
     }
-    let plan = plan.map_err(|e| match e {
-        // One web reaches two interface bindings (`regweb`).
-        web::WebError::ConflictingBases { first, second } => error(
-            0,
-            CompileMessage::ConflictingBases {
-                first: program.registers.named(first).name.to_ascii_uppercase(),
-                second: program.registers.named(second).name.to_ascii_uppercase(),
-            },
-        ),
-        e => internal(0, e),
-    })?;
-    let mut result = region.clone();
-    result.forced.clear();
+}
+
+/// Create a virtual register for every web of the plan; their IDs. Records
+/// each web's source register and forced base in `result`.
+fn create_web_registers(
+    program: &mut Source,
+    region: &Region,
+    plan: &crate::analysis::web::Plan,
+    result: &mut Region,
+) -> Vec<usize> {
     let mut web_registers = Vec::new();
     for (index, web) in plan.webs.iter().enumerate() {
         let original = *web.registers.first().expect("web has a source identity");
@@ -861,68 +1049,60 @@ pub(super) fn construct_register_webs(
         }
         web_registers.push(id);
     }
-    for (id, located) in result.instructions.iter_mut().enumerate() {
-        if !active.contains(&id) {
+    web_registers
+}
+
+/// Point an instruction's operands at the webs of its effective operands.
+fn remap_operands(
+    program: &Source,
+    located: &mut Located,
+    effective_operands: &[crate::analysis::web::Operand],
+    mapped: &[usize],
+) {
+    for (index, operand) in located.instruction.operands.iter().enumerate() {
+        let Some(old) = located.operands[index] else {
             continue;
-        }
-        let mapped: Vec<_> = operations[id]
+        };
+        // An instruction may read one register in two operands from
+        // different webs (`mulw.xyz v, v, vw`): match the components.
+        let same = |effective: &&crate::analysis::web::Operand| {
+            effective.register == old && effective.direction == operand.direction
+        };
+        let found = effective_operands
             .iter()
             .enumerate()
-            .map(|(index, operand)| {
-                plan.operands[id][index].map_or(operand.register, |web| web_registers[web])
-            })
-            .collect();
-        for (index, operand) in located.instruction.operands.iter().enumerate() {
-            let Some(old) = located.operands[index] else {
-                continue;
-            };
-            // An instruction may read one register in two operands from
-            // different webs (`mulw.xyz v, v, vw`): match the components.
-            let same = |effective: &&Operand| {
-                effective.register == old && effective.direction == operand.direction
-            };
-            let found = operations[id]
-                .iter()
-                .enumerate()
-                .find(|(_, effective)| same(effective) && effective.mask == operand.mask.0)
-                .or_else(|| operations[id].iter().enumerate().find(|(_, e)| same(e)));
-            if let Some((effective, _)) = found {
-                located.operands[index] = Some(mapped[effective]);
-            } else if program.registers.named(old).physical.is_none()
-                && program.registers.named(old).family != Family::Hardware
-            {
-                // A pruned virtual operand has no strand. Original late field
-                // materialization substitutes its pool's zero register.
-                let kind = program.registers.named(old).family;
-                located.operands[index] = program
-                    .registers
-                    .ids
-                    .get(&(kind, physical_name(kind, 0).to_ascii_lowercase()))
-                    .copied();
-            }
-        }
-        let read_count = located.effects.reads.len();
-        let old_latencies = std::mem::take(&mut located.effects.latencies);
-        for (index, access) in located.effects.reads.iter_mut().enumerate() {
-            access.register = mapped[index];
-        }
-        for (index, access) in located.effects.writes.iter_mut().enumerate() {
-            let latency = old_latencies.get(&access.register).copied().unwrap_or(1);
-            access.register = mapped[read_count + index];
-            located.effects.latencies.insert(access.register, latency);
+            .find(|(_, effective)| same(effective) && effective.mask == operand.mask.0)
+            .or_else(|| effective_operands.iter().enumerate().find(|(_, e)| same(e)));
+        if let Some((effective, _)) = found {
+            located.operands[index] = Some(mapped[effective]);
+        } else if program.registers.named(old).physical.is_none()
+            && program.registers.named(old).family != Family::Hardware
+        {
+            // A pruned virtual operand has no strand. Original late field
+            // materialization substitutes its pool's zero register.
+            let kind = program.registers.named(old).family;
+            located.operands[index] = program
+                .registers
+                .ids
+                .get(&(kind, physical_name(kind, 0).to_ascii_lowercase()))
+                .copied();
         }
     }
-    for (index, &source) in input_indices.iter().enumerate() {
-        if let Some(web) = plan.inputs[index] {
-            result.inputs[source].register = web_registers[web];
-        }
+}
+
+/// Point an instruction's register accesses at the webs, keeping the write
+/// latencies.
+fn remap_effects(located: &mut Located, mapped: &[usize]) {
+    let read_count = located.effects.reads.len();
+    let old_latencies = std::mem::take(&mut located.effects.latencies);
+    for (index, access) in located.effects.reads.iter_mut().enumerate() {
+        access.register = mapped[index];
     }
-    for (index, &(block, source)) in output_indices.iter().enumerate() {
-        if let Some(web) = plan.outputs[index] {
-            result.blocks[block].outputs[source].register = web_registers[web];
-        }
+    for (index, access) in located.effects.writes.iter_mut().enumerate() {
+        let latency = old_latencies.get(&access.register).copied().unwrap_or(1);
+        access.register = mapped[read_count + index];
+        located.effects.latencies.insert(access.register, latency);
     }
-    Ok(result)
 }
 
 /// A web bound to register 0 (an ENTER or EXIT mapping to VF00 or VI00,

@@ -7,6 +7,55 @@ pub(super) fn build_flow_graph(
     program: &Source,
     region: &Region,
 ) -> Result<flow::Graph, CompileError> {
+    let labels = stream_labels(region)?;
+    let operations = flow_operations(program, region)?;
+
+    let mut successors_of: Vec<Vec<usize>> = Vec::new();
+    let mut call_returns: Vec<Option<usize>> = Vec::new();
+    // Indirect branches whose targets are inferred: (block, register, tagged).
+    let mut indirect = Vec::new();
+    for (id, block) in region.blocks.iter().enumerate() {
+        let next = (id + 1 < region.blocks.len()).then_some(id + 1);
+        let (successors, call_return) =
+            block_edges(program, region, &labels, (id, block), next, &mut indirect)?;
+        successors_of.push(successors);
+        call_returns.push(call_return);
+    }
+    let returns = infer_returns(region, &mut successors_of, &call_returns, &indirect)?;
+
+    let mut blocks = Vec::new();
+    for (id, block) in region.blocks.iter().enumerate() {
+        blocks.push(flow::Block {
+            operations: block.operations.clone(),
+            successors: successors_of[id].clone(),
+            outputs: block.outputs.clone(),
+            timing: block
+                .selected_table
+                .as_ref()
+                .and_then(|table| table_timing(program, region, block, &table.rows)),
+            call_return: call_returns[id],
+            returns: returns[id].clone(),
+        });
+    }
+
+    let constants = program
+        .registers
+        .values
+        .iter()
+        .enumerate()
+        .filter_map(|(id, r)| (r.family != Family::Hardware && r.physical == Some(0)).then_some(id))
+        .collect();
+    Ok(flow::Graph {
+        operations,
+        blocks,
+        entry: 0,
+        inputs: region.inputs.clone(),
+        constants,
+    })
+}
+
+/// Map each stream label (lowercased) to its block, rejecting duplicates.
+fn stream_labels(region: &Region) -> Result<BTreeMap<String, usize>, CompileError> {
     let mut labels = BTreeMap::new();
     for (id, block) in region.blocks.iter().enumerate() {
         for label in &block.labels {
@@ -20,6 +69,14 @@ pub(super) fn build_flow_graph(
             }
         }
     }
+    Ok(labels)
+}
+
+/// The flow operation of every instruction, with raw issue bundles merged.
+fn flow_operations(
+    program: &Source,
+    region: &Region,
+) -> Result<Vec<flow::Operation>, CompileError> {
     let mut operations: Vec<flow::Operation> = region
         .instructions
         .iter()
@@ -29,6 +86,7 @@ pub(super) fn build_flow_graph(
             side_effect: located.effects.side_effect,
         })
         .collect();
+
     // One raw issue bundle fetches both halves' sources before either half
     // writes. Move lower reads to the first transfer event for flow analysis;
     // retain the two original operations for scheduling and text emission.
@@ -53,130 +111,135 @@ pub(super) fn build_flow_graph(
                     || (region.instructions[*upper].instruction.mode == ParseMode::Raw
                         && region.instructions[*upper].line == region.instructions[*lower].line))
             {
-                let lower_reads = std::mem::take(&mut operations[*lower].reads);
-                operations[*upper].reads.extend(lower_reads);
-                if operations[*upper].writes.iter().any(|a| {
-                    operations[*lower].writes.iter().any(|b| {
-                        a.register == b.register
-                            && program.registers.named(a.register).physical != Some(0)
-                    })
-                }) {
+                merge_issue_pair(program, region, &mut operations, *upper, *lower)?;
+            }
+        }
+    }
+    Ok(operations)
+}
+
+/// Move the lower half's reads onto the upper one; both writing the same
+/// register is an error.
+fn merge_issue_pair(
+    program: &Source,
+    region: &Region,
+    operations: &mut [flow::Operation],
+    upper: usize,
+    lower: usize,
+) -> Result<(), CompileError> {
+    let lower_reads = std::mem::take(&mut operations[lower].reads);
+    operations[upper].reads.extend(lower_reads);
+    if operations[upper].writes.iter().any(|a| {
+        operations[lower].writes.iter().any(|b| {
+            a.register == b.register && program.registers.named(a.register).physical != Some(0)
+        })
+    }) {
+        return Err(error(
+            region.instructions[upper].line,
+            CompileMessage::PipesWriteSameRegister,
+        ));
+    }
+    Ok(())
+}
+
+/// The successors and call-return block of one block, from how it ends.
+/// Indirect branches needing inference are appended to `indirect`.
+fn block_edges(
+    program: &Source,
+    region: &Region,
+    labels: &BTreeMap<String, usize>,
+    (id, block): (usize, &Block),
+    next: Option<usize>,
+    indirect: &mut Vec<(usize, usize, bool)>,
+) -> Result<(Vec<usize>, Option<usize>), CompileError> {
+    let mut successors = Vec::new();
+    let mut call_return = None;
+    match &block.end {
+        End::Fallthrough | End::Continue => {
+            if let Some(next) = next {
+                successors.push(next);
+            }
+        }
+        End::Exit { .. } => {}
+        End::Branch {
+            target,
+            tags,
+            conditional,
+            call,
+        } => {
+            if let Some(target) = target {
+                let Some(&target) = labels.get(&target.to_ascii_lowercase()) else {
                     return Err(error(
-                        region.instructions[*upper].line,
-                        CompileMessage::PipesWriteSameRegister,
+                        0,
+                        CompileMessage::UnknownBranchTarget {
+                            target: target.to_string(),
+                        },
                     ));
-                }
+                };
+                successors.push(target);
+            } else {
+                successors =
+                    indirect_targets(program, region, labels, (id, block), tags, *call, indirect)?;
+            }
+            // A call reaches only its subroutine; the subroutine's
+            // return edge leads back to the stream after it.
+            if *call {
+                call_return = next;
+            } else if *conditional && let Some(next) = next {
+                successors.push(next);
             }
         }
     }
-    let mut successors_of: Vec<Vec<usize>> = Vec::new();
-    let mut call_returns: Vec<Option<usize>> = Vec::new();
-    // Indirect branches whose targets are inferred: (block, register, tagged).
-    let mut indirect = Vec::new();
-    for (id, block) in region.blocks.iter().enumerate() {
-        let next = (id + 1 < region.blocks.len()).then_some(id + 1);
-        let mut successors = Vec::new();
-        let mut call_return = None;
-        match &block.end {
-            End::Fallthrough | End::Continue => {
-                if let Some(next) = next {
-                    successors.push(next);
-                }
-            }
-            End::Exit { .. } => {}
-            End::Branch {
-                target,
-                tags,
-                conditional,
-                call,
-            } => {
-                if let Some(target) = target {
-                    if let Some(&target) = labels.get(&target.to_ascii_lowercase()) {
-                        successors.push(target);
-                    } else {
-                        return Err(error(
-                            0,
-                            CompileMessage::UnknownBranchTarget {
-                                target: target.to_string(),
-                            },
-                        ));
-                    }
-                } else {
-                    let mut tagged = BTreeSet::new();
-                    for tag in tags {
-                        let target = *labels.get(&tag.to_ascii_lowercase()).ok_or_else(|| {
-                            error(
-                                0,
-                                CompileMessage::UnknownBranchTag {
-                                    tag: tag.to_string(),
-                                },
-                            )
-                        })?;
-                        // A second link to the same stream fails (observed
-                        // from vcl 1.4beta7, `audit-indirect-duplicate`).
-                        if !tagged.insert(target) {
-                            return Err(error(0, CompileMessage::DuplicateBranchTag));
-                        }
-                        successors.push(target);
-                    }
-                    let branch = block.operations.last().map(|&id| &region.instructions[id]);
-                    let register = branch.and_then(|located| {
-                        located
-                            .effects
-                            .reads
-                            .iter()
-                            .map(|r| r.register)
-                            .find(|&r| program.registers.named(r).family == Family::Integer)
-                    });
-                    match register {
-                        Some(register) if !*call => indirect.push((id, register, !tags.is_empty())),
-                        _ if tags.is_empty() => {
-                            return Err(error(0, CompileMessage::UntaggedIndirectBranch));
-                        }
-                        _ => {}
-                    }
-                }
-                // A call reaches only its subroutine; the subroutine's
-                // return edge leads back to the stream after it.
-                if *call {
-                    call_return = next;
-                } else if *conditional && let Some(next) = next {
-                    successors.push(next);
-                }
-            }
+    Ok((successors, call_return))
+}
+
+/// The tagged targets of an indirect branch; records the branch for return
+/// inference when it jumps through an integer register.
+fn indirect_targets(
+    program: &Source,
+    region: &Region,
+    labels: &BTreeMap<String, usize>,
+    (id, block): (usize, &Block),
+    tags: &[String],
+    call: bool,
+    indirect: &mut Vec<(usize, usize, bool)>,
+) -> Result<Vec<usize>, CompileError> {
+    let mut successors = Vec::new();
+    let mut tagged = BTreeSet::new();
+    for tag in tags {
+        let target = *labels.get(&tag.to_ascii_lowercase()).ok_or_else(|| {
+            error(
+                0,
+                CompileMessage::UnknownBranchTag {
+                    tag: tag.to_string(),
+                },
+            )
+        })?;
+        // A second link to the same stream fails (observed
+        // from vcl 1.4beta7, `audit-indirect-duplicate`).
+        if !tagged.insert(target) {
+            return Err(error(0, CompileMessage::DuplicateBranchTag));
         }
-        successors_of.push(successors);
-        call_returns.push(call_return);
+        successors.push(target);
     }
-    let returns = infer_returns(region, &mut successors_of, &call_returns, &indirect)?;
-    let mut blocks = Vec::new();
-    for (id, block) in region.blocks.iter().enumerate() {
-        blocks.push(flow::Block {
-            operations: block.operations.clone(),
-            successors: successors_of[id].clone(),
-            outputs: block.outputs.clone(),
-            timing: block
-                .selected_table
-                .as_ref()
-                .and_then(|table| table_timing(program, region, block, &table.rows)),
-            call_return: call_returns[id],
-            returns: returns[id].clone(),
-        });
+
+    let branch = block.operations.last().map(|&id| &region.instructions[id]);
+    let register = branch.and_then(|located| {
+        located
+            .effects
+            .reads
+            .iter()
+            .map(|r| r.register)
+            .find(|&r| program.registers.named(r).family == Family::Integer)
+    });
+    match register {
+        Some(register) if !call => indirect.push((id, register, !tags.is_empty())),
+        _ if tags.is_empty() => {
+            return Err(error(0, CompileMessage::UntaggedIndirectBranch));
+        }
+        _ => {}
     }
-    let constants = program
-        .registers
-        .values
-        .iter()
-        .enumerate()
-        .filter_map(|(id, r)| (r.family != Family::Hardware && r.physical == Some(0)).then_some(id))
-        .collect();
-    Ok(flow::Graph {
-        operations,
-        blocks,
-        entry: 0,
-        inputs: region.inputs.clone(),
-        constants,
-    })
+    Ok(successors)
 }
 
 /// Return edges of indirect branches: each setter of the

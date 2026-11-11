@@ -242,157 +242,22 @@ impl<'a> TimingContext<'a> {
         lengths: &[usize],
         placed: &dyn Fn(usize) -> Option<(usize, usize)>,
     ) {
-        use crate::scheduler::wrangle::{Direction as WDirection, Source as WSource};
-        let local: BTreeMap<_, _> = table
-            .live
-            .iter()
-            .enumerate()
-            .map(|(i, &id)| (id, i))
-            .collect();
+        let scope = ApplyScope {
+            block,
+            lengths,
+            placed,
+            local: table
+                .live
+                .iter()
+                .enumerate()
+                .map(|(i, &id)| (id, i))
+                .collect(),
+        };
+
         for index in 0..table.live.len() {
             let id = table.live[index];
-            let mut minimum = 0;
-            let mut end = 0;
-            for (o, operand) in table.problem.instructions[index]
-                .operands
-                .iter()
-                .enumerate()
-            {
-                let register = table.operand_registers[index][o];
-                for part in 0..4u8 {
-                    if operand.mask & (1 << part) == 0 {
-                        continue;
-                    }
-                    match operand.direction {
-                        WDirection::Read => {
-                            if operand.sources[usize::from(part)] != Some(WSource::External) {
-                                continue;
-                            }
-                            let Some(read) = self.reads_by.get(&(id, register, part)) else {
-                                continue;
-                            };
-                            for definition in &read.definitions {
-                                let Definition::Operation(setter) = definition else {
-                                    continue;
-                                };
-                                let Some(&setter_block) = self.owner.get(setter) else {
-                                    continue;
-                                };
-                                let to_end = if let Some((row, length)) = placed(*setter) {
-                                    (length - row - 1) as i32
-                                } else if setter_block == block {
-                                    local.get(setter).map_or(0, |&s| table.statics[s].height)
-                                } else {
-                                    continue;
-                                };
-                                let Some(distance) = self.distance(lengths, setter_block, block)
-                                else {
-                                    continue;
-                                };
-                                let value = self.latency(*setter, register)
-                                    + self.offset(id, register)
-                                    - (distance + to_end)
-                                    - 1;
-                                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                    crate::trace!(
-                                        "  read {id} {} in {block} setter {setter} {} block {setter_block} to_end {to_end} distance {distance} value {value}",
-                                        self.region.instructions[id].instruction.mnemonic,
-                                        self.region.instructions[*setter].instruction.mnemonic
-                                    );
-                                }
-                                minimum = minimum.max(value);
-                            }
-                        }
-                        WDirection::Write => {
-                            if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                crate::trace!(
-                                    "timing write {id} reg {register} part {part} users {:?}",
-                                    self.users.get(&(id, register, part))
-                                );
-                            }
-                            let Some(users) = self.users.get(&(id, register, part)) else {
-                                continue;
-                            };
-                            for &user in users {
-                                let Some(&user_block) = self.owner.get(&user) else {
-                                    continue;
-                                };
-                                if user_block == block
-                                    && local.get(&user).is_some_and(|&u| u > index)
-                                {
-                                    continue;
-                                }
-                                let Some((row, _)) = placed(user) else {
-                                    if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                        crate::trace!(
-                                            "  user {user} block {user_block} not placed"
-                                        );
-                                    }
-                                    continue;
-                                };
-                                let Some(distance) = self.distance(lengths, block, user_block)
-                                else {
-                                    continue;
-                                };
-                                let value = self.latency(id, register)
-                                    + self.offset(user, register)
-                                    - (distance + row as i32)
-                                    - 1;
-                                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                                    crate::trace!(
-                                        "  user {user} block {user_block} row {row} distance {distance} value {value}"
-                                    );
-                                }
-                                end = end.max(value);
-                            }
-                        }
-                    }
-                }
-            }
-            // Throughput-tracked registers (Q, P): a writer in another table
-            // keeps its unit busy.
-            for (o, operand) in table.problem.instructions[index]
-                .operands
-                .iter()
-                .enumerate()
-            {
-                if operand.direction != WDirection::Write
-                    || !table.problem.registers[operand.register].throughput_tracked
-                {
-                    continue;
-                }
-                let register = table.operand_registers[index][o];
-                let throughput = |id: usize| {
-                    i32::from(
-                        self.region.instructions[id]
-                            .instruction
-                            .metadata
-                            .throughput
-                            .max(1),
-                    )
-                };
-                for (&other, &other_block) in &self.owner {
-                    if other_block == block
-                        || !self.region.instructions[other]
-                            .effects
-                            .writes
-                            .iter()
-                            .any(|w| w.register == register)
-                    {
-                        continue;
-                    }
-                    let Some((row, length)) = placed(other) else {
-                        continue;
-                    };
-                    if let Some(distance) = self.distance(lengths, other_block, block) {
-                        let to_end = (length - row - 1) as i32;
-                        minimum = minimum.max(throughput(other) - (distance + to_end) - 1);
-                    }
-                    if let Some(distance) = self.distance(lengths, block, other_block) {
-                        end = end.max(throughput(id) - (distance + row as i32 + 1));
-                    }
-                }
-            }
+            let (minimum, end) = self.operand_timing(table, &scope, index);
+            let (minimum, mut end) = self.throughput_timing(table, &scope, index, minimum, end);
             // A `--cont` stream (end mode 2; 3 is the synthetic exit
             // itself) keeps XGKICK out of its last two rows already while
             // scheduling, so the
@@ -405,47 +270,269 @@ impl<'a> TimingContext<'a> {
             }
             table.problem.instructions[index].minimum_position = minimum;
             table.problem.instructions[index].end_distance = end;
-            // Protected operands: a hazard
-            // read stays put, as do the writes of the value it misses.
-            let home = self.flow_block.get(&id).copied().unwrap_or(block);
-            let (mut read, mut write) = (false, false);
-            for (o, operand) in table.problem.instructions[index]
-                .operands
-                .iter()
-                .enumerate()
-            {
-                let register = table.operand_registers[index][o];
-                for part in (0..4u8).filter(|part| operand.mask & (1 << part) != 0) {
-                    // Operand mask AND regref bits: only a value
-                    // that crosses the table boundary is protected (a read
-                    // of an outside producer, a write read outside).
-                    match operand.direction {
-                        WDirection::Read => {
-                            read |= operand.sources[usize::from(part)] == Some(WSource::External)
-                                && self.hazard_reads.contains(&(home, register, part));
-                        }
-                        WDirection::Write => {
-                            // Readers by timed flow: a non-interlocked value
-                            // overwritten later in the table can still be the
-                            // one another table reads.
-                            let outside =
-                                self.users.get(&(id, register, part)).is_some_and(|users| {
-                                    users.iter().any(|user| {
-                                        self.owner.get(user).is_some_and(|&b| b != block)
-                                    })
-                                });
-                            write |=
-                                outside && self.hazard_writes.contains(&(home, register, part));
-                        }
-                    }
-                }
-            }
+
+            let (read, write) = self.protected_operands(table, &scope, index);
             table.problem.instructions[index].protected_read = read;
             table.problem.instructions[index].protected_write = write;
         }
     }
+
+    /// The minimum position and end distance an instruction's operands
+    /// impose through values crossing the table boundary.
+    fn operand_timing(
+        &self,
+        table: &WrangledTable,
+        scope: &ApplyScope,
+        index: usize,
+    ) -> (i32, i32) {
+        use crate::scheduler::wrangle::Direction as WDirection;
+        let mut minimum = 0;
+        let mut end = 0;
+        for (o, operand) in table.problem.instructions[index]
+            .operands
+            .iter()
+            .enumerate()
+        {
+            for part in 0..4u8 {
+                if operand.mask & (1 << part) == 0 {
+                    continue;
+                }
+                match operand.direction {
+                    WDirection::Read => {
+                        minimum = self.read_minimum(table, scope, index, o, part, minimum);
+                    }
+                    WDirection::Write => {
+                        end = self.write_end(table, scope, index, o, part, end);
+                    }
+                }
+            }
+        }
+        (minimum, end)
+    }
+
+    /// Raises `minimum` for one external read part by the latency of each
+    /// setter outside the table.
+    fn read_minimum(
+        &self,
+        table: &WrangledTable,
+        scope: &ApplyScope,
+        index: usize,
+        o: usize,
+        part: u8,
+        mut minimum: i32,
+    ) -> i32 {
+        use crate::scheduler::wrangle::Source as WSource;
+        let id = table.live[index];
+        let block = scope.block;
+        let operand = &table.problem.instructions[index].operands[o];
+        let register = table.operand_registers[index][o];
+        if operand.sources[usize::from(part)] != Some(WSource::External) {
+            return minimum;
+        }
+        let Some(read) = self.reads_by.get(&(id, register, part)) else {
+            return minimum;
+        };
+
+        for definition in &read.definitions {
+            let Definition::Operation(setter) = definition else {
+                continue;
+            };
+            let Some(&setter_block) = self.owner.get(setter) else {
+                continue;
+            };
+            let to_end = if let Some((row, length)) = (scope.placed)(*setter) {
+                (length - row - 1) as i32
+            } else if setter_block == block {
+                scope
+                    .local
+                    .get(setter)
+                    .map_or(0, |&s| table.statics[s].height)
+            } else {
+                continue;
+            };
+            let Some(distance) = self.distance(scope.lengths, setter_block, block) else {
+                continue;
+            };
+            let value = self.latency(*setter, register) + self.offset(id, register)
+                - (distance + to_end)
+                - 1;
+            if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
+                crate::trace!(
+                    "  read {id} {} in {block} setter {setter} {} block {setter_block} to_end {to_end} distance {distance} value {value}",
+                    self.region.instructions[id].instruction.mnemonic,
+                    self.region.instructions[*setter].instruction.mnemonic
+                );
+            }
+            minimum = minimum.max(value);
+        }
+        minimum
+    }
+
+    /// Raises `end` for one written part by the distance to each user
+    /// outside the table.
+    fn write_end(
+        &self,
+        table: &WrangledTable,
+        scope: &ApplyScope,
+        index: usize,
+        o: usize,
+        part: u8,
+        mut end: i32,
+    ) -> i32 {
+        let id = table.live[index];
+        let block = scope.block;
+        let register = table.operand_registers[index][o];
+        if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
+            crate::trace!(
+                "timing write {id} reg {register} part {part} users {:?}",
+                self.users.get(&(id, register, part))
+            );
+        }
+        let Some(users) = self.users.get(&(id, register, part)) else {
+            return end;
+        };
+
+        for &user in users {
+            let Some(&user_block) = self.owner.get(&user) else {
+                continue;
+            };
+            if user_block == block && scope.local.get(&user).is_some_and(|&u| u > index) {
+                continue;
+            }
+            let Some((row, _)) = (scope.placed)(user) else {
+                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
+                    crate::trace!("  user {user} block {user_block} not placed");
+                }
+                continue;
+            };
+            let Some(distance) = self.distance(scope.lengths, block, user_block) else {
+                continue;
+            };
+            let value = self.latency(id, register) + self.offset(user, register)
+                - (distance + row as i32)
+                - 1;
+            if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
+                crate::trace!(
+                    "  user {user} block {user_block} row {row} distance {distance} value {value}"
+                );
+            }
+            end = end.max(value);
+        }
+        end
+    }
+
+    /// Throughput-tracked registers (Q, P): a writer in another table
+    /// keeps its unit busy. Returns the updated `(minimum, end)`.
+    fn throughput_timing(
+        &self,
+        table: &WrangledTable,
+        scope: &ApplyScope,
+        index: usize,
+        mut minimum: i32,
+        mut end: i32,
+    ) -> (i32, i32) {
+        use crate::scheduler::wrangle::Direction as WDirection;
+        let id = table.live[index];
+        let block = scope.block;
+        for (o, operand) in table.problem.instructions[index]
+            .operands
+            .iter()
+            .enumerate()
+        {
+            if operand.direction != WDirection::Write
+                || !table.problem.registers[operand.register].throughput_tracked
+            {
+                continue;
+            }
+            let register = table.operand_registers[index][o];
+            let throughput = |id: usize| {
+                i32::from(
+                    self.region.instructions[id]
+                        .instruction
+                        .metadata
+                        .throughput
+                        .max(1),
+                )
+            };
+            for (&other, &other_block) in &self.owner {
+                if other_block == block
+                    || !self.region.instructions[other]
+                        .effects
+                        .writes
+                        .iter()
+                        .any(|w| w.register == register)
+                {
+                    continue;
+                }
+                let Some((row, length)) = (scope.placed)(other) else {
+                    continue;
+                };
+                if let Some(distance) = self.distance(scope.lengths, other_block, block) {
+                    let to_end = (length - row - 1) as i32;
+                    minimum = minimum.max(throughput(other) - (distance + to_end) - 1);
+                }
+                if let Some(distance) = self.distance(scope.lengths, block, other_block) {
+                    end = end.max(throughput(id) - (distance + row as i32 + 1));
+                }
+            }
+        }
+        (minimum, end)
+    }
+
+    /// Whether an instruction's reads and writes are protected: a hazard
+    /// read stays put, as do the writes of the value it misses.
+    fn protected_operands(
+        &self,
+        table: &WrangledTable,
+        scope: &ApplyScope,
+        index: usize,
+    ) -> (bool, bool) {
+        use crate::scheduler::wrangle::{Direction as WDirection, Source as WSource};
+        let id = table.live[index];
+        let block = scope.block;
+        let home = self.flow_block.get(&id).copied().unwrap_or(block);
+        let (mut read, mut write) = (false, false);
+        for (o, operand) in table.problem.instructions[index]
+            .operands
+            .iter()
+            .enumerate()
+        {
+            let register = table.operand_registers[index][o];
+            for part in (0..4u8).filter(|part| operand.mask & (1 << part) != 0) {
+                // Operand mask AND regref bits: only a value
+                // that crosses the table boundary is protected (a read
+                // of an outside producer, a write read outside).
+                match operand.direction {
+                    WDirection::Read => {
+                        read |= operand.sources[usize::from(part)] == Some(WSource::External)
+                            && self.hazard_reads.contains(&(home, register, part));
+                    }
+                    WDirection::Write => {
+                        // Readers by timed flow: a non-interlocked value
+                        // overwritten later in the table can still be the
+                        // one another table reads.
+                        let outside = self.users.get(&(id, register, part)).is_some_and(|users| {
+                            users
+                                .iter()
+                                .any(|user| self.owner.get(user).is_some_and(|&b| b != block))
+                        });
+                        write |= outside && self.hazard_writes.contains(&(home, register, part));
+                    }
+                }
+            }
+        }
+        (read, write)
+    }
 }
 
+/// The table being timed: its block, the stream lengths, the placed rows of
+/// installed tables and the local index of each live instruction.
+struct ApplyScope<'a> {
+    block: usize,
+    lengths: &'a [usize],
+    placed: &'a dyn Fn(usize) -> Option<(usize, usize)>,
+    local: BTreeMap<usize, usize>,
+}
 /// Row of every live instruction in an installed table. A raw pair owner
 /// that emits as an empty NOP shares the row of its source line.
 pub(super) fn table_positions(

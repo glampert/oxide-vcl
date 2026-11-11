@@ -143,6 +143,17 @@ pub struct Output {
     pub definitions: BTreeSet<Definition>,
 }
 
+/// What the final walk over the reachable blocks gathers.
+#[derive(Default)]
+struct Collected {
+    reads: Vec<Read>,
+    outputs: Vec<Output>,
+    undefined: Vec<UndefinedRead>,
+    roots: BTreeSet<OperationId>,
+    operation_blocks: BTreeMap<OperationId, BlockId>,
+    hazards: Vec<(OperationId, BlockId, BlockId, RegisterId, u8)>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Analysis {
     pub reachable: BTreeSet<BlockId>,
@@ -376,6 +387,87 @@ impl Graph {
         if self.entry >= self.blocks.len() {
             return Err(FlowError::InvalidEntry(self.entry));
         }
+
+        let predecessors = self.validate_blocks()?;
+        let reachable = self.reachable_blocks();
+        let seed = self.seed_state();
+        let incoming = self.reaching_definitions(&reachable, &predecessors, &seed);
+
+        let mut found = self.collect_accesses(&reachable, &incoming);
+
+        let mut dependencies: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
+        for read in &found.reads {
+            for &definition in &read.definitions {
+                if let Definition::Operation(writer) = definition {
+                    dependencies
+                        .entry(read.operation)
+                        .or_default()
+                        .insert(writer);
+                }
+            }
+        }
+
+        let mut live_operations = BTreeSet::new();
+        let mut pending: Vec<_> = std::mem::take(&mut found.roots).into_iter().collect();
+        while let Some(operation) = pending.pop() {
+            if live_operations.insert(operation)
+                && let Some(writers) = dependencies.get(&operation)
+            {
+                pending.extend(writers);
+            }
+        }
+
+        // Unused instructions can be pruned without reporting undefined reads.
+        for read in &found.reads {
+            if live_operations.contains(&read.operation)
+                && read.definitions.contains(&Definition::Uninitialized)
+            {
+                found.undefined.push(UndefinedRead {
+                    operation: Some(read.operation),
+                    block: found.operation_blocks[&read.operation],
+                    register: read.register,
+                    component: read.component,
+                });
+            }
+        }
+
+        let (live_in, live_out) = self.liveness(&reachable, &live_operations);
+
+        let mut hazard_reads = BTreeSet::new();
+        let mut hazard_writes = BTreeSet::new();
+        for &(operation, reader, writer, register, component) in &found.hazards {
+            if live_operations.contains(&operation) {
+                hazard_reads.insert((reader, register, component));
+                hazard_writes.insert((writer, register, component));
+            }
+        }
+
+        let copy_live_out = (0..self.blocks.len())
+            .map(|block| {
+                if reachable.contains(&block) {
+                    vec![live_out[block].clone()]
+                } else {
+                    Vec::new()
+                }
+            })
+            .collect();
+
+        Ok(Analysis {
+            reachable,
+            reads: found.reads,
+            outputs: found.outputs,
+            live_operations,
+            undefined: found.undefined,
+            live_in,
+            live_out,
+            copy_live_out,
+            hazard_reads,
+            hazard_writes,
+        })
+    }
+
+    /// Check operation and successor ids; return each block's predecessors.
+    fn validate_blocks(&self) -> Result<Vec<Vec<BlockId>>, FlowError> {
         let mut owners = BTreeSet::new();
         let mut predecessors = vec![Vec::new(); self.blocks.len()];
         for (id, block) in self.blocks.iter().enumerate() {
@@ -400,6 +492,11 @@ impl Graph {
                 predecessors[successor].push(id);
             }
         }
+        Ok(predecessors)
+    }
+
+    /// The blocks reachable from the entry.
+    fn reachable_blocks(&self) -> BTreeSet<BlockId> {
         let mut reachable = BTreeSet::new();
         let mut queue = VecDeque::from([self.entry]);
         while let Some(block) = queue.pop_front() {
@@ -407,7 +504,11 @@ impl Graph {
                 queue.extend(&self.blocks[block].successors);
             }
         }
+        reachable
+    }
 
+    /// The definitions every tracked component has at the entry.
+    fn seed_state(&self) -> State {
         let keys: BTreeSet<_> = self
             .operations
             .iter()
@@ -418,8 +519,7 @@ impl Graph {
             .flat_map(parts)
             .collect();
         let initialized: BTreeSet<_> = self.inputs.iter().copied().flat_map(parts).collect();
-        let seed: State = keys
-            .iter()
+        keys.iter()
             .map(|&component| {
                 let defined =
                     initialized.contains(&component) || self.constants.contains(&component.0);
@@ -432,8 +532,16 @@ impl Graph {
                     }]),
                 )
             })
-            .collect();
+            .collect()
+    }
 
+    /// Iterate to a fixed point and return the state on entry to each block.
+    fn reaching_definitions(
+        &self,
+        reachable: &BTreeSet<BlockId>,
+        predecessors: &[Vec<BlockId>],
+        seed: &State,
+    ) -> Vec<FlowState> {
         let mut incoming: Vec<FlowState> = vec![FlowState::default(); self.blocks.len()];
         let mut outgoing = incoming.clone();
         let entry_state = FlowState {
@@ -442,7 +550,7 @@ impl Graph {
         };
         loop {
             let mut changed = false;
-            for &id in &reachable {
+            for &id in reachable {
                 let mut sources: Vec<&FlowState> = Vec::new();
                 if id == self.entry {
                     sources.push(&entry_state);
@@ -469,159 +577,114 @@ impl Graph {
                 break;
             }
         }
+        incoming
+    }
 
-        let mut reads = Vec::new();
-        let mut outputs = Vec::new();
-        let mut undefined = Vec::new();
-        let mut roots = BTreeSet::new();
-        let mut operation_blocks = BTreeMap::new();
+    /// Walk every reachable block once more, recording reads, outputs,
+    /// undefined outputs, roots and cross-block hazards.
+    fn collect_accesses(&self, reachable: &BTreeSet<BlockId>, incoming: &[FlowState]) -> Collected {
         let owner: BTreeMap<OperationId, BlockId> = self
             .blocks
             .iter()
             .enumerate()
             .flat_map(|(block, b)| b.operations.iter().map(move |&op| (op, block)))
             .collect();
-        let mut hazards = Vec::new();
-        for &id in &reachable {
+        let mut found = Collected::default();
+        for &id in reachable {
             let mut state = walk(
                 self,
                 &self.blocks[id],
                 incoming[id].clone(),
-                |operation, flow| {
-                    let defs = &flow.defs;
-                    operation_blocks.insert(operation, id);
-                    let op = &self.operations[operation];
-                    if op.side_effect {
-                        roots.insert(operation);
-                    }
-                    for &access in &op.reads {
-                        for (register, component) in parts(access) {
-                            let definitions = defs
-                                .get(&(register, component))
-                                .cloned()
-                                .unwrap_or_default();
-                            reads.push(Read {
-                                operation,
-                                register,
-                                component,
-                                definitions,
-                            });
-                            // The original flags a read whose visible definition
-                            // with timing differs from the one without: the
-                            // latest write before it, still in flight from
-                            // another block.
-                            let latest = flow
-                                .pending
-                                .iter()
-                                .filter(|((_, pending), _)| *pending == (register, component))
-                                .max_by_key(|((time, _), _)| *time);
-                            if let Some((_, (writers, _))) = latest {
-                                for writer in writers {
-                                    if let Definition::Operation(writer) = writer {
-                                        let block = owner[writer];
-                                        if block != id {
-                                            hazards
-                                                .push((operation, id, block, register, component));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
+                |operation, flow| self.record_operation(&mut found, &owner, id, operation, flow),
             );
             state.land(None);
-            let state = state.defs;
-            for &access in &self.blocks[id].outputs {
-                for (register, component) in parts(access) {
-                    if let Some(definitions) = state.get(&(register, component)) {
-                        outputs.push(Output {
+            self.record_outputs(&mut found, id, &state.defs);
+        }
+        found
+    }
+
+    /// Record the reads of one operation, its root status and its hazards.
+    fn record_operation(
+        &self,
+        found: &mut Collected,
+        owner: &BTreeMap<OperationId, BlockId>,
+        id: BlockId,
+        operation: OperationId,
+        flow: &FlowState,
+    ) {
+        let defs = &flow.defs;
+        found.operation_blocks.insert(operation, id);
+        let op = &self.operations[operation];
+        if op.side_effect {
+            found.roots.insert(operation);
+        }
+        for &access in &op.reads {
+            for (register, component) in parts(access) {
+                let definitions = defs
+                    .get(&(register, component))
+                    .cloned()
+                    .unwrap_or_default();
+                found.reads.push(Read {
+                    operation,
+                    register,
+                    component,
+                    definitions,
+                });
+                // The original flags a read whose visible definition
+                // with timing differs from the one without: the
+                // latest write before it, still in flight from
+                // another block.
+                let latest = flow
+                    .pending
+                    .iter()
+                    .filter(|((_, pending), _)| *pending == (register, component))
+                    .max_by_key(|((time, _), _)| *time);
+                let Some((_, (writers, _))) = latest else {
+                    continue;
+                };
+                for writer in writers {
+                    if let Definition::Operation(writer) = writer {
+                        let block = owner[writer];
+                        if block != id {
+                            found
+                                .hazards
+                                .push((operation, id, block, register, component));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Record the outputs of a block given the definitions at its end.
+    fn record_outputs(&self, found: &mut Collected, id: BlockId, state: &State) {
+        for &access in &self.blocks[id].outputs {
+            for (register, component) in parts(access) {
+                let Some(definitions) = state.get(&(register, component)) else {
+                    continue;
+                };
+                found.outputs.push(Output {
+                    block: id,
+                    register,
+                    component,
+                    definitions: definitions.clone(),
+                });
+                for &definition in definitions {
+                    match definition {
+                        Definition::Operation(operation) => {
+                            found.roots.insert(operation);
+                        }
+                        Definition::Uninitialized => found.undefined.push(UndefinedRead {
+                            operation: None,
                             block: id,
                             register,
                             component,
-                            definitions: definitions.clone(),
-                        });
-                        for &definition in definitions {
-                            match definition {
-                                Definition::Operation(operation) => {
-                                    roots.insert(operation);
-                                }
-                                Definition::Uninitialized => undefined.push(UndefinedRead {
-                                    operation: None,
-                                    block: id,
-                                    register,
-                                    component,
-                                }),
-                                Definition::Input => {}
-                            }
-                        }
+                        }),
+                        Definition::Input => {}
                     }
                 }
             }
         }
-        let mut dependencies: BTreeMap<_, BTreeSet<_>> = BTreeMap::new();
-        for read in &reads {
-            for &definition in &read.definitions {
-                if let Definition::Operation(writer) = definition {
-                    dependencies
-                        .entry(read.operation)
-                        .or_default()
-                        .insert(writer);
-                }
-            }
-        }
-        let mut live_operations = BTreeSet::new();
-        let mut pending: Vec<_> = roots.into_iter().collect();
-        while let Some(operation) = pending.pop() {
-            if live_operations.insert(operation)
-                && let Some(writers) = dependencies.get(&operation)
-            {
-                pending.extend(writers);
-            }
-        }
-        // Unused instructions can be pruned without reporting undefined reads.
-        for read in &reads {
-            if live_operations.contains(&read.operation)
-                && read.definitions.contains(&Definition::Uninitialized)
-            {
-                undefined.push(UndefinedRead {
-                    operation: Some(read.operation),
-                    block: operation_blocks[&read.operation],
-                    register: read.register,
-                    component: read.component,
-                });
-            }
-        }
-        let (live_in, live_out) = self.liveness(&reachable, &live_operations);
-        let mut hazard_reads = BTreeSet::new();
-        let mut hazard_writes = BTreeSet::new();
-        for (operation, reader, writer, register, component) in hazards {
-            if live_operations.contains(&operation) {
-                hazard_reads.insert((reader, register, component));
-                hazard_writes.insert((writer, register, component));
-            }
-        }
-        let copy_live_out = (0..self.blocks.len())
-            .map(|block| {
-                if reachable.contains(&block) {
-                    vec![live_out[block].clone()]
-                } else {
-                    Vec::new()
-                }
-            })
-            .collect();
-        Ok(Analysis {
-            reachable,
-            reads,
-            outputs,
-            live_operations,
-            undefined,
-            live_in,
-            live_out,
-            copy_live_out,
-            hazard_reads,
-            hazard_writes,
-        })
     }
 
     fn liveness(

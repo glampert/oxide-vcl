@@ -737,6 +737,77 @@ fn parse_instruction(
         _ => Mask::XYZW,
     };
     *cursor += 1;
+
+    let texts = read_operand_texts(tokens, cursor, metadata, &name)?;
+    let mut operands = parse_operands(
+        metadata,
+        &texts,
+        mask,
+        specified_mask.is_some(),
+        state.syntax,
+    )?;
+    if metadata.index < id::GENERALIZED_END
+        && operands.iter().take(2).any(|operand| {
+            operand.class == class::GENERALIZED && bracket_field(&operand.text).is_some()
+        })
+    {
+        return Err(ParseMessage::ScalarNotThird);
+    }
+    if specified_mask.is_none() {
+        mask = infer_mask(&operands, mask)?;
+    }
+    for operand in &mut operands {
+        if operand.implicit && operand.class == class::ACC {
+            operand.mask = mask;
+        }
+    }
+
+    let mut metadata = if metadata.index < id::GENERALIZED_END {
+        concretize_generalized(&name, &mut operands)?
+    } else {
+        metadata
+    };
+    metadata = apply_operand_hooks(metadata, &mut operands);
+    if metadata.mask_mode == MaskMode::OneLane
+        && metadata.subtype == subtype::memory::LOAD
+        && !mask.is_scalar()
+        && specified_mask.is_some()
+    {
+        return Err(ParseMessage::SingleComponentRequired);
+    }
+    let tagged = operands
+        .iter()
+        .filter(|operand| !operand.tags.is_empty())
+        .count();
+    if tagged > 1 {
+        return Err(ParseMessage::MultipleTaggedOperands);
+    }
+    normalize_zero_sources(metadata.index, &mut operands);
+
+    Ok(Instruction {
+        metadata,
+        mnemonic: metadata.name.into(),
+        mask,
+        modifiers,
+        operands,
+        mode: state.mode,
+        raw_reorder: state.reorder,
+        // The parser's raw-loop group counter is distinct from
+        // the decoded instruction's parse loop id.
+        // A raw-loop directive does not supply an implicit stage prefix.
+        loop_id: explicit_loop_id,
+        optional,
+        generated_copy: None,
+    })
+}
+
+/// Gather the token text of each explicit operand, advancing the cursor.
+fn read_operand_texts(
+    tokens: &[Token],
+    cursor: &mut usize,
+    metadata: &InstructionDef,
+    name: &str,
+) -> Result<Vec<String>, ParseMessage> {
     let explicit_count = metadata.explicit_operands().count();
     let mut texts = Vec::new();
     for operand_index in 0..explicit_count {
@@ -762,83 +833,80 @@ fn parse_instruction(
         {
             return Err(ParseMessage::MissingOperand {
                 position: operand_index + 1,
-                name: name.clone(),
+                name: name.to_string(),
             });
         }
         texts.push(text);
     }
-    let mut operands = parse_operands(
-        metadata,
-        &texts,
-        mask,
-        specified_mask.is_some(),
-        state.syntax,
-    )?;
-    if metadata.index < id::GENERALIZED_END
-        && operands.iter().take(2).any(|operand| {
-            operand.class == class::GENERALIZED && bracket_field(&operand.text).is_some()
-        })
-    {
-        return Err(ParseMessage::ScalarNotThird);
+    Ok(texts)
+}
+
+/// Take the instruction mask from the first vector-like operand when none
+/// was written, checking that the vector operands agree.
+fn infer_mask(operands: &[Operand], mut mask: Mask) -> Result<Mask, ParseMessage> {
+    if let Some(operand) = operands.iter().find(|operand| {
+        use class::*;
+        !operand.implicit
+            && matches!(
+                operand.class,
+                VECTOR
+                    | ACC
+                    | DECLARED_VECTOR
+                    | GENERALIZED
+                    | ADDRESS_REGISTER
+                    | ADDRESS_REGISTER_OFFSET
+            )
+    }) {
+        mask = operand.mask;
     }
-    if specified_mask.is_none() {
-        if let Some(operand) = operands.iter().find(|operand| {
-            use class::*;
+    let mismatched = operands
+        .iter()
+        .filter(|operand| {
             !operand.implicit
                 && matches!(
                     operand.class,
-                    VECTOR
-                        | ACC
-                        | DECLARED_VECTOR
-                        | GENERALIZED
-                        | ADDRESS_REGISTER
-                        | ADDRESS_REGISTER_OFFSET
+                    class::VECTOR | class::ACC | class::DECLARED_VECTOR
                 )
-        }) {
-            mask = operand.mask;
-        }
-        let mismatched = operands
-            .iter()
-            .filter(|operand| {
-                !operand.implicit
-                    && matches!(
-                        operand.class,
-                        class::VECTOR | class::ACC | class::DECLARED_VECTOR
-                    )
-            })
-            .any(|operand| operand.mask != mask);
-        if mismatched {
-            return Err(ParseMessage::VectorMasksDiffer);
-        }
+        })
+        .any(|operand| operand.mask != mask);
+    if mismatched {
+        return Err(ParseMessage::VectorMasksDiffer);
     }
-    for operand in &mut operands {
-        if operand.implicit && operand.class == class::ACC {
-            operand.mask = mask;
-        }
-    }
-    let mut metadata = if metadata.index < id::GENERALIZED_END {
-        let derived = derive_generalized_name(&name, &operands)?;
-        let concrete = instruction::lookup(&derived, Syntax::Old).ok_or_else(|| {
-            ParseMessage::CannotDerive {
-                name: derived.clone(),
-            }
+    Ok(mask)
+}
+
+/// Resolve a generalized spelling to its concrete opcode and retype the
+/// operands accordingly.
+fn concretize_generalized(
+    name: &str,
+    operands: &mut [Operand],
+) -> Result<&'static InstructionDef, ParseMessage> {
+    let derived = derive_generalized_name(name, operands)?;
+    let concrete =
+        instruction::lookup(&derived, Syntax::Old).ok_or_else(|| ParseMessage::CannotDerive {
+            name: derived.clone(),
         })?;
-        // Generalized spellings carry I/Q/vector lane selection in operands;
-        // adapt the explicit strings to the concrete opcode before decoding.
-        for (operand, spec) in operands.iter_mut().zip(concrete.operands) {
-            operand.class = spec.class;
-            operand.direction = spec.direction;
-            // The generalized third operand was decoded as GENERALIZED with
-            // a vector mask. Resolving it to a scalar I/Q/P/R resource changes
-            // its component count as well as its class.
-            if matches!(spec.class, class::I..=class::R) {
-                operand.mask = Mask::X;
-            }
+    // Generalized spellings carry I/Q/vector lane selection in operands;
+    // adapt the explicit strings to the concrete opcode before decoding.
+    for (operand, spec) in operands.iter_mut().zip(concrete.operands) {
+        operand.class = spec.class;
+        operand.direction = spec.direction;
+        // The generalized third operand was decoded as GENERALIZED with
+        // a vector mask. Resolving it to a scalar I/Q/P/R resource changes
+        // its component count as well as its class.
+        if matches!(spec.class, class::I..=class::R) {
+            operand.mask = Mask::X;
         }
-        concrete
-    } else {
-        metadata
-    };
+    }
+    Ok(concrete)
+}
+
+/// Apply the original's per-opcode operand hooks (register-address
+/// loads/stores, EFU input fields); returns the possibly replaced descriptor.
+fn apply_operand_hooks(
+    mut metadata: &'static InstructionDef,
+    operands: &mut [Operand],
+) -> &'static InstructionDef {
     // The original's hook for register-address loads/stores replaces register-address ILWR/ISWR with the
     // corresponding immediate-address form and a signed zero displacement.
     if let Some(name) = match metadata.name {
@@ -859,36 +927,7 @@ fn parse_instruction(
     {
         operands[1].mask = fields;
     }
-    if metadata.mask_mode == MaskMode::OneLane
-        && metadata.subtype == subtype::memory::LOAD
-        && !mask.is_scalar()
-        && specified_mask.is_some()
-    {
-        return Err(ParseMessage::SingleComponentRequired);
-    }
-    let tagged = operands
-        .iter()
-        .filter(|operand| !operand.tags.is_empty())
-        .count();
-    if tagged > 1 {
-        return Err(ParseMessage::MultipleTaggedOperands);
-    }
-    normalize_zero_sources(metadata.index, &mut operands);
-    Ok(Instruction {
-        metadata,
-        mnemonic: metadata.name.into(),
-        mask,
-        modifiers,
-        operands,
-        mode: state.mode,
-        raw_reorder: state.reorder,
-        // The parser's raw-loop group counter is distinct from
-        // the decoded instruction's parse loop id.
-        // A raw-loop directive does not supply an implicit stage prefix.
-        loop_id: explicit_loop_id,
-        optional,
-        generated_copy: None,
-    })
+    metadata
 }
 
 fn is_zero_register(operand: &Operand) -> bool {
@@ -1147,30 +1186,18 @@ fn parse_operand(
             return Ok(operand);
         }
         ADDRESS..=ADDRESS_DECREMENT => {
-            let (open, register, close) = memory_operand(body, spec.class)?;
-            if matches!(spec.class, ADDRESS_OFFSET | ADDRESS_REGISTER_OFFSET) {
-                operand.immediate = Some(if open == 0 { "0" } else { &body[..open] }.into());
-            }
-            if matches!(spec.class, ADDRESS_REGISTER | ADDRESS_REGISTER_OFFSET) {
-                operand.mask =
-                    Mask::parse(&body[close + 1..]).ok_or(ParseMessage::InvalidMemoryMask)?;
-                if operand.mask.0 == 0 {
-                    operand.mask = if forced_mask {
-                        instruction_mask
-                    } else {
-                        return Err(ParseMessage::MemoryMaskRequired);
-                    };
-                }
-                if forced_mask && operand.mask != instruction_mask {
-                    return Err(ParseMessage::MemoryMaskDiffers);
-                }
-            }
-            validate_register_name(register)?;
-            operand.register = Some(register.to_string());
+            parse_memory_operand(
+                &mut operand,
+                body,
+                spec.class,
+                instruction_mask,
+                forced_mask,
+            )?;
             return Ok(operand);
         }
         _ => {}
     }
+
     let mut register = body.to_string();
     if matches!(spec.class, DECLARED_VECTOR | DECLARED_INTEGER)
         && let Some((name, mapping)) = body.split_once('(')
@@ -1178,125 +1205,16 @@ fn parse_operand(
         register = name.into();
         operand.forced_register = Some(mapping.trim_end_matches(')').to_string());
     }
-    let mut operand_mask = None;
-    if syntax == Syntax::New
-        && matches!(
-            spec.class,
-            SCALAR | VECTOR_XYZ | FIELD_X..=FIELD_W | GENERALIZED
-        )
-    {
-        if let Some((name, mask)) = bracket_field(&register) {
-            if spec.class == GENERALIZED && !mask.is_scalar() {
-                return Err(ParseMessage::GeneralizedScalarComponent);
-            }
-            operand_mask = Some(mask);
-            register = name.to_string();
-        }
-    } else if syntax == Syntax::Old
-        && matches!(
-            spec.class,
-            VECTOR | SCALAR | VECTOR_XYZ | FIELD_X..=FIELD_W | DECLARED_VECTOR
-        )
-    {
-        // The original scans a maximal case-insensitive trailing lane string
-        // and strips that string and its optional preceding dot, in vector
-        // interface operands too: `in_vf caty(vf01)` binds `cat`. A name made
-        // only of lane letters stays whole.
-        let start = register
-            .trim_end_matches(['x', 'X', 'y', 'Y', 'z', 'Z', 'w', 'W'])
-            .len();
-        if start > 0 && start < register.len() {
-            let fields = &register[start..];
-            let mask = Mask::parse(fields).expect("trimmed suffix contains only lane letters");
-            if mask.0.count_ones() as usize != fields.len() {
-                return Err(ParseMessage::DuplicateComponent);
-            }
-            let token = register.clone();
-            register.truncate(start);
-            let dotted = register.ends_with('.');
-            // An interface operand takes its fields only from a dotted
-            // suffix (`res.xyz`); glued letters (`resxyz`) only shorten the
-            // name and the operand keeps every field (observed from vcl
-            // 1.4beta7, `field-letters-*`).
-            if dotted || spec.class != DECLARED_VECTOR {
-                operand_mask = Some(mask);
-            }
-            if dotted {
-                register.pop();
-            } else if matches!(spec.class, VECTOR | DECLARED_VECTOR)
-                && physical_register(&register, true).is_none()
-                && physical_register(&register, false).is_none()
-            {
-                // An ordinary or interface operand: a broadcast (`scalex`)
-                // selects its field this way, but these do not.
-                operand.field_letters = Some(token);
-            }
-        }
-    } else if let Some((name, suffix)) = register
-        .rsplit_once('.')
-        // An interface name takes no dotted fields except an old-syntax
-        // vector one: vcl rejects `in_vi cnt.x(vi01)`, and in new syntax
-        // `out_vf res.xyz(vf02)`, with its invalid-character error (observed
-        // from vcl 1.4beta7, `field-letters-new-*`).
-        .filter(|_| {
-            !(spec.class == DECLARED_INTEGER
-                || (spec.class == DECLARED_VECTOR && syntax == Syntax::New))
-        })
-    {
-        operand_mask = Some(Mask::parse(suffix).ok_or(ParseMessage::InvalidOperandMask)?);
-        register = name.into();
-    }
-    let required_mask = match spec.class {
-        VECTOR_XYZ | ACC_XYZ => Some(Mask::XYZ),
-        FIELD_X => Some(Mask::X),
-        FIELD_Y => Some(Mask::Y),
-        FIELD_Z => Some(Mask::Z),
-        FIELD_W => Some(Mask::W),
-        _ => None,
-    };
-    let vector = matches!(
+    let (register, operand_mask) = strip_field_suffix(&mut operand, register, spec.class, syntax)?;
+    assign_vector_mask(
+        &mut operand,
         spec.class,
-        VECTOR | SCALAR | ACC..=FIELD_W | DECLARED_VECTOR | GENERALIZED
-    );
-    if vector {
-        if spec.class == SCALAR && !operand_mask.is_some_and(Mask::is_scalar) {
-            return Err(ParseMessage::ScalarComponentRequired);
-        }
-        if let Some(required) = required_mask {
-            if operand_mask.is_some_and(|mask| mask != required) {
-                return Err(ParseMessage::FieldSelectionsDiffer);
-            }
-            operand.mask = required;
-        } else if forced_mask && !matches!(spec.class, SCALAR | GENERALIZED) {
-            operand.mask = instruction_mask;
-        } else {
-            operand.mask = operand_mask.unwrap_or(instruction_mask);
-        }
-    }
-    match spec.class {
-        I | P | Q | R => {
-            let expected = match spec.class {
-                I => "I",
-                P => "P",
-                Q => "Q",
-                _ => "R",
-            };
-            if !register.eq_ignore_ascii_case(expected) {
-                return Err(ParseMessage::OperandMustBe {
-                    expected: expected.to_string(),
-                });
-            }
-            register = expected.into();
-        }
-        ACC | ACC_XYZ => register = "ACC".into(),
-        CLIP => register = "CLIP".into(),
-        INTEGER_FLAG if physical_register(&register, false) != Some(1) => {
-            return Err(ParseMessage::OperandMustBe {
-                expected: "vi01".into(),
-            });
-        }
-        _ => {}
-    }
+        operand_mask,
+        instruction_mask,
+        forced_mask,
+    )?;
+    let register = fixed_register_name(spec.class, register)?;
+
     validate_register_name(&register)?;
     if let Some(mapping) = &operand.forced_register {
         let vector = spec.class == DECLARED_VECTOR;
@@ -1308,6 +1226,202 @@ fn parse_operand(
     }
     operand.register = Some(register);
     Ok(operand)
+}
+
+/// Decode a memory operand's displacement, register and lane mask into
+/// `operand`.
+fn parse_memory_operand(
+    operand: &mut Operand,
+    body: &str,
+    operand_class: u8,
+    instruction_mask: Mask,
+    forced_mask: bool,
+) -> Result<(), ParseMessage> {
+    use class::*;
+    let (open, register, close) = memory_operand(body, operand_class)?;
+    if matches!(operand_class, ADDRESS_OFFSET | ADDRESS_REGISTER_OFFSET) {
+        operand.immediate = Some(if open == 0 { "0" } else { &body[..open] }.into());
+    }
+    if matches!(operand_class, ADDRESS_REGISTER | ADDRESS_REGISTER_OFFSET) {
+        operand.mask = Mask::parse(&body[close + 1..]).ok_or(ParseMessage::InvalidMemoryMask)?;
+        if operand.mask.0 == 0 {
+            operand.mask = if forced_mask {
+                instruction_mask
+            } else {
+                return Err(ParseMessage::MemoryMaskRequired);
+            };
+        }
+        if forced_mask && operand.mask != instruction_mask {
+            return Err(ParseMessage::MemoryMaskDiffers);
+        }
+    }
+    validate_register_name(register)?;
+    operand.register = Some(register.to_string());
+    Ok(())
+}
+
+/// Strip the field suffix from a register name, per syntax and operand
+/// class; returns the bare name and the fields it selected, if any.
+fn strip_field_suffix(
+    operand: &mut Operand,
+    mut register: String,
+    operand_class: u8,
+    syntax: Syntax,
+) -> Result<(String, Option<Mask>), ParseMessage> {
+    use class::*;
+    let mut operand_mask = None;
+    if syntax == Syntax::New
+        && matches!(
+            operand_class,
+            SCALAR | VECTOR_XYZ | FIELD_X..=FIELD_W | GENERALIZED
+        )
+    {
+        if let Some((name, mask)) = bracket_field(&register) {
+            if operand_class == GENERALIZED && !mask.is_scalar() {
+                return Err(ParseMessage::GeneralizedScalarComponent);
+            }
+            operand_mask = Some(mask);
+            register = name.to_string();
+        }
+    } else if syntax == Syntax::Old
+        && matches!(
+            operand_class,
+            VECTOR | SCALAR | VECTOR_XYZ | FIELD_X..=FIELD_W | DECLARED_VECTOR
+        )
+    {
+        operand_mask = strip_lane_letters(operand, &mut register, operand_class)?;
+    } else if let Some((name, suffix)) = register
+        .rsplit_once('.')
+        // An interface name takes no dotted fields except an old-syntax
+        // vector one: vcl rejects `in_vi cnt.x(vi01)`, and in new syntax
+        // `out_vf res.xyz(vf02)`, with its invalid-character error (observed
+        // from vcl 1.4beta7, `field-letters-new-*`).
+        .filter(|_| {
+            !(operand_class == DECLARED_INTEGER
+                || (operand_class == DECLARED_VECTOR && syntax == Syntax::New))
+        })
+    {
+        operand_mask = Some(Mask::parse(suffix).ok_or(ParseMessage::InvalidOperandMask)?);
+        register = name.into();
+    }
+    Ok((register, operand_mask))
+}
+
+/// Old syntax: strip a trailing lane-letter string from `register`, and
+/// return the fields it selects.
+fn strip_lane_letters(
+    operand: &mut Operand,
+    register: &mut String,
+    operand_class: u8,
+) -> Result<Option<Mask>, ParseMessage> {
+    use class::*;
+    let mut operand_mask = None;
+    // The original scans a maximal case-insensitive trailing lane string
+    // and strips that string and its optional preceding dot, in vector
+    // interface operands too: `in_vf caty(vf01)` binds `cat`. A name made
+    // only of lane letters stays whole.
+    let start = register
+        .trim_end_matches(['x', 'X', 'y', 'Y', 'z', 'Z', 'w', 'W'])
+        .len();
+    if start > 0 && start < register.len() {
+        let fields = &register[start..];
+        let mask = Mask::parse(fields).expect("trimmed suffix contains only lane letters");
+        if mask.0.count_ones() as usize != fields.len() {
+            return Err(ParseMessage::DuplicateComponent);
+        }
+        let token = register.clone();
+        register.truncate(start);
+        let dotted = register.ends_with('.');
+        // An interface operand takes its fields only from a dotted
+        // suffix (`res.xyz`); glued letters (`resxyz`) only shorten the
+        // name and the operand keeps every field (observed from vcl
+        // 1.4beta7, `field-letters-*`).
+        if dotted || operand_class != DECLARED_VECTOR {
+            operand_mask = Some(mask);
+        }
+        if dotted {
+            register.pop();
+        } else if matches!(operand_class, VECTOR | DECLARED_VECTOR)
+            && physical_register(register, true).is_none()
+            && physical_register(register, false).is_none()
+        {
+            // An ordinary or interface operand: a broadcast (`scalex`)
+            // selects its field this way, but these do not.
+            operand.field_letters = Some(token);
+        }
+    }
+    Ok(operand_mask)
+}
+
+/// Set the lane mask of a vector-like operand from the class's fixed
+/// field, the suffix and the instruction mask.
+fn assign_vector_mask(
+    operand: &mut Operand,
+    operand_class: u8,
+    operand_mask: Option<Mask>,
+    instruction_mask: Mask,
+    forced_mask: bool,
+) -> Result<(), ParseMessage> {
+    use class::*;
+    let required_mask = match operand_class {
+        VECTOR_XYZ | ACC_XYZ => Some(Mask::XYZ),
+        FIELD_X => Some(Mask::X),
+        FIELD_Y => Some(Mask::Y),
+        FIELD_Z => Some(Mask::Z),
+        FIELD_W => Some(Mask::W),
+        _ => None,
+    };
+    let vector = matches!(
+        operand_class,
+        VECTOR | SCALAR | ACC..=FIELD_W | DECLARED_VECTOR | GENERALIZED
+    );
+    if vector {
+        if operand_class == SCALAR && !operand_mask.is_some_and(Mask::is_scalar) {
+            return Err(ParseMessage::ScalarComponentRequired);
+        }
+        if let Some(required) = required_mask {
+            if operand_mask.is_some_and(|mask| mask != required) {
+                return Err(ParseMessage::FieldSelectionsDiffer);
+            }
+            operand.mask = required;
+        } else if forced_mask && !matches!(operand_class, SCALAR | GENERALIZED) {
+            operand.mask = instruction_mask;
+        } else {
+            operand.mask = operand_mask.unwrap_or(instruction_mask);
+        }
+    }
+    Ok(())
+}
+
+/// The canonical name of a fixed hardware register operand (I, P, Q, R,
+/// ACC, CLIP, the integer flag), checking the spelling; other classes keep
+/// their name.
+fn fixed_register_name(operand_class: u8, register: String) -> Result<String, ParseMessage> {
+    use class::*;
+    match operand_class {
+        I | P | Q | R => {
+            let expected = match operand_class {
+                I => "I",
+                P => "P",
+                Q => "Q",
+                _ => "R",
+            };
+            if !register.eq_ignore_ascii_case(expected) {
+                return Err(ParseMessage::OperandMustBe {
+                    expected: expected.to_string(),
+                });
+            }
+            Ok(expected.into())
+        }
+        ACC | ACC_XYZ => Ok("ACC".into()),
+        CLIP => Ok("CLIP".into()),
+        INTEGER_FLAG if physical_register(&register, false) != Some(1) => {
+            Err(ParseMessage::OperandMustBe {
+                expected: "vi01".into(),
+            })
+        }
+        _ => Ok(register),
+    }
 }
 
 fn validate_register_name(name: &str) -> Result<(), ParseMessage> {

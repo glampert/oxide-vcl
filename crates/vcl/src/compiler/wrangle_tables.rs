@@ -1,6 +1,8 @@
 //! Building the wrangler's work table for a span of a region's instructions.
 
 use super::*;
+use crate::scheduler::wrangle::{self, Direction as WDirection, Source as WSource};
+use WrangleKey as Key;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum WrangleKey {
@@ -91,23 +93,24 @@ pub(super) fn build_wrangle_table(
     build_wrangle_table_span(program, region, analysis, block_id, block_id, live, timid)
 }
 
-/// As `build_wrangle_table`, for a merged table: it enters with the live
-/// state of `first` and leaves with that of `last`.
-pub(super) fn build_wrangle_table_span(
-    program: &Source,
-    region: &Region,
-    analysis: &flow::Analysis,
-    first: usize,
-    block_id: usize,
-    live: &[usize],
-    timid: bool,
-) -> Option<WrangledTable> {
-    use crate::scheduler::wrangle::{self, Direction as WDirection, Source as WSource};
-    use WrangleKey as Key;
-    let local: BTreeMap<_, _> = live.iter().enumerate().map(|(i, &id)| (id, i)).collect();
-    let mut keys: BTreeMap<Key, usize> = BTreeMap::new();
-    let mut registers: Vec<wrangle::Register> = Vec::new();
-    let mut register_of = |id: usize| -> Option<usize> {
+/// Operand lists in descriptor order: register, direction, mask, latency and
+/// whether the operand blocks.
+type OperandList = Vec<(usize, WDirection, u8, i8, bool)>;
+
+/// A memory instruction's address: base register, offset text, and kind
+/// (plain, post-increment, pre-decrement).
+type Address = (Option<usize>, String, u8);
+
+/// The wrangle registers allocated so far, keyed by identity.
+struct RegisterMap {
+    keys: BTreeMap<WrangleKey, usize>,
+    registers: Vec<wrangle::Register>,
+}
+
+impl RegisterMap {
+    /// The wrangle register for program register `id`, allocating it on first
+    /// use; `None` for registers outside the pools (VF00/VI00).
+    fn register_of(&mut self, program: &Source, region: &Region, id: usize) -> Option<usize> {
         let register = program.registers.named(id);
         let (key, info) = match register.family {
             Family::Hardware => {
@@ -150,51 +153,196 @@ pub(super) fn build_wrangle_table_span(
                 )
             }
         };
-        Some(*keys.entry(key).or_insert_with(|| {
+        let registers = &mut self.registers;
+        Some(*self.keys.entry(key).or_insert_with(|| {
             registers.push(info);
             registers.len() - 1
         }))
-    };
-    let mut reads_by: BTreeMap<(usize, usize, u8), &flow::Read> = BTreeMap::new();
-    for read in &analysis.reads {
-        reads_by.insert((read.operation, read.register, read.component), read);
     }
-    // A fixed table's lower half reads with its upper partner (flow moves
-    // them to the pair's first operation).
-    for &id in live {
-        let Some(home) = region
-            .blocks
-            .iter()
-            .find(|candidate| candidate.operations.contains(&id))
-        else {
-            continue;
-        };
-        let owner = flow_owner(region, home, id);
-        if owner == id || home.selected_table.is_none() {
-            continue;
-        }
-        for access in &region.instructions[id].effects.reads {
-            for read in analysis.reads.iter().filter(|r| {
-                r.operation == owner
-                    && r.register == access.register
-                    && access.mask & (1 << r.component) != 0
-            }) {
-                reads_by.insert((id, read.register, read.component), read);
-            }
-        }
-    }
-    let hardware_id = |id: usize| -> Option<u8> {
-        let register = program.registers.named(id);
-        (register.family == Family::Hardware)
-            .then(|| hardware_register(&register.name).map(|h| h.0))
-            .flatten()
+}
+
+/// The inputs shared by the steps that build one work table.
+struct TableBuilder<'a> {
+    program: &'a Source,
+    region: &'a Region,
+    analysis: &'a flow::Analysis,
+    first: usize,
+    block_id: usize,
+    live: &'a [usize],
+    timid: bool,
+    /// Operation id to its index in `live`.
+    local: BTreeMap<usize, usize>,
+    /// Flow reads by (operation, register, component).
+    reads_by: BTreeMap<(usize, usize, u8), &'a flow::Read>,
+    /// Operand lists of `live`, in descriptor order.
+    operand_lists: Vec<OperandList>,
+    /// Operand indices after dropping pool-zero operands.
+    mapped_index: Vec<Vec<Option<usize>>>,
+}
+
+/// As `build_wrangle_table`, for a merged table: it enters with the live
+/// state of `first` and leaves with that of `last`.
+pub(super) fn build_wrangle_table_span(
+    program: &Source,
+    region: &Region,
+    analysis: &flow::Analysis,
+    first: usize,
+    block_id: usize,
+    live: &[usize],
+    timid: bool,
+) -> Option<WrangledTable> {
+    let mut builder = TableBuilder {
+        program,
+        region,
+        analysis,
+        first,
+        block_id,
+        live,
+        timid,
+        local: live.iter().enumerate().map(|(i, &id)| (id, i)).collect(),
+        reads_by: BTreeMap::new(),
+        operand_lists: Vec::new(),
+        mapped_index: Vec::new(),
     };
+    let mut map = RegisterMap {
+        keys: BTreeMap::new(),
+        registers: Vec::new(),
+    };
+    builder.reads_by = builder.collect_reads();
+
     // Affine induction annotation: a VI pointer with one
     // affine setter, live into and out of the table, frees the base reads of
     // its LQ/SQ/ILW/ISW users from lock constraints.
-    let mut affine: Vec<AffineUse> = Vec::new();
-    {
-        let local: BTreeMap<_, _> = live.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+    let affine = builder.affine_uses();
+    let affine_bases: BTreeMap<usize, usize> = affine
+        .iter()
+        .map(|a| {
+            (
+                a.consumer,
+                region.instructions[live[a.consumer]].operands[a.operand].unwrap(),
+            )
+        })
+        .collect();
+    builder.operand_lists = builder.build_operand_lists(&affine_bases);
+
+    // Operand indices after dropping pool-zero operands.
+    builder.mapped_index = builder
+        .operand_lists
+        .iter()
+        .map(|operands| {
+            let mut next = 0;
+            let mut indices = Vec::new();
+            for &(register, ..) in operands {
+                if map.register_of(program, region, register).is_some() {
+                    indices.push(Some(next));
+                    next += 1;
+                } else {
+                    indices.push(None);
+                }
+            }
+            indices
+        })
+        .collect();
+
+    let mut instructions = Vec::new();
+    let mut operand_registers = Vec::new();
+    for (index, &id) in live.iter().enumerate() {
+        let (instruction, registers_here) = builder.wrangle_instruction(&mut map, index, id);
+        operand_registers.push(registers_here);
+        instructions.push(instruction);
+    }
+    builder.add_memory_dependencies(&mut instructions);
+    builder.add_through_bits(&mut map, &instructions);
+
+    let RegisterMap { keys, registers } = map;
+    let mut problem = wrangle::Problem {
+        registers,
+        instructions,
+        horizon: 64,
+        minimum_length: 0,
+        stagger: false,
+        names: live
+            .iter()
+            .map(|&id| region.instructions[id].instruction.mnemonic.clone())
+            .collect(),
+    };
+    // ACC/I producer links and ACC chain starts.
+    link_accumulators(&mut problem);
+    if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
+        builder.trace_problem(&problem, &keys);
+    }
+    builder.add_affine_statistics(&mut problem, &affine);
+
+    let statics = wrangle::statics(&problem);
+    let (lower_bound, horizon) = wrangle::bounds(&problem, &statics);
+    problem.horizon = horizon;
+    let pools = builder.through_pools(&keys);
+
+    let mut ordered: Vec<(WrangleKey, usize)> = keys.into_iter().collect();
+    ordered.sort_by_key(|&(_, index)| index);
+    Some(WrangledTable {
+        live: live.to_vec(),
+        problem,
+        keys: ordered.into_iter().map(|(key, _)| key).collect(),
+        operand_registers,
+        statics,
+        lower_bound,
+        end: 0,
+        rows: Vec::new(),
+        affine,
+        pools,
+        allocation: BTreeMap::new(),
+        strategy: None,
+    })
+}
+
+impl<'a> TableBuilder<'a> {
+    /// The flow reads of the table by (operation, register, component).
+    fn collect_reads(&self) -> BTreeMap<(usize, usize, u8), &'a flow::Read> {
+        let (region, analysis) = (self.region, self.analysis);
+        let mut reads_by: BTreeMap<(usize, usize, u8), &flow::Read> = BTreeMap::new();
+        for read in &analysis.reads {
+            reads_by.insert((read.operation, read.register, read.component), read);
+        }
+        // A fixed table's lower half reads with its upper partner (flow moves
+        // them to the pair's first operation).
+        for &id in self.live {
+            let Some(home) = region
+                .blocks
+                .iter()
+                .find(|candidate| candidate.operations.contains(&id))
+            else {
+                continue;
+            };
+            let owner = flow_owner(region, home, id);
+            if owner == id || home.selected_table.is_none() {
+                continue;
+            }
+            for access in &region.instructions[id].effects.reads {
+                for read in analysis.reads.iter().filter(|r| {
+                    r.operation == owner
+                        && r.register == access.register
+                        && access.mask & (1 << r.component) != 0
+                }) {
+                    reads_by.insert((id, read.register, read.component), read);
+                }
+            }
+        }
+        reads_by
+    }
+
+    /// The hardware register's global id, for a hardware register.
+    fn hardware_id(&self, id: usize) -> Option<u8> {
+        let register = self.program.registers.named(id);
+        (register.family == Family::Hardware)
+            .then(|| hardware_register(&register.name).map(|h| h.0))
+            .flatten()
+    }
+
+    /// The affine induction consumers of the table's VI pointers.
+    fn affine_uses(&self) -> Vec<AffineUse> {
+        let (program, region, live) = (self.program, self.region, self.live);
+        let mut affine: Vec<AffineUse> = Vec::new();
         let mut vi_registers = BTreeSet::new();
         for &id in live {
             for access in region.instructions[id]
@@ -208,92 +356,18 @@ pub(super) fn build_wrangle_table_span(
                 }
             }
         }
+
         let mut annotated = BTreeSet::new();
         for register in vi_registers {
-            let setters: Vec<usize> = live
-                .iter()
-                .enumerate()
-                .filter(|&(_, &id)| {
-                    region.instructions[id]
-                        .effects
-                        .writes
-                        .iter()
-                        .any(|w| w.register == register)
-                })
-                .map(|(i, _)| i)
-                .collect();
-            let [setter] = setters[..] else { continue };
-            let located = &region.instructions[live[setter]];
-            let index = located.instruction.metadata.index;
-            let (add, input, output, stride) = match index {
-                109 | 110 => (true, 1, 0, None),
-                112 => (false, 1, 0, None),
-                158 | 163 => (true, 1, 1, Some("1".to_string())),
-                159 | 164 => (false, 1, 1, Some("1".to_string())),
-                _ => continue,
-            };
-            if located.operands.get(input).copied().flatten() != Some(register)
-                || located.operands.get(output).copied().flatten() != Some(register)
-            {
+            let Some((setter, add, stride)) = self.affine_setter(register) else {
                 continue;
-            }
-            let stride = match stride {
-                Some(stride) => stride,
-                None => match located
-                    .instruction
-                    .operands
-                    .get(2)
-                    .and_then(|o| o.immediate.clone())
-                {
-                    Some(stride) => stride,
-                    None => continue,
-                },
             };
-            let external_input = live.iter().any(|&id| {
-                reads_by.get(&(id, register, 0)).is_some_and(|read| {
-                    read.definitions.iter().any(|d| match d {
-                        Definition::Operation(w) => local.get(w).is_none_or(|&w| w >= local[&id]),
-                        _ => true,
-                    })
-                })
-            });
-            let external_output = analysis.live_out[block_id]
-                .iter()
-                .any(|a| a.register == register && a.mask & 1 != 0);
-            if !external_input || !external_output {
-                continue;
-            }
             for (consumer, &id) in live.iter().enumerate() {
-                let user = &region.instructions[id];
-                if !matches!(
-                    user.instruction.metadata.index,
-                    id::LQ | id::ILW | id::SQ | id::ISW
-                ) {
-                    continue;
-                }
-                let Some(ea) = user
-                    .instruction
-                    .operands
-                    .iter()
-                    .position(|o| class::is_address(o.class))
+                let Some((before, operand)) = self.affine_consumer(register, setter, consumer, id)
                 else {
                     continue;
                 };
-                if ea != 1 || user.operands.get(ea).copied().flatten() != Some(register) {
-                    continue;
-                }
-                let Some(read) = reads_by.get(&(id, register, 0)) else {
-                    continue;
-                };
-                let before = read.definitions.iter().all(|d| match d {
-                    Definition::Operation(w) => local.get(w).is_none_or(|&w| w >= consumer),
-                    _ => true,
-                });
-                let after = read.definitions.len() == 1
-                    && read
-                        .definitions
-                        .contains(&Definition::Operation(live[setter]));
-                if !(before || after) || !annotated.insert(consumer) {
+                if !annotated.insert(consumer) {
                     continue;
                 }
                 affine.push(AffineUse {
@@ -302,24 +376,124 @@ pub(super) fn build_wrangle_table_span(
                     before,
                     add,
                     stride: stride.clone(),
-                    operand: ea,
+                    operand,
                 });
             }
         }
+        affine
     }
-    let affine_bases: BTreeMap<usize, usize> = affine
-        .iter()
-        .map(|a| {
-            (
-                a.consumer,
-                region.instructions[live[a.consumer]].operands[a.operand].unwrap(),
-            )
-        })
-        .collect();
-    // Operand lists in descriptor order, with effective masks from effects.
-    type OperandList = Vec<(usize, WDirection, u8, i8, bool)>;
-    let mut operand_lists: Vec<OperandList> = Vec::new();
-    for (operands_index, &id) in live.iter().enumerate() {
+
+    /// The single affine setter of VI `register` live into and out of the
+    /// table: its index in `live`, whether it adds, and its stride.
+    fn affine_setter(&self, register: usize) -> Option<(usize, bool, String)> {
+        let (region, live) = (self.region, self.live);
+        let setters: Vec<usize> = live
+            .iter()
+            .enumerate()
+            .filter(|&(_, &id)| {
+                region.instructions[id]
+                    .effects
+                    .writes
+                    .iter()
+                    .any(|w| w.register == register)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let [setter] = setters[..] else { return None };
+        let located = &region.instructions[live[setter]];
+        let index = located.instruction.metadata.index;
+        let (add, input, output, stride) = match index {
+            109 | 110 => (true, 1, 0, None),
+            112 => (false, 1, 0, None),
+            158 | 163 => (true, 1, 1, Some("1".to_string())),
+            159 | 164 => (false, 1, 1, Some("1".to_string())),
+            _ => return None,
+        };
+        if located.operands.get(input).copied().flatten() != Some(register)
+            || located.operands.get(output).copied().flatten() != Some(register)
+        {
+            return None;
+        }
+        let stride = match stride {
+            Some(stride) => stride,
+            None => located
+                .instruction
+                .operands
+                .get(2)
+                .and_then(|o| o.immediate.clone())?,
+        };
+        let local = &self.local;
+        let external_input = live.iter().any(|&id| {
+            self.reads_by.get(&(id, register, 0)).is_some_and(|read| {
+                read.definitions.iter().any(|d| match d {
+                    Definition::Operation(w) => local.get(w).is_none_or(|&w| w >= local[&id]),
+                    _ => true,
+                })
+            })
+        });
+        let external_output = self.analysis.live_out[self.block_id]
+            .iter()
+            .any(|a| a.register == register && a.mask & 1 != 0);
+        if !external_input || !external_output {
+            return None;
+        }
+        Some((setter, add, stride))
+    }
+
+    /// Whether `id` (at `consumer` in `live`) is an LQ/SQ/ILW/ISW user of
+    /// `register` that the affine `setter` frees from lock constraints: the
+    /// before-phase flag and the address operand index.
+    fn affine_consumer(
+        &self,
+        register: usize,
+        setter: usize,
+        consumer: usize,
+        id: usize,
+    ) -> Option<(bool, usize)> {
+        let user = &self.region.instructions[id];
+        if !matches!(
+            user.instruction.metadata.index,
+            id::LQ | id::ILW | id::SQ | id::ISW
+        ) {
+            return None;
+        }
+        let ea = user
+            .instruction
+            .operands
+            .iter()
+            .position(|o| class::is_address(o.class))?;
+        if ea != 1 || user.operands.get(ea).copied().flatten() != Some(register) {
+            return None;
+        }
+        let read = self.reads_by.get(&(id, register, 0))?;
+        let before = read.definitions.iter().all(|d| match d {
+            Definition::Operation(w) => self.local.get(w).is_none_or(|&w| w >= consumer),
+            _ => true,
+        });
+        let after = read.definitions.len() == 1
+            && read
+                .definitions
+                .contains(&Definition::Operation(self.live[setter]));
+        (before || after).then_some((before, ea))
+    }
+
+    /// Operand lists in descriptor order, with effective masks from effects.
+    fn build_operand_lists(&self, affine_bases: &BTreeMap<usize, usize>) -> Vec<OperandList> {
+        self.live
+            .iter()
+            .enumerate()
+            .map(|(operands_index, &id)| self.operand_list(operands_index, id, affine_bases))
+            .collect()
+    }
+
+    /// The operand list of one instruction.
+    fn operand_list(
+        &self,
+        operands_index: usize,
+        id: usize,
+        affine_bases: &BTreeMap<usize, usize>,
+    ) -> OperandList {
+        let (program, region) = (self.program, self.region);
         let located = &region.instructions[id];
         let expanded = crate::analysis::prune::expand(&located.instruction);
         let mut reads_left: Vec<Option<Access>> =
@@ -381,6 +555,7 @@ pub(super) fn build_wrangle_table_span(
         for access in reads_left.into_iter().flatten() {
             operands.push((access.register, WDirection::Read, access.mask, -1, true));
         }
+
         // Lowering adds a second write for an incrementing/decrementing EA
         // operand; the descriptor has one write and an implicit patched read.
         let written: BTreeSet<usize> = operands
@@ -407,142 +582,33 @@ pub(super) fn build_wrangle_table_span(
                 true,
             ));
         }
-        operand_lists.push(operands);
+        operands
     }
-    // Operand indices after dropping pool-zero operands.
-    let mut mapped_index: Vec<Vec<Option<usize>>> = Vec::new();
-    for operands in &operand_lists {
-        let mut next = 0;
-        let mut indices = Vec::new();
-        for &(register, ..) in operands {
-            if register_of(register).is_some() {
-                indices.push(Some(next));
-                next += 1;
-            } else {
-                indices.push(None);
-            }
-        }
-        mapped_index.push(indices);
-    }
-    let mut instructions = Vec::new();
-    let mut operand_registers = Vec::new();
-    for (index, &id) in live.iter().enumerate() {
+
+    /// The wrangle instruction for `id` (at `index` in `live`), and the
+    /// program registers of its operands.
+    fn wrangle_instruction(
+        &self,
+        map: &mut RegisterMap,
+        index: usize,
+        id: usize,
+    ) -> (wrangle::Instruction, Vec<usize>) {
+        let (program, region) = (self.program, self.region);
         let located = &region.instructions[id];
         let metadata = located.instruction.metadata;
-        let conditional = metadata.is_conditional_branch();
         let mut operands = Vec::new();
         let mut registers_here = Vec::new();
-        for &(register, direction, mask, latency, blocking) in &operand_lists[index] {
-            let Some(mapped) = register_of(register) else {
+        for &(register, direction, mask, latency, blocking) in &self.operand_lists[index] {
+            let Some(mapped) = map.register_of(program, region, register) else {
                 continue;
             };
             registers_here.push(register);
-            let mut sources = [None; 4];
-            let mut input_offset = 0;
-            let mut escapes = 0;
-            for part in 0..4u8 {
-                if mask & (1 << part) == 0 {
-                    continue;
-                }
-                match direction {
-                    WDirection::Read => {
-                        let definitions = reads_by
-                            .get(&(id, register, part))
-                            .map(|read| &read.definitions);
-                        let mut source = WSource::External;
-                        if let Some(definitions) = definitions {
-                            if definitions.len() == 1
-                                && let Some(Definition::Operation(writer)) =
-                                    definitions.iter().next()
-                                && let Some(&w) = local.get(writer)
-                                && w < index
-                                && let Some(o) = operand_lists[w]
-                                    .iter()
-                                    .position(|&(r, d, m, _, _)| {
-                                        r == register
-                                            && d == WDirection::Write
-                                            && m & (1 << part) != 0
-                                    })
-                                    .and_then(|o| mapped_index[w][o])
-                            {
-                                source = WSource::Local {
-                                    instruction: w,
-                                    operand: o,
-                                };
-                            }
-                            if conditional
-                                && program.registers.named(register).family == Family::Integer
-                            {
-                                for definition in definitions {
-                                    // An `--enter` input's definer is no
-                                    // load and reads no flags.
-                                    if *definition == Definition::Input {
-                                        input_offset = 1;
-                                    }
-                                    let Definition::Operation(writer) = definition else {
-                                        continue;
-                                    };
-                                    let setter = &region.instructions[*writer];
-                                    let first_operand = writes_first_operand(setter, register);
-                                    let flagged = setter.effects.reads.iter().any(|r| {
-                                        hardware_id(r.register)
-                                            .is_some_and(|g| (0x36..=0x3b).contains(&g))
-                                    });
-                                    if (!setter.instruction.metadata.is_memory() || !first_operand)
-                                        && !flagged
-                                    {
-                                        input_offset = 1;
-                                    }
-                                }
-                            }
-                        }
-                        sources[usize::from(part)] = Some(source);
-                    }
-                    WDirection::Write => {
-                        let later = live[index + 1..].iter().any(|&other| {
-                            region.instructions[other]
-                                .effects
-                                .writes
-                                .iter()
-                                .any(|w| w.register == register && w.mask & (1 << part) != 0)
-                        });
-                        if !later
-                            && analysis.live_out[block_id]
-                                .iter()
-                                .any(|a| a.register == register && a.mask & (1 << part) != 0)
-                        {
-                            escapes |= 1 << part;
-                        }
-                    }
-                }
-            }
-            let observed = direction == WDirection::Write
-                && (0..4u8).any(|part| {
-                    mask & (1 << part) != 0
-                        && (analysis.reads.iter().any(|read| {
-                            read.register == register
-                                && read.component == part
-                                && read.definitions.contains(&Definition::Operation(id))
-                        }) || analysis.outputs.iter().any(|output| {
-                            output.register == register
-                                && output.component == part
-                                && output.definitions.contains(&Definition::Operation(id))
-                        }))
-                });
-            operands.push(wrangle::Operand {
-                register: mapped,
-                direction,
-                mask,
-                latency,
-                blocking,
-                input_offset,
-                sources,
-                escapes,
-                observed,
-            });
+            operands.push(self.wrangle_operand(
+                index, id, mapped, register, direction, mask, latency, blocking,
+            ));
         }
-        operand_registers.push(registers_here);
-        instructions.push(wrangle::Instruction {
+
+        let instruction = wrangle::Instruction {
             // Spaced like the original's sequence numbers so a
             // synthesized move can sort between its setter and the next.
             order: (index as i32 + 1) * 8,
@@ -579,16 +645,177 @@ pub(super) fn build_wrangle_table_span(
                     let vector = program.registers.named(register).family == Family::Vector;
                     Some(wrangle::FirstOutput {
                         vector,
-                        register: register_of(register),
+                        register: map.register_of(program, region, register),
                         mask: located.instruction.mask.0,
                         latency: metadata.operands.first().map_or(1, |o| o.latency),
                     })
                 }),
             operands,
-        });
+        };
+        (instruction, registers_here)
     }
-    // Memory forced dependencies.
-    let address = |id: usize| -> Option<(Option<usize>, String, u8)> {
+
+    /// One wrangle operand of instruction `id` (at `index` in `live`): its
+    /// per-component sources, input offset, escapes and observed flag.
+    #[allow(clippy::too_many_arguments)]
+    fn wrangle_operand(
+        &self,
+        index: usize,
+        id: usize,
+        mapped: usize,
+        register: usize,
+        direction: WDirection,
+        mask: u8,
+        latency: i8,
+        blocking: bool,
+    ) -> wrangle::Operand {
+        let conditional = self.region.instructions[id]
+            .instruction
+            .metadata
+            .is_conditional_branch();
+        let mut sources = [None; 4];
+        let mut input_offset = 0;
+        let mut escapes = 0;
+        for part in 0..4u8 {
+            if mask & (1 << part) == 0 {
+                continue;
+            }
+            match direction {
+                WDirection::Read => {
+                    let definitions = self
+                        .reads_by
+                        .get(&(id, register, part))
+                        .map(|read| &read.definitions);
+                    let mut source = WSource::External;
+                    if let Some(definitions) = definitions {
+                        if let Some(local) = self.local_source(index, register, part, definitions) {
+                            source = local;
+                        }
+                        if conditional
+                            && self.program.registers.named(register).family == Family::Integer
+                            && self.flags_after_setter(register, definitions)
+                        {
+                            input_offset = 1;
+                        }
+                    }
+                    sources[usize::from(part)] = Some(source);
+                }
+                WDirection::Write => {
+                    if self.escapes_table(index, register, part) {
+                        escapes |= 1 << part;
+                    }
+                }
+            }
+        }
+        let observed = direction == WDirection::Write && self.is_observed(id, register, mask);
+        wrangle::Operand {
+            register: mapped,
+            direction,
+            mask,
+            latency,
+            blocking,
+            input_offset,
+            sources,
+            escapes,
+            observed,
+        }
+    }
+
+    /// The local source of a read when a single earlier instruction of the
+    /// table defines it.
+    fn local_source(
+        &self,
+        index: usize,
+        register: usize,
+        part: u8,
+        definitions: &BTreeSet<Definition>,
+    ) -> Option<WSource> {
+        if definitions.len() != 1 {
+            return None;
+        }
+        let Some(Definition::Operation(writer)) = definitions.iter().next() else {
+            return None;
+        };
+        let &w = self.local.get(writer)?;
+        if w >= index {
+            return None;
+        }
+        let o = self.operand_lists[w]
+            .iter()
+            .position(|&(r, d, m, _, _)| {
+                r == register && d == WDirection::Write && m & (1 << part) != 0
+            })
+            .and_then(|o| self.mapped_index[w][o])?;
+        Some(WSource::Local {
+            instruction: w,
+            operand: o,
+        })
+    }
+
+    /// Whether a conditional branch reading VI `register` needs the extra
+    /// cycle: some definition is an input or a setter that is not a load
+    /// of it and reads no flags.
+    fn flags_after_setter(&self, register: usize, definitions: &BTreeSet<Definition>) -> bool {
+        let mut input_offset = false;
+        for definition in definitions {
+            // An `--enter` input's definer is no
+            // load and reads no flags.
+            if *definition == Definition::Input {
+                input_offset = true;
+            }
+            let Definition::Operation(writer) = definition else {
+                continue;
+            };
+            let setter = &self.region.instructions[*writer];
+            let first_operand = writes_first_operand(setter, register);
+            let flagged = setter.effects.reads.iter().any(|r| {
+                self.hardware_id(r.register)
+                    .is_some_and(|g| (0x36..=0x3b).contains(&g))
+            });
+            if (!setter.instruction.metadata.is_memory() || !first_operand) && !flagged {
+                input_offset = true;
+            }
+        }
+        input_offset
+    }
+
+    /// Whether the write of `register` component `part` by the instruction at
+    /// `index` is the last in the table and live out.
+    fn escapes_table(&self, index: usize, register: usize, part: u8) -> bool {
+        let later = self.live[index + 1..].iter().any(|&other| {
+            self.region.instructions[other]
+                .effects
+                .writes
+                .iter()
+                .any(|w| w.register == register && w.mask & (1 << part) != 0)
+        });
+        !later
+            && self.analysis.live_out[self.block_id]
+                .iter()
+                .any(|a| a.register == register && a.mask & (1 << part) != 0)
+    }
+
+    /// Whether some component of `register` written by `id` is read, or
+    /// reaches an output.
+    fn is_observed(&self, id: usize, register: usize, mask: u8) -> bool {
+        let analysis = self.analysis;
+        (0..4u8).any(|part| {
+            mask & (1 << part) != 0
+                && (analysis.reads.iter().any(|read| {
+                    read.register == register
+                        && read.component == part
+                        && read.definitions.contains(&Definition::Operation(id))
+                }) || analysis.outputs.iter().any(|output| {
+                    output.register == register
+                        && output.component == part
+                        && output.definitions.contains(&Definition::Operation(id))
+                }))
+        })
+    }
+
+    /// The address of a memory instruction.
+    fn address(&self, id: usize) -> Option<Address> {
+        let (program, region) = (self.program, self.region);
         let located = &region.instructions[id];
         let index = located
             .instruction
@@ -622,163 +849,185 @@ pub(super) fn build_wrangle_table_span(
             _ => 0,
         };
         Some((base, offset, kind))
-    };
-    // Memory tags (`sq v,0(p):frame`) are resources the store writes and the
-    // load reads over the fields it touches, so a shared tag orders a load
-    // against a store but not two stores (observed from vcl 1.4beta7:
-    // `memory-tag-shared` keeps a store and a later load in order, and
-    // `memory-tag-store-store` lets two stores swap, as do
-    // `memory-tag-none` and `memory-tag-disjoint`).
-    let tags = |id: usize| -> &[String] {
-        region.instructions[id]
+    }
+
+    /// The memory tags of an instruction's address operand.
+    fn tags(&self, id: usize) -> &[String] {
+        self.region.instructions[id]
             .instruction
             .operands
             .iter()
             .find(|operand| class::is_address(operand.class))
             .map_or(&[], |operand| operand.tags.as_slice())
-    };
-    let shares_tag = |a: usize, b: usize| tags(a).iter().any(|tag| tags(b).contains(tag));
-    let ram_bits = |id: usize| -> u8 {
-        let instruction = &region.instructions[id].instruction;
+    }
+
+    /// Memory tags (`sq v,0(p):frame`) are resources the store writes and the
+    /// load reads over the fields it touches, so a shared tag orders a load
+    /// against a store but not two stores (observed from vcl 1.4beta7:
+    /// `memory-tag-shared` keeps a store and a later load in order, and
+    /// `memory-tag-store-store` lets two stores swap, as do
+    /// `memory-tag-none` and `memory-tag-disjoint`).
+    fn shares_tag(&self, a: usize, b: usize) -> bool {
+        self.tags(a).iter().any(|tag| self.tags(b).contains(tag))
+    }
+
+    /// The memory fields an instruction touches.
+    fn ram_bits(&self, id: usize) -> u8 {
+        let instruction = &self.region.instructions[id].instruction;
         if instruction.metadata.mask_mode == MaskMode::Unmasked {
             0xf
         } else {
             instruction.mask.0
         }
-    };
-    // Order classes (the descriptor's order flags): WRITES_MEMORY and
-    // READS_MEMORY compare like a store and a load against earlier loads and
-    // stores, CHAINED links to the nearest earlier instruction of that class.
-    // Only XGKICK (READS_MEMORY | CHAINED) carries any: it follows every
-    // earlier store (it has no address to compare) and the previous XGKICK,
-    // and a later store follows it.
-    let order_flags = |id: usize| region.instructions[id].instruction.metadata.order_flags;
-    const LOAD: u8 = subtype::memory::LOAD;
-    const STORE: u8 = subtype::memory::STORE;
-    for i in 0..live.len() {
-        let kind = instructions[i].memory;
-        let flags = order_flags(live[i]);
-        let after_loads = kind == STORE || flags & order::WRITES_MEMORY != 0;
-        let after_stores = kind != 0 || flags & order::READS_MEMORY != 0;
-        let mut nearest_class = flags & order::CHAINED != 0;
-        if !after_loads && !after_stores && !nearest_class {
-            continue;
-        }
-        let ea = address(live[i]);
-        for j in (0..i).rev() {
-            let other = instructions[j].memory;
-            let ordered = (after_stores && other == STORE) || (after_loads && other == LOAD);
-            let other_flags = order_flags(live[j]);
-            let mut flagged = false;
-            if nearest_class && other_flags & order::CHAINED != 0 {
-                nearest_class = false;
-                flagged = true;
-            }
-            if (kind == STORE && other_flags & order::READS_MEMORY != 0)
-                || (kind == LOAD && other_flags & order::WRITES_MEMORY != 0)
-            {
-                flagged = true;
-            }
-            if !ordered && !flagged {
+    }
+
+    /// The descriptor's order flags of an instruction.
+    fn order_flags(&self, id: usize) -> u8 {
+        self.region.instructions[id]
+            .instruction
+            .metadata
+            .order_flags
+    }
+
+    /// Memory forced dependencies.
+    fn add_memory_dependencies(&self, instructions: &mut [wrangle::Instruction]) {
+        // Order classes (the descriptor's order flags): WRITES_MEMORY and
+        // READS_MEMORY compare like a store and a load against earlier loads and
+        // stores, CHAINED links to the nearest earlier instruction of that class.
+        // Only XGKICK (READS_MEMORY | CHAINED) carries any: it follows every
+        // earlier store (it has no address to compare) and the previous XGKICK,
+        // and a later store follows it.
+        let live = self.live;
+        for i in 0..live.len() {
+            let kind = instructions[i].memory;
+            let flags = self.order_flags(live[i]);
+            let after_loads = kind == STORE || flags & order::WRITES_MEMORY != 0;
+            let after_stores = kind != 0 || flags & order::READS_MEMORY != 0;
+            let mut nearest_class = flags & order::CHAINED != 0;
+            if !after_loads && !after_stores && !nearest_class {
                 continue;
             }
-            let alias = flagged
-                || ea.is_none()
-                || (ram_bits(live[i]) & ram_bits(live[j]) != 0
-                    && (timid
-                        || (shares_tag(live[i], live[j]) && !(kind == STORE && other == STORE))
-                        || {
-                            let other_ea = address(live[j]);
-                            match (&ea, &other_ea) {
-                                (Some((a, x, c)), Some((b, y, d))) => {
-                                    let same_base = match (a, b) {
-                                        (None, None) => true,
-                                        (Some(a), Some(b)) => {
-                                            a == b && {
-                                                let defs = |id: usize, r: usize| {
-                                                    reads_by
-                                                        .get(&(id, r, 0))
-                                                        .map(|read| read.definitions.clone())
-                                                };
-                                                defs(live[i], *a) == defs(live[j], *b)
-                                            }
-                                        }
-                                        _ => false,
-                                    };
-                                    c == d && same_base && x == y
-                                }
-                                _ => false,
-                            }
-                        }));
-            if std::env::var_os("VCL_ALIAS_TRACE").is_some() && kind == STORE {
-                crate::trace!(
-                    "alias {i} {:?} vs {j} {:?} -> {alias} timid {timid}",
-                    ea,
-                    address(live[j])
-                );
-            }
-            if alias {
-                if !instructions[i].forced_predecessors.contains(&j) {
-                    instructions[i].forced_predecessors.push(j);
+            let ea = self.address(live[i]);
+            for j in (0..i).rev() {
+                let other = instructions[j].memory;
+                let ordered = (after_stores && other == STORE) || (after_loads && other == LOAD);
+                let other_flags = self.order_flags(live[j]);
+                let mut flagged = false;
+                if nearest_class && other_flags & order::CHAINED != 0 {
+                    nearest_class = false;
+                    flagged = true;
                 }
-                if !instructions[j].forced_successors.contains(&i) {
-                    instructions[j].forced_successors.push(i);
+                if (kind == STORE && other_flags & order::READS_MEMORY != 0)
+                    || (kind == LOAD && other_flags & order::WRITES_MEMORY != 0)
+                {
+                    flagged = true;
+                }
+                if !ordered && !flagged {
+                    continue;
+                }
+                let alias = flagged || self.memory_alias(i, j, kind, other, &ea);
+                if std::env::var_os("VCL_ALIAS_TRACE").is_some() && kind == STORE {
+                    crate::trace!(
+                        "alias {i} {:?} vs {j} {:?} -> {alias} timid {}",
+                        ea,
+                        self.address(live[j]),
+                        self.timid
+                    );
+                }
+                if alias {
+                    if !instructions[i].forced_predecessors.contains(&j) {
+                        instructions[i].forced_predecessors.push(j);
+                    }
+                    if !instructions[j].forced_successors.contains(&i) {
+                        instructions[j].forced_successors.push(i);
+                    }
                 }
             }
         }
     }
-    // Regref through bits: physical components live into and out of the
-    // table without a local write.
-    for (key, &index) in &keys {
-        let WrangleKey::Physical(vector, base) = *key else {
-            continue;
-        };
-        let family = if vector == 1 {
-            Family::Vector
-        } else {
-            Family::Integer
-        };
-        let mut written = 0u8;
-        for insn in &instructions {
-            for operand in &insn.operands {
-                if operand.register == index && operand.direction == WDirection::Write {
-                    written |= operand.mask;
+
+    /// Whether the memory instruction `i` (address `ea`, kind `kind`) may
+    /// alias the earlier `j` (kind `other`).
+    fn memory_alias(&self, i: usize, j: usize, kind: u8, other: u8, ea: &Option<Address>) -> bool {
+        let live = self.live;
+        ea.is_none()
+            || (self.ram_bits(live[i]) & self.ram_bits(live[j]) != 0
+                && (self.timid
+                    || (self.shares_tag(live[i], live[j]) && !(kind == STORE && other == STORE))
+                    || self.same_address(i, j, ea)))
+    }
+
+    /// Whether the instructions `i` and `j` address the same location: same
+    /// kind, base value and offset.
+    fn same_address(&self, i: usize, j: usize, ea: &Option<Address>) -> bool {
+        let live = self.live;
+        let other_ea = self.address(live[j]);
+        match (ea, &other_ea) {
+            (Some((a, x, c)), Some((b, y, d))) => {
+                let same_base = match (a, b) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => {
+                        a == b && {
+                            let defs = |id: usize, r: usize| {
+                                self.reads_by
+                                    .get(&(id, r, 0))
+                                    .map(|read| read.definitions.clone())
+                            };
+                            defs(live[i], *a) == defs(live[j], *b)
+                        }
+                    }
+                    _ => false,
+                };
+                c == d && same_base && x == y
+            }
+            _ => false,
+        }
+    }
+
+    /// Regref through bits: physical components live into and out of the
+    /// table without a local write.
+    fn add_through_bits(&self, map: &mut RegisterMap, instructions: &[wrangle::Instruction]) {
+        let (program, region, analysis) = (self.program, self.region, self.analysis);
+        for (key, &index) in &map.keys {
+            let WrangleKey::Physical(vector, base) = *key else {
+                continue;
+            };
+            let family = if vector == 1 {
+                Family::Vector
+            } else {
+                Family::Integer
+            };
+            let mut written = 0u8;
+            for insn in instructions {
+                for operand in &insn.operands {
+                    if operand.register == index && operand.direction == WDirection::Write {
+                        written |= operand.mask;
+                    }
                 }
             }
+            let physical_of = |access: &Access| {
+                let named = program.registers.named(access.register);
+                named.family == family
+                    && named
+                        .physical
+                        .or_else(|| region.forced.get(&access.register).copied())
+                        == Some(base)
+            };
+            let live_in: u8 = analysis.live_in[self.first]
+                .iter()
+                .filter(|a| physical_of(a))
+                .fold(0, |m, a| m | a.mask);
+            let live_out: u8 = analysis.live_out[self.block_id]
+                .iter()
+                .filter(|a| physical_of(a))
+                .fold(0, |m, a| m | a.mask);
+            map.registers[index].through = live_in & live_out & !written;
         }
-        let physical_of = |access: &Access| {
-            let named = program.registers.named(access.register);
-            named.family == family
-                && named
-                    .physical
-                    .or_else(|| region.forced.get(&access.register).copied())
-                    == Some(base)
-        };
-        let live_in: u8 = analysis.live_in[first]
-            .iter()
-            .filter(|a| physical_of(a))
-            .fold(0, |m, a| m | a.mask);
-        let live_out: u8 = analysis.live_out[block_id]
-            .iter()
-            .filter(|a| physical_of(a))
-            .fold(0, |m, a| m | a.mask);
-        registers[index].through = live_in & live_out & !written;
     }
-    let mut problem = wrangle::Problem {
-        registers,
-        instructions,
-        horizon: 64,
-        minimum_length: 0,
-        stagger: false,
-        names: live
-            .iter()
-            .map(|&id| region.instructions[id].instruction.mnemonic.clone())
-            .collect(),
-    };
-    // ACC/I producer links and ACC chain starts.
-    link_accumulators(&mut problem);
-    if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-        crate::trace!("problem block {block_id}");
+
+    /// Traces the assembled problem (`VCL_WRANGLE_PROBLEM`).
+    fn trace_problem(&self, problem: &wrangle::Problem, keys: &BTreeMap<WrangleKey, usize>) {
+        crate::trace!("problem block {}", self.block_id);
         for (index, register) in problem.registers.iter().enumerate() {
             crate::trace!(
                 "  reg {index} {:?} through {} phys {:?}",
@@ -790,7 +1039,9 @@ pub(super) fn build_wrangle_table_span(
         for (index, insn) in problem.instructions.iter().enumerate() {
             crate::trace!(
                 "insn {index} {} pipes {} min {} end {} forced {:?}",
-                region.instructions[live[index]].instruction.mnemonic,
+                self.region.instructions[self.live[index]]
+                    .instruction
+                    .mnemonic,
                 insn.pipes,
                 insn.minimum_position,
                 insn.end_distance,
@@ -807,78 +1058,71 @@ pub(super) fn build_wrangle_table_span(
             }
         }
     }
-    // An affine consumer after its setter reads the new value through a
-    // mode-2 lock the port leaves out; the statistics still count it
-    // (vu_2250509715: `iaddiu vi11` has fan-out 4 from the stores after it).
-    for use_ in affine.iter().filter(|a| !a.before) {
-        let register = region.instructions[live[use_.consumer]].operands[use_.operand].unwrap();
-        let Some(o) = operand_lists[use_.setter]
-            .iter()
-            .position(|&(r, d, ..)| r == register && d == WDirection::Write)
-            .and_then(|o| mapped_index[use_.setter][o])
-        else {
-            continue;
-        };
-        problem.instructions[use_.consumer]
-            .stat_links
-            .push((use_.setter, o));
-    }
-    let statics = wrangle::statics(&problem);
-    let (lower_bound, horizon) = wrangle::bounds(&problem, &statics);
-    problem.horizon = horizon;
-    // Physical registers live through the table without a reference keep
-    // their through components for the whole extent; referenced pinned
-    // registers come from their locks.
-    let mut pools = wrangle::Pools {
-        vf_allowed: program.allowed_vf.clone(),
-        vi_allowed: program.allowed_vi.clone(),
-        ..wrangle::Pools::default()
-    };
-    for access in &analysis.live_in[first] {
-        let through = analysis.live_out[block_id]
-            .iter()
-            .filter(|out| out.register == access.register)
-            .fold(0, |mask, out| mask | out.mask)
-            & access.mask;
-        if through == 0 {
-            continue;
+
+    /// An affine consumer after its setter reads the new value through a
+    /// mode-2 lock the port leaves out; the statistics still count it
+    /// (vu_2250509715: `iaddiu vi11` has fan-out 4 from the stores after it).
+    fn add_affine_statistics(&self, problem: &mut wrangle::Problem, affine: &[AffineUse]) {
+        for use_ in affine.iter().filter(|a| !a.before) {
+            let register =
+                self.region.instructions[self.live[use_.consumer]].operands[use_.operand].unwrap();
+            let Some(o) = self.operand_lists[use_.setter]
+                .iter()
+                .position(|&(r, d, ..)| r == register && d == WDirection::Write)
+                .and_then(|o| self.mapped_index[use_.setter][o])
+            else {
+                continue;
+            };
+            problem.instructions[use_.consumer]
+                .stat_links
+                .push((use_.setter, o));
         }
-        let register = program.registers.named(access.register);
-        let Some(base) = register
-            .physical
-            .or_else(|| region.forced.get(&access.register).copied())
-        else {
-            continue;
+    }
+
+    /// Physical registers live through the table without a reference keep
+    /// their through components for the whole extent; referenced pinned
+    /// registers come from their locks.
+    fn through_pools(&self, keys: &BTreeMap<WrangleKey, usize>) -> wrangle::Pools {
+        let (program, region, analysis) = (self.program, self.region, self.analysis);
+        let mut pools = wrangle::Pools {
+            vf_allowed: program.allowed_vf.clone(),
+            vi_allowed: program.allowed_vi.clone(),
+            ..wrangle::Pools::default()
         };
-        let (family_key, list) = match register.family {
-            Family::Vector => (1, &mut pools.vf_through),
-            Family::Integer => (0, &mut pools.vi_through),
-            Family::Hardware => continue,
-        };
-        if base != 0 && !keys.contains_key(&Key::Physical(family_key, base)) {
-            match list.iter_mut().find(|(physical, _)| *physical == base) {
-                Some((_, mask)) => *mask |= through,
-                None => list.push((base, through)),
+        for access in &analysis.live_in[self.first] {
+            let through = analysis.live_out[self.block_id]
+                .iter()
+                .filter(|out| out.register == access.register)
+                .fold(0, |mask, out| mask | out.mask)
+                & access.mask;
+            if through == 0 {
+                continue;
+            }
+            let register = program.registers.named(access.register);
+            let Some(base) = register
+                .physical
+                .or_else(|| region.forced.get(&access.register).copied())
+            else {
+                continue;
+            };
+            let (family_key, list) = match register.family {
+                Family::Vector => (1, &mut pools.vf_through),
+                Family::Integer => (0, &mut pools.vi_through),
+                Family::Hardware => continue,
+            };
+            if base != 0 && !keys.contains_key(&Key::Physical(family_key, base)) {
+                match list.iter_mut().find(|(physical, _)| *physical == base) {
+                    Some((_, mask)) => *mask |= through,
+                    None => list.push((base, through)),
+                }
             }
         }
+        pools
     }
-    let mut ordered: Vec<(WrangleKey, usize)> = keys.into_iter().collect();
-    ordered.sort_by_key(|&(_, index)| index);
-    Some(WrangledTable {
-        live: live.to_vec(),
-        problem,
-        keys: ordered.into_iter().map(|(key, _)| key).collect(),
-        operand_registers,
-        statics,
-        lower_bound,
-        end: 0,
-        rows: Vec::new(),
-        affine,
-        pools,
-        allocation: BTreeMap::new(),
-        strategy: None,
-    })
 }
+
+const LOAD: u8 = subtype::memory::LOAD;
+const STORE: u8 = subtype::memory::STORE;
 
 /// Memory tags as resources in a loop table, as vcl 1.4beta7 binds them: a
 /// store writes its tags (latency 1) and a load reads them, over the memory
@@ -894,7 +1138,6 @@ pub(super) fn add_memory_tag_resources(
     program: &Source,
     region: &Region,
 ) {
-    use crate::scheduler::wrangle::{self, Direction as WDirection, Source as WSource};
     let mut registers: BTreeMap<String, usize> = BTreeMap::new();
     // Latest store of each tag register so far: (instruction, operand).
     let mut last_store: BTreeMap<usize, (usize, usize)> = BTreeMap::new();

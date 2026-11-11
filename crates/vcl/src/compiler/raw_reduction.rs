@@ -299,8 +299,54 @@ impl<'a> Adapter<'a> {
         if local.len() != ids.len() {
             return None;
         }
+
+        let (positions, mut operations) = self.build_operations(rows, &local)?;
+        let mut edges = BTreeMap::<(usize, usize), u16>::new();
+        self.add_read_edges(
+            block_id,
+            tables,
+            &ids,
+            &local,
+            &positions,
+            &mut operations,
+            &mut edges,
+        )?;
+        self.add_overwrite_edges(&ids, &positions, &operations, &mut edges);
+        let bounds = self.output_bounds(tables, &ids, &local);
+
+        Some(Prepared {
+            rows: rows
+                .iter()
+                .map(|pair| pair.map(|id| id.map(|id| local[&id])))
+                .collect(),
+            ids,
+            problem: SchedulingProblem {
+                operations,
+                dependencies: edges
+                    .into_iter()
+                    .map(|((from, to), latency)| Dependency {
+                        from,
+                        to,
+                        latency,
+                        distance: 0,
+                    })
+                    .collect(),
+                period: None,
+            },
+            bounds,
+        })
+    }
+
+    /// The scheduling operation of every placed instruction, with the row
+    /// each one sits in.
+    fn build_operations(
+        &self,
+        rows: &[[Option<usize>; 2]],
+        local: &BTreeMap<usize, usize>,
+    ) -> Option<(BTreeMap<usize, usize>, Vec<Operation>)> {
         let mut positions = BTreeMap::new();
         let mut operations = Vec::new();
+
         for (row, pair) in rows.iter().enumerate() {
             for (pipe, &id) in pair.iter().enumerate() {
                 let Some(id) = id else { continue };
@@ -327,8 +373,24 @@ impl<'a> Adapter<'a> {
                 operations.push(op);
             }
         }
-        let mut edges = BTreeMap::<(usize, usize), u16>::new();
-        for &id in &ids {
+        Some((positions, operations))
+    }
+
+    /// Add the dependency edges from each read's local writer, and raise the
+    /// earliest row of operations whose writer is in a predecessor block.
+    /// `None` when a read is outside the straight-line proof.
+    #[allow(clippy::too_many_arguments)]
+    fn add_read_edges(
+        &self,
+        block_id: usize,
+        tables: &Tables<'_>,
+        ids: &[usize],
+        local: &BTreeMap<usize, usize>,
+        positions: &BTreeMap<usize, usize>,
+        operations: &mut [Operation],
+        edges: &mut BTreeMap<(usize, usize), u16>,
+    ) -> Option<()> {
+        for &id in ids {
             let to = local[&id];
             let old_row = positions[&id];
             for read in self.reads.get(&id)? {
@@ -387,6 +449,17 @@ impl<'a> Adapter<'a> {
                 }
             }
         }
+        Some(())
+    }
+
+    /// Add the edges that keep physical overwrite order between instructions.
+    fn add_overwrite_edges(
+        &self,
+        ids: &[usize],
+        positions: &BTreeMap<usize, usize>,
+        operations: &[Operation],
+        edges: &mut BTreeMap<(usize, usize), u16>,
+    ) {
         // Preserve physical overwrite order, including allocator aliases that
         // have different logical register IDs. A paired read precedes either
         // paired write; in particular the lower read may constrain the upper
@@ -432,6 +505,16 @@ impl<'a> Adapter<'a> {
                 }
             }
         }
+    }
+
+    /// Per-instruction tail: the longest wait of any live reader outside the
+    /// block that is scheduled in its own block.
+    fn output_bounds(
+        &self,
+        tables: &Tables<'_>,
+        ids: &[usize],
+        local: &BTreeMap<usize, usize>,
+    ) -> Vec<crate::scheduler::raw_cleanup::Bounds> {
         let mut bounds = vec![
             crate::scheduler::raw_cleanup::Bounds {
                 tail: 0,
@@ -439,7 +522,8 @@ impl<'a> Adapter<'a> {
             };
             ids.len()
         ];
-        for &writer in &ids {
+
+        for &writer in ids {
             for read in self.reads.values().flatten() {
                 if local.contains_key(&read.operation)
                     || !read.definitions.contains(&Definition::Operation(writer))
@@ -463,27 +547,7 @@ impl<'a> Adapter<'a> {
                 }
             }
         }
-        Some(Prepared {
-            rows: rows
-                .iter()
-                .map(|pair| pair.map(|id| id.map(|id| local[&id])))
-                .collect(),
-            ids,
-            problem: SchedulingProblem {
-                operations,
-                dependencies: edges
-                    .into_iter()
-                    .map(|((from, to), latency)| Dependency {
-                        from,
-                        to,
-                        latency,
-                        distance: 0,
-                    })
-                    .collect(),
-                period: None,
-            },
-            bounds,
-        })
+        bounds
     }
 }
 

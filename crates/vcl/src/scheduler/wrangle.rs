@@ -764,6 +764,52 @@ pub enum Failure {
     Budget,
 }
 
+/// A write still in flight when an empty row is considered for removal.
+struct Flight {
+    index: usize,
+    operand: usize,
+    part: usize,
+    remaining: i32,
+}
+
+/// An empty row being considered for removal, with the writes in flight and
+/// the row where the rows below stop shifting.
+struct EmptyRow {
+    row: i32,
+    now: i32,
+    recovery: i32,
+    flights: Vec<Flight>,
+}
+
+/// State of one move synthesis while the pending operands are retargeted.
+struct MoveRetarget {
+    mv: usize,
+    old: usize,
+    new: usize,
+    parts: usize,
+    latency: i8,
+    /// The old register is also an output of the table.
+    table_output: bool,
+    /// Components fed by the move.
+    moved: u8,
+    /// Components of non-movable writes seen so far.
+    fixed_writes: u8,
+    full_period: bool,
+}
+
+/// How a placement attempt of the search ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Placement {
+    /// An instruction was placed.
+    Inserted,
+    /// A move was queued and the step starts over.
+    Restart,
+    /// The step failed and the search backtracks.
+    Failed,
+    /// The candidate is dropped and the next one is ranked.
+    Discard,
+}
+
 fn interval_overlap(a1: i32, a2: i32, b1: i32, b2: i32) -> bool {
     if b1 < a1 { a1 <= b2 } else { b1 <= a2 }
 }
@@ -834,6 +880,7 @@ impl<'a> Table<'a> {
                 .position(|insn| insn.branch)
                 .map(|branch| (period - 2, branch));
         }
+
         // Register parts referenced by the table get lock lists. A part
         // written in the table is not constant.
         let mut written = vec![0u8; problem.registers.len()];
@@ -854,6 +901,26 @@ impl<'a> Table<'a> {
                 }
             }
         }
+        table.add_lock_lists(problem, &written, &external_reads);
+
+        for (index, insn) in problem.instructions.iter().enumerate() {
+            table.slots[index].line = -1;
+            table.slots[index].locks = vec![[None; 4]; insn.operands.len()];
+            table.add_input_locks(problem, index);
+            table.add_output_locks(problem, index);
+            table.link_producers(problem, index);
+            table.link_inout(problem, index);
+            table.todo.push(index);
+            if period > 0 {
+                table.count_issue(index, 1);
+            }
+        }
+        table
+    }
+
+    /// Give every referenced register part a lock list, plus an entry lock
+    /// for external reads, throughput resources and registers live through.
+    fn add_lock_lists(&mut self, problem: &Problem, written: &[u8], external_reads: &[u8]) {
         for (register, info) in problem.registers.iter().enumerate() {
             let mut referenced = written[register] | external_reads[register];
             for insn in &problem.instructions {
@@ -863,157 +930,178 @@ impl<'a> Table<'a> {
                     }
                 }
             }
+
             for part in 0..usize::from(info.parts.min(4)) {
                 if referenced & (1 << part) == 0 {
                     continue;
                 }
-                let list = table.lists.len();
-                table.lists.push(LockList {
+                let list = self.lists.len();
+                self.lists.push(LockList {
                     constant: written[register] & (1 << part) == 0,
                     ..LockList::default()
                 });
-                table.list_of[register][part] = Some(list);
+                self.list_of[register][part] = Some(list);
                 let through = info.through & (1 << part) != 0;
                 // A throughput resource gets an entry lock only
                 // in a linear table.
-                let tracked = info.throughput_tracked && period == 0;
+                let tracked = info.throughput_tracked && self.period == 0;
                 if external_reads[register] & (1 << part) != 0 || tracked || through {
-                    let lock = table.locks.len();
-                    let mut external = Lock::new(true, list, Owner::External);
-                    external.latency = 1;
-                    external.blocking = info.nonblocking_id == 0;
-                    if through {
-                        let count = table.lists[list].external_outputs;
-                        table.lists[list].external_outputs = count + 1;
-                        external.external_output = count + 1;
-                        table.lists[list].first_external_output.get_or_insert(lock);
-                    }
-                    table.locks.push(external);
-                    table.lists[list].external_owner = true;
-                    table.lists[list].pending_outputs += 1;
-                    table.add_output_lock(lock);
+                    self.add_entry_lock(list, info.nonblocking_id == 0, through);
                 }
             }
         }
-        for (index, insn) in problem.instructions.iter().enumerate() {
-            table.slots[index].line = -1;
-            table.slots[index].locks = vec![[None; 4]; insn.operands.len()];
-            let mut counted: Vec<(usize, usize)> = Vec::new();
-            for (o, operand) in insn.operands.iter().enumerate() {
-                if operand.direction != Direction::Read {
+    }
+
+    /// Add the external entry output lock of a register part's list.
+    fn add_entry_lock(&mut self, list: usize, blocking: bool, through: bool) {
+        let lock = self.locks.len();
+        let mut external = Lock::new(true, list, Owner::External);
+        external.latency = 1;
+        external.blocking = blocking;
+        if through {
+            let count = self.lists[list].external_outputs;
+            self.lists[list].external_outputs = count + 1;
+            external.external_output = count + 1;
+            self.lists[list].first_external_output.get_or_insert(lock);
+        }
+        self.locks.push(external);
+        self.lists[list].external_owner = true;
+        self.lists[list].pending_outputs += 1;
+        self.add_output_lock(lock);
+    }
+
+    /// Create the input locks of an instruction's read components.
+    fn add_input_locks(&mut self, problem: &Problem, index: usize) {
+        let insn = &problem.instructions[index];
+        let mut counted: Vec<(usize, usize)> = Vec::new();
+
+        for (o, operand) in insn.operands.iter().enumerate() {
+            if operand.direction != Direction::Read {
+                continue;
+            }
+            for part in 0..4 {
+                if operand.mask & (1 << part) == 0 {
                     continue;
                 }
-                for part in 0..4 {
-                    if operand.mask & (1 << part) == 0 {
-                        continue;
-                    }
-                    let Some(list) = table.list_of[operand.register][part] else {
-                        continue;
-                    };
-                    let lock = table.locks.len();
-                    let mut input = Lock::new(false, list, Owner::Instruction(index, o));
-                    input.latency = operand.input_offset;
-                    if !counted.contains(&(operand.register, part)) {
-                        counted.push((operand.register, part));
-                        input.reader_pipes = Some(reader_pipes(insn.pipes));
-                    }
-                    // A loop input of a pool register may be moved.
-                    if period > 0 && problem.registers[operand.register].movable() {
-                        input.mode = 1;
-                    }
-                    table.locks.push(input);
-                    table.slots[index].locks[o][part] = Some(lock);
-                }
-            }
-            for (o, operand) in insn.operands.iter().enumerate() {
-                if operand.direction != Direction::Write {
+                let Some(list) = self.list_of[operand.register][part] else {
                     continue;
+                };
+                let lock = self.locks.len();
+                let mut input = Lock::new(false, list, Owner::Instruction(index, o));
+                input.latency = operand.input_offset;
+                if !counted.contains(&(operand.register, part)) {
+                    counted.push((operand.register, part));
+                    input.reader_pipes = Some(reader_pipes(insn.pipes));
                 }
-                let register = &problem.registers[operand.register];
-                for part in 0..4 {
-                    if operand.mask & (1 << part) == 0 {
-                        continue;
-                    }
-                    let Some(list) = table.list_of[operand.register][part] else {
-                        continue;
-                    };
-                    let lock = table.locks.len();
-                    let mut output = Lock::new(true, list, Owner::Instruction(index, o));
-                    output.throughput = if register.throughput_tracked {
-                        insn.throughput as i8
-                    } else {
-                        1
-                    };
-                    output.latency = operand.latency;
-                    output.blocking = operand.blocking;
-                    table.locks.push(output);
-                    table.lists[list].pending_outputs += 1;
-                    if operand.escapes & (1 << part) != 0 {
-                        let count = table.lists[list].external_outputs;
-                        table.lists[list].external_outputs = count + 1;
-                        table.locks[lock].external_output = count + 1;
-                        table.lists[list].first_external_output.get_or_insert(lock);
-                    }
-                    table.slots[index].locks[o][part] = Some(lock);
+                // A loop input of a pool register may be moved.
+                if self.period > 0 && problem.registers[operand.register].movable() {
+                    input.mode = 1;
                 }
-            }
-            // Register reads with their producers, then in/out links.
-            for (o, operand) in insn.operands.iter().enumerate() {
-                if operand.direction != Direction::Read {
-                    continue;
-                }
-                for part in 0..4 {
-                    let Some(input) = table.slots[index].locks[o][part] else {
-                        continue;
-                    };
-                    let producer = match operand.sources[part] {
-                        Some(Source::Local {
-                            instruction,
-                            operand,
-                        }) => table.slots[instruction].locks[operand][part],
-                        _ => {
-                            let list = table.locks[input].list;
-                            table.lists[list]
-                                .outputs
-                                .iter()
-                                .copied()
-                                .find(|&l| table.locks[l].owner == Owner::External)
-                        }
-                    };
-                    let Some(producer) = producer else {
-                        continue;
-                    };
-                    table.locks[producer].blocking = operand.blocking;
-                    link_input(&mut table.locks, input, producer);
-                }
-            }
-            for (o, operand) in insn.operands.iter().enumerate() {
-                if operand.direction != Direction::Read {
-                    continue;
-                }
-                for (w, write) in insn.operands.iter().enumerate() {
-                    if write.direction != Direction::Write || write.register != operand.register {
-                        continue;
-                    }
-                    for part in 0..4 {
-                        if operand.mask & write.mask & (1 << part) == 0 {
-                            continue;
-                        }
-                        if let (Some(input), Some(output)) = (
-                            table.slots[index].locks[o][part],
-                            table.slots[index].locks[w][part],
-                        ) {
-                            table.locks[input].inout = Some(output);
-                        }
-                    }
-                }
-            }
-            table.todo.push(index);
-            if period > 0 {
-                table.count_issue(index, 1);
+                self.locks.push(input);
+                self.slots[index].locks[o][part] = Some(lock);
             }
         }
-        table
+    }
+
+    /// Create the output locks of an instruction's written components.
+    fn add_output_locks(&mut self, problem: &Problem, index: usize) {
+        let insn = &problem.instructions[index];
+
+        for (o, operand) in insn.operands.iter().enumerate() {
+            if operand.direction != Direction::Write {
+                continue;
+            }
+            let register = &problem.registers[operand.register];
+            for part in 0..4 {
+                if operand.mask & (1 << part) == 0 {
+                    continue;
+                }
+                let Some(list) = self.list_of[operand.register][part] else {
+                    continue;
+                };
+                let lock = self.locks.len();
+                let mut output = Lock::new(true, list, Owner::Instruction(index, o));
+                output.throughput = if register.throughput_tracked {
+                    insn.throughput as i8
+                } else {
+                    1
+                };
+                output.latency = operand.latency;
+                output.blocking = operand.blocking;
+                self.locks.push(output);
+                self.lists[list].pending_outputs += 1;
+                if operand.escapes & (1 << part) != 0 {
+                    let count = self.lists[list].external_outputs;
+                    self.lists[list].external_outputs = count + 1;
+                    self.locks[lock].external_output = count + 1;
+                    self.lists[list].first_external_output.get_or_insert(lock);
+                }
+                self.slots[index].locks[o][part] = Some(lock);
+            }
+        }
+    }
+
+    /// Register reads with their producers, then in/out links.
+    fn link_producers(&mut self, problem: &Problem, index: usize) {
+        let insn = &problem.instructions[index];
+
+        for (o, operand) in insn.operands.iter().enumerate() {
+            if operand.direction != Direction::Read {
+                continue;
+            }
+            for part in 0..4 {
+                let Some(input) = self.slots[index].locks[o][part] else {
+                    continue;
+                };
+                let producer = match operand.sources[part] {
+                    Some(Source::Local {
+                        instruction,
+                        operand,
+                    }) => self.slots[instruction].locks[operand][part],
+                    _ => {
+                        let list = self.locks[input].list;
+                        self.lists[list]
+                            .outputs
+                            .iter()
+                            .copied()
+                            .find(|&l| self.locks[l].owner == Owner::External)
+                    }
+                };
+                let Some(producer) = producer else {
+                    continue;
+                };
+                self.locks[producer].blocking = operand.blocking;
+                link_input(&mut self.locks, input, producer);
+            }
+        }
+    }
+
+    /// Link each read component to the output of the same register part that
+    /// the same instruction writes.
+    fn link_inout(&mut self, problem: &Problem, index: usize) {
+        let insn = &problem.instructions[index];
+
+        for (o, operand) in insn.operands.iter().enumerate() {
+            if operand.direction != Direction::Read {
+                continue;
+            }
+            for (w, write) in insn.operands.iter().enumerate() {
+                if write.direction != Direction::Write || write.register != operand.register {
+                    continue;
+                }
+                for part in 0..4 {
+                    if operand.mask & write.mask & (1 << part) == 0 {
+                        continue;
+                    }
+                    if let (Some(input), Some(output)) = (
+                        self.slots[index].locks[o][part],
+                        self.slots[index].locks[w][part],
+                    ) {
+                        self.locks[input].inout = Some(output);
+                    }
+                }
+            }
+        }
     }
 
     /// Per-pipe instruction counters.
@@ -2520,6 +2608,59 @@ impl<'a> Table<'a> {
             return None;
         }
         let parts = usize::from(self.problem.registers[old].parts.min(4));
+        let latency: i8 = if vector { 4 } else { 1 };
+        let (mv, new) = self.add_move_slot(index, old, setter, line, vector, latency);
+
+        // Retarget pending readers and later writers of the old register.
+        let table_output = self.problem.instructions.iter().any(|insn| {
+            insn.operands
+                .iter()
+                .any(|o| o.direction == Direction::Write && o.register == old && o.escapes != 0)
+        });
+        let mut state = MoveRetarget {
+            mv,
+            old,
+            new,
+            parts,
+            latency,
+            table_output,
+            moved: 0,
+            fixed_writes: 0,
+            full_period: true,
+        };
+        for t in self.todo.clone() {
+            self.retarget_readers(t, &mut state);
+            self.retarget_writers(t, &mut state);
+        }
+
+        if state.moved == 0 {
+            self.discard_move(mv, old, new);
+            return Some(false);
+        }
+        {
+            let problem = self.problem.to_mut();
+            problem.instructions[mv].operands[0].mask = state.moved;
+            problem.instructions[mv].operands[1].mask = state.moved;
+            problem.instructions[mv].full_period = state.full_period;
+        }
+        self.moves.push(mv);
+        self.todo.insert(0, mv);
+        self.count_issue(mv, 1);
+        Some(true)
+    }
+
+    /// Append the new move instruction, its fresh register, lock lists,
+    /// statics and slot; returns the move and the new register.
+    fn add_move_slot(
+        &mut self,
+        index: usize,
+        old: usize,
+        setter: Option<usize>,
+        line: i32,
+        vector: bool,
+        latency: i8,
+    ) -> (usize, usize) {
+        let parts = usize::from(self.problem.registers[old].parts.min(4));
         // The new register and its lock lists.
         let mut register = self.problem.registers[old].clone();
         register.through = 0;
@@ -2528,7 +2669,6 @@ impl<'a> Table<'a> {
         // `move__m11 <- VI04` is allocated VI09.
         register.physical = None;
         let new = self.problem.registers.len();
-        let latency: i8 = if vector { 4 } else { 1 };
         let base = setter.unwrap_or(index);
         let mv = self.problem.instructions.len();
         let instruction = Instruction {
@@ -2606,93 +2746,81 @@ impl<'a> Table<'a> {
         };
         slot.locks = vec![[None; 4]; 2];
         self.slots.push(slot);
-        // Retarget pending readers and later writers of the old register.
-        let mut moved = 0u8; // components fed by the move (`local_50`)
-        let mut fixed_writes = 0u8; // non-movable writes seen (`bVar2`)
-        let mut renamed_writes = 0u8; // retargeted writes (`bVar5`)
-        let mut full_period = true;
-        let table_output = self.problem.instructions.iter().any(|insn| {
-            insn.operands
+        (mv, new)
+    }
+
+    /// Point the pending reads of the old register in `t` at the move's
+    /// register, feeding them from the move where their producer is placed.
+    fn retarget_readers(&mut self, t: usize, state: &mut MoveRetarget) {
+        let (mv, old, new, parts) = (state.mv, state.old, state.new, state.parts);
+
+        for o in 0..self.insn(t).operands.len() {
+            let operand = self.insn(t).operands[o].clone();
+            if operand.direction != Direction::Read || operand.register != old {
+                continue;
+            }
+            let movable = self.slots[t].locks[o]
                 .iter()
-                .any(|o| o.direction == Direction::Write && o.register == old && o.escapes != 0)
-        });
-        for t in self.todo.clone() {
-            for o in 0..self.insn(t).operands.len() {
-                let operand = self.insn(t).operands[o].clone();
-                if operand.direction != Direction::Read || operand.register != old {
-                    continue;
-                }
-                let movable = self.slots[t].locks[o]
-                    .iter()
-                    .flatten()
-                    .all(|&l| self.locks[l].mode == 1);
-                if !movable || fixed_writes & operand.mask != 0 {
-                    full_period = false;
-                    continue;
-                }
-                for part in 0..parts {
-                    if operand.mask & (1 << part) == 0 {
-                        continue;
-                    }
-                    let Some(input) = self.slots[t].locks[o][part] else {
-                        continue;
-                    };
-                    let Some(producer) = self.locks[input].parent else {
-                        continue;
-                    };
-                    let new_list = self.list_of[new][part].unwrap();
-                    if !self.locks[producer].inserted {
-                        if self.locks[producer].list == new_list {
-                            self.relink_input(input, new_list, producer);
-                        }
-                        continue;
-                    }
-                    if moved & (1 << part) == 0 {
-                        self.add_move_locks(mv, old, new, part, latency);
-                        moved |= 1 << part;
-                    }
-                    let output = self.slots[mv].locks[0][part].unwrap();
-                    self.relink_input(input, new_list, output);
-                }
-                self.problem.to_mut().instructions[t].operands[o].register = new;
+                .flatten()
+                .all(|&l| self.locks[l].mode == 1);
+            if !movable || state.fixed_writes & operand.mask != 0 {
+                state.full_period = false;
+                continue;
             }
-            for o in 0..self.insn(t).operands.len() {
-                let operand = self.insn(t).operands[o].clone();
-                if operand.direction != Direction::Write || operand.register != old {
+
+            for part in 0..parts {
+                if operand.mask & (1 << part) == 0 {
                     continue;
                 }
-                // Marks a loop write movable only when the
-                // register is also not a table output.
-                if !self.problem.registers[old].movable() || table_output {
-                    full_period = false;
-                    fixed_writes |= operand.mask;
+                let Some(input) = self.slots[t].locks[o][part] else {
                     continue;
-                }
-                renamed_writes |= operand.mask;
-                for part in 0..parts {
-                    if let Some(output) = self.slots[t].locks[o][part] {
-                        let list = self.list_of[new][part].unwrap();
-                        self.relink_output(output, list);
+                };
+                let Some(producer) = self.locks[input].parent else {
+                    continue;
+                };
+                let new_list = self.list_of[new][part].unwrap();
+                if !self.locks[producer].inserted {
+                    if self.locks[producer].list == new_list {
+                        self.relink_input(input, new_list, producer);
                     }
+                    continue;
                 }
-                self.problem.to_mut().instructions[t].operands[o].register = new;
+                if state.moved & (1 << part) == 0 {
+                    self.add_move_locks(mv, old, new, part, state.latency);
+                    state.moved |= 1 << part;
+                }
+                let output = self.slots[mv].locks[0][part].unwrap();
+                self.relink_input(input, new_list, output);
             }
+            self.problem.to_mut().instructions[t].operands[o].register = new;
         }
-        let _ = renamed_writes;
-        if moved == 0 {
-            self.discard_move(mv, old, new);
-            return Some(false);
+    }
+
+    /// Point the writes of the old register in `t` at the move's register
+    /// when the register is movable; otherwise record them as fixed writes.
+    fn retarget_writers(&mut self, t: usize, state: &mut MoveRetarget) {
+        let (old, new, parts) = (state.old, state.new, state.parts);
+
+        for o in 0..self.insn(t).operands.len() {
+            let operand = self.insn(t).operands[o].clone();
+            if operand.direction != Direction::Write || operand.register != old {
+                continue;
+            }
+            // Marks a loop write movable only when the
+            // register is also not a table output.
+            if !self.problem.registers[old].movable() || state.table_output {
+                state.full_period = false;
+                state.fixed_writes |= operand.mask;
+                continue;
+            }
+            for part in 0..parts {
+                if let Some(output) = self.slots[t].locks[o][part] {
+                    let list = self.list_of[new][part].unwrap();
+                    self.relink_output(output, list);
+                }
+            }
+            self.problem.to_mut().instructions[t].operands[o].register = new;
         }
-        {
-            let problem = self.problem.to_mut();
-            problem.instructions[mv].operands[0].mask = moved;
-            problem.instructions[mv].operands[1].mask = moved;
-            problem.instructions[mv].full_period = full_period;
-        }
-        self.moves.push(mv);
-        self.todo.insert(0, mv);
-        self.count_issue(mv, 1);
-        Some(true)
     }
 
     /// Input lock of a move on the old register's current value and its
@@ -2852,6 +2980,7 @@ impl<'a> Table<'a> {
         self.overlap_moves = !wrangler_b;
         self.move_flag_ac = false;
         self.move_flag_ad = false;
+
         loop {
             steps += 1;
             self.work.steps = steps;
@@ -2862,156 +2991,214 @@ impl<'a> Table<'a> {
             self.first_failure = None;
             self.build_candidates(limit);
             self.cursor = self.done.last().map_or(0, |&i| self.slots[i].line);
+
             if self.candidates.is_empty() {
-                if !self.todo.is_empty() {
+                match self.finish_or_backtrack(wrangler_b, &mut trace) {
+                    Some(result) => return result.map(|()| trace),
+                    None => continue,
+                }
+            }
+
+            let attempt = self.place_a_candidate(strategy, budget, &mut steps, &mut trace)?;
+            match attempt {
+                Placement::Inserted | Placement::Restart => continue,
+                Placement::Failed => {
                     if self.done.is_empty() {
                         return Err(Failure::NoSchedule);
                     }
                     self.backtrack(wrangler_b);
                     trace.extend(self.undo_log.drain(..).map(|i| (i, -1, 9)));
-                    continue;
                 }
-                if self.period > 0 {
-                    if let Some(first) = self.unsafe_effect() {
-                        self.first_failure = Some(first);
-                        self.backtrack(wrangler_b);
-                        trace.extend(self.undo_log.drain(..).map(|i| (i, -1, 9)));
-                        continue;
-                    }
-                    return Ok(trace);
-                }
-                self.end = self.done_size();
-                if self.rows.len() < self.end as usize + 1 {
-                    self.rows.resize(self.end as usize + 1, [None, None]);
-                }
-                return Ok(trace);
-            }
-            let mut inserted = false;
-            let mut failed = false;
-            let mut restart = false;
-            loop {
-                let Some((index, proposal, preferred)) = self.rank(strategy) else {
-                    failed = true;
-                    break;
-                };
-                // A loop move takes its pipe before placement.
-                if self.period > 0
-                    && (self.insn(index).is_move || self.insn(index).dual_copy)
-                    && !self.choose_move_pipe(index, preferred)
-                {
-                    failed = true;
-                    break;
-                }
-                let pipes = self.insn(index).pipes;
-                let mut line = proposal;
-                let mut pipe = if pipes == 3 {
-                    preferred & 1
-                } else {
-                    u8::from(pipes != 1)
-                };
-                let mut found = self.find_line(index, &mut line, &mut pipe);
-                if !found && wrangler_b {
-                    line = self.slots[index].earliest;
-                    pipe = if pipes == 3 {
-                        preferred & 1
-                    } else {
-                        u8::from(pipes != 1)
-                    };
-                    found = self.find_line(index, &mut line, &mut pipe);
-                }
-                if found {
-                    self.first_failure = None;
-                    if self.period > 0 {
-                        let window = if self.insn(index).full_period {
-                            self.period
-                        } else {
-                            self.period >> 1
-                        };
-                        self.drag_setters(index, line, window, 0);
-                    }
-                    let mut next = line;
-                    let mut result = self.check(index, Position { line, pipe }, &mut next);
-                    if self.period > 0
-                        && self.first_failure.is_none()
-                        && result & MOVE_NEEDED != 0
-                        && self.drag_setters(index, line, self.period, 4) != 0
-                    {
-                        let mut next = line;
-                        result = self.check(index, Position { line, pipe }, &mut next);
-                    }
-                    if self.period > 0 && std::env::var_os("VCL_PLACE_TRACE").is_some() {
-                        crate::trace!(
-                            "  place step {} {index} at {line} pipe {pipe} check {result:#x} abort {:?}",
-                            trace.len(),
-                            self.first_failure
-                        );
-                    }
-                    if self.first_failure.is_none() && result == 0 {
-                        self.insert(index, Position { line, pipe });
-                        trace.push((index, line, pipe));
-                        inserted = true;
-                        break;
-                    }
-                    if self.period > 0 && self.first_failure.is_none() && result & MOVE_NEEDED != 0
-                    {
-                        let generated = self.generate_move(index, line);
-                        if std::env::var_os("VCL_PLACE_TRACE").is_some() {
-                            crate::trace!(
-                                "  genmove {index} -> {generated} ac {} ad {}",
-                                self.move_flag_ac,
-                                self.move_flag_ad
-                            );
-                        }
-                        match generated {
-                            0 => {
-                                restart = true;
-                                break;
-                            }
-                            1 if self.move_flag_ad && !self.move_flag_ac => {
-                                self.first_failure = self.done.first().copied();
-                                self.move_flag_ac = true;
-                                self.move_flag_ad = false;
-                            }
-                            _ => {}
-                        }
-                        failed = true;
-                        break;
-                    }
-                    if wrangler_b || self.first_failure.is_some() {
-                        failed = true;
-                        break;
-                    }
-                } else if wrangler_b {
-                    failed = true;
-                    break;
-                }
-                // Wrangler A discards a failed candidate and ranks again.
-                // In a loop this inner search also spends the step budget.
-                if self.period > 0 {
-                    steps += 1;
-                    self.work.steps = steps;
-                    if steps > budget {
-                        self.failed_trace = std::mem::take(&mut trace);
-                        return Err(Failure::Budget);
-                    }
-                }
-                self.candidates.retain(|&i| i != index);
-                if self.candidates.is_empty() {
-                    failed = true;
-                    break;
-                }
-            }
-            if inserted || restart {
-                continue;
-            }
-            if failed {
-                if self.done.is_empty() {
-                    return Err(Failure::NoSchedule);
-                }
-                self.backtrack(wrangler_b);
-                trace.extend(self.undo_log.drain(..).map(|i| (i, -1, 9)));
+                Placement::Discard => unreachable!("the candidate loop resolves a discard"),
             }
         }
+    }
+
+    /// Step of `wrangle` with no candidates: `None` to go on with the next
+    /// step (after a backtrack), `Some` to end the run with that result.
+    fn finish_or_backtrack(
+        &mut self,
+        wrangler_b: bool,
+        trace: &mut Vec<(usize, i32, u8)>,
+    ) -> Option<Result<(), Failure>> {
+        if !self.todo.is_empty() {
+            if self.done.is_empty() {
+                return Some(Err(Failure::NoSchedule));
+            }
+            self.backtrack(wrangler_b);
+            trace.extend(self.undo_log.drain(..).map(|i| (i, -1, 9)));
+            return None;
+        }
+
+        if self.period > 0 {
+            if let Some(first) = self.unsafe_effect() {
+                self.first_failure = Some(first);
+                self.backtrack(wrangler_b);
+                trace.extend(self.undo_log.drain(..).map(|i| (i, -1, 9)));
+                return None;
+            }
+            return Some(Ok(()));
+        }
+
+        self.end = self.done_size();
+        if self.rows.len() < self.end as usize + 1 {
+            self.rows.resize(self.end as usize + 1, [None, None]);
+        }
+        Some(Ok(()))
+    }
+
+    /// Rank candidates and try them until one is placed or the step fails.
+    /// Returns `Inserted`, `Restart` or `Failed`; a ran-out budget is an error.
+    fn place_a_candidate(
+        &mut self,
+        strategy: Strategy,
+        budget: usize,
+        steps: &mut usize,
+        trace: &mut Vec<(usize, i32, u8)>,
+    ) -> Result<Placement, Failure> {
+        let wrangler_b = !strategy.wrangler_a();
+
+        loop {
+            let Some((index, proposal, preferred)) = self.rank(strategy) else {
+                return Ok(Placement::Failed);
+            };
+            // A loop move takes its pipe before placement.
+            if self.period > 0
+                && (self.insn(index).is_move || self.insn(index).dual_copy)
+                && !self.choose_move_pipe(index, preferred)
+            {
+                return Ok(Placement::Failed);
+            }
+
+            let placement = match self.locate_line(index, proposal, preferred, wrangler_b) {
+                Some((line, pipe)) => self.place_at_line(index, line, pipe, wrangler_b, trace),
+                None if wrangler_b => Placement::Failed,
+                None => Placement::Discard,
+            };
+            if placement != Placement::Discard {
+                return Ok(placement);
+            }
+
+            // Wrangler A discards a failed candidate and ranks again.
+            // In a loop this inner search also spends the step budget.
+            if self.period > 0 {
+                *steps += 1;
+                self.work.steps = *steps;
+                if *steps > budget {
+                    self.failed_trace = std::mem::take(trace);
+                    return Err(Failure::Budget);
+                }
+            }
+            self.candidates.retain(|&i| i != index);
+            if self.candidates.is_empty() {
+                return Ok(Placement::Failed);
+            }
+        }
+    }
+
+    /// The first line and pipe where a ranked candidate can be tried;
+    /// wrangler B searches again from its earliest line.
+    fn locate_line(
+        &mut self,
+        index: usize,
+        proposal: i32,
+        preferred: u8,
+        wrangler_b: bool,
+    ) -> Option<(i32, u8)> {
+        let pipes = self.insn(index).pipes;
+        let mut line = proposal;
+        let mut pipe = if pipes == 3 {
+            preferred & 1
+        } else {
+            u8::from(pipes != 1)
+        };
+        let mut found = self.find_line(index, &mut line, &mut pipe);
+        if !found && wrangler_b {
+            line = self.slots[index].earliest;
+            pipe = if pipes == 3 {
+                preferred & 1
+            } else {
+                u8::from(pipes != 1)
+            };
+            found = self.find_line(index, &mut line, &mut pipe);
+        }
+        found.then_some((line, pipe))
+    }
+
+    /// Check and insert a candidate at a found line, or synthesize a move
+    /// for it; `Discard` leaves a failed wrangler A candidate to be dropped.
+    fn place_at_line(
+        &mut self,
+        index: usize,
+        line: i32,
+        pipe: u8,
+        wrangler_b: bool,
+        trace: &mut Vec<(usize, i32, u8)>,
+    ) -> Placement {
+        self.first_failure = None;
+        if self.period > 0 {
+            let window = if self.insn(index).full_period {
+                self.period
+            } else {
+                self.period >> 1
+            };
+            self.drag_setters(index, line, window, 0);
+        }
+
+        let mut next = line;
+        let mut result = self.check(index, Position { line, pipe }, &mut next);
+        if self.period > 0
+            && self.first_failure.is_none()
+            && result & MOVE_NEEDED != 0
+            && self.drag_setters(index, line, self.period, 4) != 0
+        {
+            let mut next = line;
+            result = self.check(index, Position { line, pipe }, &mut next);
+        }
+        if self.period > 0 && std::env::var_os("VCL_PLACE_TRACE").is_some() {
+            crate::trace!(
+                "  place step {} {index} at {line} pipe {pipe} check {result:#x} abort {:?}",
+                trace.len(),
+                self.first_failure
+            );
+        }
+
+        if self.first_failure.is_none() && result == 0 {
+            self.insert(index, Position { line, pipe });
+            trace.push((index, line, pipe));
+            return Placement::Inserted;
+        }
+        if self.period > 0 && self.first_failure.is_none() && result & MOVE_NEEDED != 0 {
+            return self.placement_after_move(index, line);
+        }
+        if wrangler_b || self.first_failure.is_some() {
+            return Placement::Failed;
+        }
+        Placement::Discard
+    }
+
+    /// Synthesize a move for a candidate whose inputs cannot reach their
+    /// producers: `Restart` when one was queued, otherwise `Failed`.
+    fn placement_after_move(&mut self, index: usize, line: i32) -> Placement {
+        let generated = self.generate_move(index, line);
+        if std::env::var_os("VCL_PLACE_TRACE").is_some() {
+            crate::trace!(
+                "  genmove {index} -> {generated} ac {} ad {}",
+                self.move_flag_ac,
+                self.move_flag_ad
+            );
+        }
+
+        match generated {
+            0 => return Placement::Restart,
+            1 if self.move_flag_ad && !self.move_flag_ac => {
+                self.first_failure = self.done.first().copied();
+                self.move_flag_ac = true;
+                self.move_flag_ad = false;
+            }
+            _ => {}
+        }
+        Placement::Failed
     }
 
     /// Move check for an already placed instruction, linear.
@@ -3614,75 +3801,103 @@ impl<'a> Table<'a> {
         self.end_limit = self.end;
         loop {
             let mut moved = 0;
+
             for row in 0..self.end.max(0) {
                 for slot in 0..2 {
                     let Some(index) = self.rows[row as usize][slot] else {
                         continue;
                     };
-                    let line = self.slots[index].line;
-                    let mut balance = 0;
-                    let mut first_use = IMPOSSIBLE;
-                    for (o, operand) in self.insn(index).operands.iter().enumerate() {
-                        match operand.direction {
-                            Direction::Write => {
-                                for part in 0..4 {
-                                    if operand.mask & (1 << part) == 0 {
-                                        continue;
-                                    }
-                                    balance += 1;
-                                    if let Some(lock) = self.slots[index].locks[o][part] {
-                                        let l = &self.locks[lock];
-                                        if l.total_users != 0 && l.first_use < first_use {
-                                            first_use = l.first_use;
-                                        }
-                                    }
-                                }
-                            }
-                            Direction::Read => balance -= operand.mask.count_ones() as i32,
-                        }
-                    }
-                    if first_use >= IMPOSSIBLE || balance < 0 {
-                        continue;
-                    }
-                    let mut target = None;
-                    let mut candidate = first_use;
-                    // Placement already specialized a dual-issue move to
-                    // its upper or lower form, so it sinks within that pipe.
-                    let pipe = self.slots[index].pipe;
-                    while line < candidate {
-                        let fits = (self.can_move(
-                            index,
-                            Position {
-                                line: candidate,
-                                pipe,
-                            },
-                        ) == 0)
-                            .then_some(pipe);
-                        if let Some(pipe) = fits {
-                            target = Some(Position {
-                                line: candidate,
-                                pipe,
-                            });
-                            break;
-                        }
-                        candidate -= 1;
-                    }
-                    if let Some(position) = target {
-                        if std::env::var_os("VCL_EXTENT_TRACE").is_some() {
-                            crate::trace!(
-                                "extent {index} {line} -> {} first_use {first_use}",
-                                position.line
-                            );
-                        }
-                        self.relocate(index, position);
+                    if self.sink_to_first_use(index) {
                         moved += 1;
                     }
                 }
             }
+
             if moved == 0 {
                 break;
             }
         }
+    }
+
+    /// Move one placed producer down toward its first use; true when it moved.
+    fn sink_to_first_use(&mut self, index: usize) -> bool {
+        let line = self.slots[index].line;
+        let Some(first_use) = self.extent_first_use(index) else {
+            return false;
+        };
+
+        let Some(position) = self.sink_target(index, first_use) else {
+            return false;
+        };
+
+        if std::env::var_os("VCL_EXTENT_TRACE").is_some() {
+            crate::trace!(
+                "extent {index} {line} -> {} first_use {first_use}",
+                position.line
+            );
+        }
+        self.relocate(index, position);
+        true
+    }
+
+    /// Earliest first use among an instruction's written components, or `None`
+    /// when it has no used output or reads more components than it writes.
+    fn extent_first_use(&self, index: usize) -> Option<i32> {
+        let mut balance = 0;
+        let mut first_use = IMPOSSIBLE;
+
+        for (o, operand) in self.insn(index).operands.iter().enumerate() {
+            match operand.direction {
+                Direction::Write => {
+                    for part in 0..4 {
+                        if operand.mask & (1 << part) == 0 {
+                            continue;
+                        }
+                        balance += 1;
+                        if let Some(lock) = self.slots[index].locks[o][part] {
+                            let l = &self.locks[lock];
+                            if l.total_users != 0 && l.first_use < first_use {
+                                first_use = l.first_use;
+                            }
+                        }
+                    }
+                }
+                Direction::Read => balance -= operand.mask.count_ones() as i32,
+            }
+        }
+
+        if first_use >= IMPOSSIBLE || balance < 0 {
+            return None;
+        }
+        Some(first_use)
+    }
+
+    /// The latest line at or before `first_use` (and after the current one)
+    /// where the instruction can move, in its own pipe.
+    fn sink_target(&mut self, index: usize, first_use: i32) -> Option<Position> {
+        let line = self.slots[index].line;
+        let mut candidate = first_use;
+        // Placement already specialized a dual-issue move to
+        // its upper or lower form, so it sinks within that pipe.
+        let pipe = self.slots[index].pipe;
+
+        while line < candidate {
+            if self.can_move(
+                index,
+                Position {
+                    line: candidate,
+                    pipe,
+                },
+            ) == 0
+            {
+                return Some(Position {
+                    line: candidate,
+                    pipe,
+                });
+            }
+            candidate -= 1;
+        }
+        None
     }
 
     pub fn rows(&self) -> Vec<[Option<usize>; 2]> {
@@ -3775,63 +3990,89 @@ impl<'a> Table<'a> {
         let mut earliest = insn.minimum_position + self.start;
         let mut interlock = -1;
         let line = self.slots[index].line;
+
         for (o, operand) in insn.operands.iter().enumerate() {
             match operand.direction {
                 Direction::Read => {
-                    for part in 0..4 {
-                        let Some(input) = self.slots[index].locks[o][part] else {
-                            continue;
-                        };
-                        if self.locks[input].mode == 2 {
-                            continue;
-                        }
-                        let Some(producer) = self.locks[input].parent else {
-                            continue;
-                        };
-                        let p = &self.locks[producer];
-                        if p.line >= 0 {
-                            let value = i32::from(p.latency)
-                                + p.line
-                                + i32::from(self.locks[input].latency);
-                            if earliest <= value {
-                                earliest = value;
-                                if operand.blocking && operand.input_offset == 0 {
-                                    interlock = value;
-                                }
-                            }
-                        }
-                    }
+                    self.earliest_after_producers(index, o, &mut earliest, &mut interlock);
                 }
                 Direction::Write => {
                     if !self.problem.registers[operand.register].throughput_tracked {
                         continue;
                     }
-                    for part in 0..4 {
-                        let Some(output) = self.slots[index].locks[o][part] else {
-                            continue;
-                        };
-                        let list = self.locks[output].list;
-                        for &other in &self.lists[list].sorted {
-                            if other == output {
-                                break;
-                            }
-                            let v = &self.locks[other];
-                            if v.line >= 0 {
-                                let value = i32::from(v.throughput) + v.line;
-                                if earliest <= value {
-                                    interlock = value;
-                                    earliest = value;
-                                }
-                            }
-                        }
-                    }
+                    self.earliest_after_throughput(index, o, &mut earliest, &mut interlock);
                 }
             }
         }
+
         if insn.branch || insn.protected_write {
             earliest = line;
         }
         (earliest, interlock == earliest)
+    }
+
+    /// Raise `earliest` past the placed producers of a read operand's
+    /// components; an interlocked producer also sets `interlock`.
+    fn earliest_after_producers(
+        &self,
+        index: usize,
+        o: usize,
+        earliest: &mut i32,
+        interlock: &mut i32,
+    ) {
+        let operand = &self.insn(index).operands[o];
+
+        for part in 0..4 {
+            let Some(input) = self.slots[index].locks[o][part] else {
+                continue;
+            };
+            if self.locks[input].mode == 2 {
+                continue;
+            }
+            let Some(producer) = self.locks[input].parent else {
+                continue;
+            };
+            let p = &self.locks[producer];
+            if p.line >= 0 {
+                let value = i32::from(p.latency) + p.line + i32::from(self.locks[input].latency);
+                if *earliest <= value {
+                    *earliest = value;
+                    if operand.blocking && operand.input_offset == 0 {
+                        *interlock = value;
+                    }
+                }
+            }
+        }
+    }
+
+    /// Raise `earliest` past the throughput predecessors of a written
+    /// operand's components, setting `interlock` for each one.
+    fn earliest_after_throughput(
+        &self,
+        index: usize,
+        o: usize,
+        earliest: &mut i32,
+        interlock: &mut i32,
+    ) {
+        for part in 0..4 {
+            let Some(output) = self.slots[index].locks[o][part] else {
+                continue;
+            };
+            let list = self.locks[output].list;
+            for &other in &self.lists[list].sorted {
+                if other == output {
+                    break;
+                }
+                let v = &self.locks[other];
+                if v.line >= 0 {
+                    let value = i32::from(v.throughput) + v.line;
+                    if *earliest <= value {
+                        *interlock = value;
+                        *earliest = value;
+                    }
+                }
+            }
+        }
     }
 
     /// Latest line: branches stay; others may reach the end
@@ -4088,66 +4329,18 @@ impl<'a> Table<'a> {
         self.end_limit = self.end;
         let old_start = self.start;
         let mut new_start;
+
         loop {
             let mut moved = 0;
             new_start = self.end;
+
             for row in (self.start..self.end).rev() {
                 for slot in 0..2 {
                     let Some(index) = self.rows[row as usize][slot] else {
                         continue;
                     };
-                    if !self.insn(index).branch {
-                        let line = self.slots[index].line;
-                        let mut bound = self.end - 1 - self.insn(index).end_distance;
-                        for (o, operand) in self.insn(index).operands.iter().enumerate() {
-                            if operand.direction != Direction::Write {
-                                continue;
-                            }
-                            for part in 0..4 {
-                                if operand.mask & (1 << part) == 0 {
-                                    continue;
-                                }
-                                let mut b = self.end - 1;
-                                if let Some(lock) = self.slots[index].locks[o][part] {
-                                    let l = &self.locks[lock];
-                                    if l.user_count != 0 {
-                                        b = l.first_use - i32::from(l.latency);
-                                    }
-                                    if std::env::var_os("VCL_DRAG_TRACE").is_some() {
-                                        crate::trace!(
-                                            "    out reg {} part {part} users {} first {} latency {} users {:?}",
-                                            operand.register,
-                                            l.user_count,
-                                            l.first_use,
-                                            l.latency,
-                                            l.users
-                                                .iter()
-                                                .map(|&u| (self.locks[u].owner, self.locks[u].line))
-                                                .collect::<Vec<_>>()
-                                        );
-                                    }
-                                }
-                                bound = bound.min(b);
-                            }
-                        }
-                        if self.insn(index).protected_read {
-                            bound = line;
-                        }
-                        if std::env::var_os("VCL_DRAG_TRACE").is_some() {
-                            crate::trace!(
-                                "  drag {index} {} line {line} bound {bound}",
-                                self.problem.names.get(index).map_or("?", String::as_str)
-                            );
-                        }
-                        if line < bound && self.local_move(index, bound, line, -1) {
-                            if std::env::var_os("VCL_RAW_MOVES").is_some() {
-                                crate::trace!(
-                                    "  drag {index} {line} -> {}",
-                                    self.slots[index].line
-                                );
-                            }
-                            moved += 1;
-                        }
+                    if !self.insn(index).branch && self.drag_one(index) {
+                        moved += 1;
                     }
                     let value = self.slots[index].line - self.insn(index).minimum_position;
                     new_start = new_start.min(value);
@@ -4156,6 +4349,7 @@ impl<'a> Table<'a> {
                     }
                 }
             }
+
             if self.end <= new_start {
                 return Some(0);
             }
@@ -4163,12 +4357,76 @@ impl<'a> Table<'a> {
                 break;
             }
         }
+
         if self.end - new_start < self.problem.minimum_length {
             new_start = self.end - self.problem.minimum_length;
         }
         self.start = new_start;
         self.end_limit = self.end;
         Some(new_start - old_start)
+    }
+
+    /// Drag one non-branch instruction down toward its bound; true when it moved.
+    fn drag_one(&mut self, index: usize) -> bool {
+        let line = self.slots[index].line;
+        let bound = self.drag_bound(index, line);
+        if std::env::var_os("VCL_DRAG_TRACE").is_some() {
+            crate::trace!(
+                "  drag {index} {} line {line} bound {bound}",
+                self.problem.names.get(index).map_or("?", String::as_str)
+            );
+        }
+
+        if line < bound && self.local_move(index, bound, line, -1) {
+            if std::env::var_os("VCL_RAW_MOVES").is_some() {
+                crate::trace!("  drag {index} {line} -> {}", self.slots[index].line);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// The latest line a drag-down may place an instruction at, from its end
+    /// distance and the first use of each written component.
+    fn drag_bound(&self, index: usize, line: i32) -> i32 {
+        let mut bound = self.end - 1 - self.insn(index).end_distance;
+
+        for (o, operand) in self.insn(index).operands.iter().enumerate() {
+            if operand.direction != Direction::Write {
+                continue;
+            }
+            for part in 0..4 {
+                if operand.mask & (1 << part) == 0 {
+                    continue;
+                }
+                let mut b = self.end - 1;
+                if let Some(lock) = self.slots[index].locks[o][part] {
+                    let l = &self.locks[lock];
+                    if l.user_count != 0 {
+                        b = l.first_use - i32::from(l.latency);
+                    }
+                    if std::env::var_os("VCL_DRAG_TRACE").is_some() {
+                        crate::trace!(
+                            "    out reg {} part {part} users {} first {} latency {} users {:?}",
+                            operand.register,
+                            l.user_count,
+                            l.first_use,
+                            l.latency,
+                            l.users
+                                .iter()
+                                .map(|&u| (self.locks[u].owner, self.locks[u].line))
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                }
+                bound = bound.min(b);
+            }
+        }
+
+        if self.insn(index).protected_read {
+            bound = line;
+        }
+        bound
     }
 
     /// Linear raw reduction.
@@ -4406,6 +4664,7 @@ impl<'a> Table<'a> {
             .collect();
         self.skipped = vec![false; self.rows.len()];
         let mut inserted = 0;
+
         for row in self.start..self.end {
             let now = self.stamps[row as usize];
             for slot in 0..2 {
@@ -4413,79 +4672,115 @@ impl<'a> Table<'a> {
                     continue;
                 };
                 for o in 0..self.insn(index).operands.len() {
-                    let operand = &self.insn(index).operands[o];
-                    if operand.direction != Direction::Write
-                        || operand.blocking
-                        || !operand.observed
-                    {
-                        continue;
-                    }
-                    let Some((pipes, kind, source, mut mask)) = self.can_cap(index, o, scratch)
-                    else {
-                        continue;
-                    };
-                    let written = operand.register;
-                    let mut latency = i32::from(operand.latency);
-                    if self.problem.registers[written].global_id == Some(0x34) && latency > 1 {
-                        latency -= 1;
-                    }
-                    let mut candidate: Option<(i32, u8, u8, i32)> = None;
-                    let mut busy = 0;
-                    let mut line = row;
-                    loop {
-                        line += 1;
-                        if line >= self.end || mask == 0 {
-                            break;
-                        }
-                        if latency + now <= self.stamps[line as usize] {
-                            for p in 0..2u8 {
-                                if pipes >> p & 1 == 0 || self.slot_used(line, p) {
-                                    continue;
-                                }
-                                if self.entries(line) == 0 && candidate.is_some() {
-                                    break;
-                                }
-                                candidate = Some((line, p, mask, busy));
-                                break;
-                            }
-                        }
-                        if self.row_reads(line, written) {
-                            break;
-                        }
-                        if self.entries(line) != 0 {
-                            busy += 1;
-                        }
-                        if let Some(source) = source {
-                            mask &= !self.row_write_mask(line, source);
-                        }
-                    }
-                    if let Some((line, p, mask, busy)) = candidate {
-                        if latency <= busy {
-                            continue;
-                        }
-                        self.caps.push(Cap {
-                            row: line,
-                            slot: p,
-                            kind,
-                            producer: index,
-                            operand: match kind {
-                                CapKind::Abs => self.insn(index).operands.iter().position(|w| {
-                                    w.direction == Direction::Write && Some(w.register) == source
-                                }),
-                                CapKind::WaitQ => Some(o),
-                                CapKind::WaitP => self.insn(index).operands.iter().position(|w| {
-                                    w.direction == Direction::Write && Some(w.register) == source
-                                }),
-                            },
-                            mask,
-                            source,
-                        });
+                    if self.insert_cap(row, now, index, o, scratch) {
                         inserted += 1;
                     }
                 }
             }
         }
         inserted
+    }
+
+    /// Try to add a cap after one written operand of the instruction at
+    /// `row`; true when one was added.
+    fn insert_cap(
+        &mut self,
+        row: i32,
+        now: i32,
+        index: usize,
+        o: usize,
+        scratch: &dyn Fn(usize) -> Option<usize>,
+    ) -> bool {
+        let operand = &self.insn(index).operands[o];
+        if operand.direction != Direction::Write || operand.blocking || !operand.observed {
+            return false;
+        }
+        let Some((pipes, kind, source, mask)) = self.can_cap(index, o, scratch) else {
+            return false;
+        };
+        let written = operand.register;
+        let mut latency = i32::from(operand.latency);
+        if self.problem.registers[written].global_id == Some(0x34) && latency > 1 {
+            latency -= 1;
+        }
+
+        let candidate = self.cap_candidate(row, now, written, latency, pipes, source, mask);
+        let Some((line, p, mask, busy)) = candidate else {
+            return false;
+        };
+        if latency <= busy {
+            return false;
+        }
+
+        self.caps.push(Cap {
+            row: line,
+            slot: p,
+            kind,
+            producer: index,
+            operand: match kind {
+                CapKind::Abs => self
+                    .insn(index)
+                    .operands
+                    .iter()
+                    .position(|w| w.direction == Direction::Write && Some(w.register) == source),
+                CapKind::WaitQ => Some(o),
+                CapKind::WaitP => self
+                    .insn(index)
+                    .operands
+                    .iter()
+                    .position(|w| w.direction == Direction::Write && Some(w.register) == source),
+            },
+            mask,
+            source,
+        });
+        true
+    }
+
+    /// Scan the rows after `row` for the last free slot a cap could take:
+    /// returns (line, pipe, mask, busy rows passed).
+    #[allow(clippy::too_many_arguments)]
+    fn cap_candidate(
+        &self,
+        row: i32,
+        now: i32,
+        written: usize,
+        latency: i32,
+        pipes: u8,
+        source: Option<usize>,
+        mut mask: u8,
+    ) -> Option<(i32, u8, u8, i32)> {
+        let mut candidate: Option<(i32, u8, u8, i32)> = None;
+        let mut busy = 0;
+        let mut line = row;
+
+        loop {
+            line += 1;
+            if line >= self.end || mask == 0 {
+                break;
+            }
+            if latency + now <= self.stamps[line as usize] {
+                for p in 0..2u8 {
+                    if pipes >> p & 1 == 0 || self.slot_used(line, p) {
+                        continue;
+                    }
+                    if self.entries(line) == 0 && candidate.is_some() {
+                        break;
+                    }
+                    candidate = Some((line, p, mask, busy));
+                    break;
+                }
+            }
+            if self.row_reads(line, written) {
+                break;
+            }
+            if self.entries(line) != 0 {
+                busy += 1;
+            }
+            if let Some(source) = source {
+                mask &= !self.row_write_mask(line, source);
+            }
+        }
+        candidate
     }
 
     /// Users of one written component: placed lock users and caps, in row
@@ -4521,187 +4816,23 @@ impl<'a> Table<'a> {
             self.skipped = vec![false; self.rows.len()];
         }
         let mut length = self.end - self.start;
+
         for row in self.start..self.end {
             if self.entries(row) != 0 {
                 continue;
             }
             let now = self.stamps[row as usize];
-            // In-flight writes issued by earlier rows.
-            struct Flight {
-                index: usize,
-                operand: usize,
-                part: usize,
-                remaining: i32,
-            }
-            let mut flights = Vec::new();
-            for earlier in self.start..row {
-                if self.skipped[earlier as usize] {
-                    continue;
-                }
-                for &index in self.rows[earlier as usize].iter().flatten() {
-                    for (o, operand) in self.insn(index).operands.iter().enumerate() {
-                        if operand.direction != Direction::Write {
-                            continue;
-                        }
-                        let ready = self.stamps[earlier as usize] + i32::from(operand.latency);
-                        if ready <= now {
-                            continue;
-                        }
-                        for part in 0..4 {
-                            if operand.mask >> part & 1 != 0 {
-                                flights.push(Flight {
-                                    index,
-                                    operand: o,
-                                    part,
-                                    remaining: ready - now,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            let mut recovery = self.end;
-            for cap in &self.caps {
-                if cap.operand.is_some() || cap.kind != CapKind::Abs {
-                    continue;
-                }
-                let line = self.slots[cap.producer].line;
-                if line < self.start || line >= row || self.skipped[line as usize] {
-                    continue;
-                }
-                let latency = self
-                    .insn(cap.producer)
-                    .first_output
-                    .map_or(1, |f| i32::from(f.latency));
-                let ready = self.stamps[line as usize] + latency;
-                if latency > 1 && ready > now && self.stamps[cap.row as usize] == ready {
-                    recovery = recovery.min(cap.row);
-                }
-            }
-            for flight in &flights {
-                let operand = &self.insn(flight.index).operands[flight.operand];
-                let register = operand.register;
-                if self.problem.registers[register].throughput_tracked {
-                    let limit = if self.problem.registers[register].global_id == Some(0x34) {
-                        flight.remaining - 1
-                    } else {
-                        flight.remaining
-                    };
-                    let mut line = row;
-                    loop {
-                        line += 1;
-                        if line >= self.end || now + limit < self.stamps[line as usize] {
-                            break;
-                        }
-                        if self.row_write_mask(line, register) != 0 {
-                            if self.stamps[line as usize] == now + limit {
-                                recovery = recovery.min(line);
-                            }
-                            break;
-                        }
-                    }
-                }
-                if operand.latency > 1 {
-                    for (user_row, blocking) in
-                        self.component_users(flight.index, flight.operand, flight.part)
-                    {
-                        if !blocking {
-                            continue;
-                        }
-                        let tick = self.stamps[user_row as usize];
-                        if tick == now + flight.remaining && user_row < recovery {
-                            recovery = user_row;
-                        }
-                    }
-                }
-            }
-            let mut ok = !(row == self.end - 1 && !last_row_ok);
-            if ok {
-                for flight in &flights {
-                    let operand = &self.insn(flight.index).operands[flight.operand];
-                    let Some(&(user_row, user_blocking)) = self
-                        .component_users(flight.index, flight.operand, flight.part)
-                        .first()
-                    else {
-                        continue;
-                    };
-                    if !operand.blocking
-                        && !user_blocking
-                        && user_row < recovery
-                        && self.stamps[user_row as usize] - 1 < now + flight.remaining
-                    {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-            if ok
-                && row < self.end - 1
-                && row + 1 < recovery
-                && self.early_branch_slack(row + 1, now) == 1
-            {
-                ok = false;
-            }
-            if recovery < self.end {
-                let target = self.stamps[recovery as usize];
-                'shift: for line in row + 1..recovery {
-                    if !ok {
-                        break;
-                    }
-                    let tick = self.stamps[line as usize];
-                    for &index in self.rows[line as usize].iter().flatten() {
-                        for operand in &self.insn(index).operands {
-                            if operand.direction != Direction::Write || operand.blocking {
-                                continue;
-                            }
-                            let ready = i32::from(operand.latency) + tick - 1;
-                            if ready < target {
-                                let mut k = recovery;
-                                while k < self.end && self.stamps[k as usize] < ready {
-                                    k += 1;
-                                }
-                                if k < self.end
-                                    && self.stamps[k as usize] == ready
-                                    && self.row_reads(k, operand.register)
-                                {
-                                    ok = false;
-                                    break 'shift;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if ok {
-                for line in row + 1..recovery.min(self.end) {
-                    let tick = self.stamps[line as usize];
-                    if self.rows[line as usize]
-                        .iter()
-                        .flatten()
-                        .any(|&i| tick - 1 < self.insn(i).minimum_position)
-                    {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-            if ok && recovery >= self.end {
-                let distance = length - 1 - now;
-                for line in self.start..recovery.min(self.end) {
-                    if self.rows[line as usize]
-                        .iter()
-                        .flatten()
-                        .any(|&i| self.insn(i).end_distance < distance)
-                    {
-                        ok = false;
-                        break;
-                    }
-                }
-                if ok {
-                    ok = self.problem.minimum_length < length && (ordinary_end || length > 2);
-                }
-            }
-            if ok {
+            let flights = self.in_flight_writes(row, now);
+            let mut empty = EmptyRow {
+                row,
+                now,
+                recovery: self.end,
+                flights,
+            };
+            empty.recovery = self.recovery_row(&empty);
+
+            if self.can_skip_row(&empty, length, last_row_ok, ordinary_end) {
+                let recovery = empty.recovery;
                 self.skipped[row as usize] = true;
                 for line in row..recovery.min(self.end) {
                     self.stamps[line as usize] -= 1;
@@ -4711,6 +4842,207 @@ impl<'a> Table<'a> {
                 }
             }
         }
+    }
+
+    /// In-flight writes issued by rows before `row`, still pending at `now`.
+    fn in_flight_writes(&self, row: i32, now: i32) -> Vec<Flight> {
+        let mut flights = Vec::new();
+
+        for earlier in self.start..row {
+            if self.skipped[earlier as usize] {
+                continue;
+            }
+            for &index in self.rows[earlier as usize].iter().flatten() {
+                for (o, operand) in self.insn(index).operands.iter().enumerate() {
+                    if operand.direction != Direction::Write {
+                        continue;
+                    }
+                    let ready = self.stamps[earlier as usize] + i32::from(operand.latency);
+                    if ready <= now {
+                        continue;
+                    }
+                    for part in 0..4 {
+                        if operand.mask >> part & 1 != 0 {
+                            flights.push(Flight {
+                                index,
+                                operand: o,
+                                part,
+                                remaining: ready - now,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        flights
+    }
+
+    /// The first row after an empty row where pending writes land and the
+    /// rows below could shift up (the end when none does).
+    fn recovery_row(&self, empty: &EmptyRow) -> i32 {
+        let (row, now) = (empty.row, empty.now);
+        let mut recovery = self.end;
+
+        for cap in &self.caps {
+            if cap.operand.is_some() || cap.kind != CapKind::Abs {
+                continue;
+            }
+            let line = self.slots[cap.producer].line;
+            if line < self.start || line >= row || self.skipped[line as usize] {
+                continue;
+            }
+            let latency = self
+                .insn(cap.producer)
+                .first_output
+                .map_or(1, |f| i32::from(f.latency));
+            let ready = self.stamps[line as usize] + latency;
+            if latency > 1 && ready > now && self.stamps[cap.row as usize] == ready {
+                recovery = recovery.min(cap.row);
+            }
+        }
+
+        for flight in &empty.flights {
+            let operand = &self.insn(flight.index).operands[flight.operand];
+            let register = operand.register;
+            if self.problem.registers[register].throughput_tracked {
+                let limit = if self.problem.registers[register].global_id == Some(0x34) {
+                    flight.remaining - 1
+                } else {
+                    flight.remaining
+                };
+                let mut line = row;
+                loop {
+                    line += 1;
+                    if line >= self.end || now + limit < self.stamps[line as usize] {
+                        break;
+                    }
+                    if self.row_write_mask(line, register) != 0 {
+                        if self.stamps[line as usize] == now + limit {
+                            recovery = recovery.min(line);
+                        }
+                        break;
+                    }
+                }
+            }
+            if operand.latency > 1 {
+                for (user_row, blocking) in
+                    self.component_users(flight.index, flight.operand, flight.part)
+                {
+                    if !blocking {
+                        continue;
+                    }
+                    let tick = self.stamps[user_row as usize];
+                    if tick == now + flight.remaining && user_row < recovery {
+                        recovery = user_row;
+                    }
+                }
+            }
+        }
+        recovery
+    }
+
+    /// Whether removing the empty row keeps every timing constraint.
+    fn can_skip_row(
+        &self,
+        empty: &EmptyRow,
+        length: i32,
+        last_row_ok: bool,
+        ordinary_end: bool,
+    ) -> bool {
+        let (row, now, recovery) = (empty.row, empty.now, empty.recovery);
+
+        if row == self.end - 1 && !last_row_ok {
+            return false;
+        }
+        if self.unblocked_user_too_close(empty) {
+            return false;
+        }
+        if row < self.end - 1 && row + 1 < recovery && self.early_branch_slack(row + 1, now) == 1 {
+            return false;
+        }
+        if recovery < self.end && self.shift_breaks_read(empty) {
+            return false;
+        }
+
+        for line in row + 1..recovery.min(self.end) {
+            let tick = self.stamps[line as usize];
+            if self.rows[line as usize]
+                .iter()
+                .flatten()
+                .any(|&i| tick - 1 < self.insn(i).minimum_position)
+            {
+                return false;
+            }
+        }
+
+        if recovery >= self.end {
+            let distance = length - 1 - now;
+            for line in self.start..recovery.min(self.end) {
+                if self.rows[line as usize]
+                    .iter()
+                    .flatten()
+                    .any(|&i| self.insn(i).end_distance < distance)
+                {
+                    return false;
+                }
+            }
+            return self.problem.minimum_length < length && (ordinary_end || length > 2);
+        }
+        true
+    }
+
+    /// True when a pending non-blocking write has a non-blocking first user
+    /// that would then read it before it lands.
+    fn unblocked_user_too_close(&self, empty: &EmptyRow) -> bool {
+        for flight in &empty.flights {
+            let operand = &self.insn(flight.index).operands[flight.operand];
+            let Some(&(user_row, user_blocking)) = self
+                .component_users(flight.index, flight.operand, flight.part)
+                .first()
+            else {
+                continue;
+            };
+            if !operand.blocking
+                && !user_blocking
+                && user_row < empty.recovery
+                && self.stamps[user_row as usize] - 1 < empty.now + flight.remaining
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// True when shifting the rows between the empty row and its recovery row
+    /// up would land a non-blocking write on a row that reads the register.
+    fn shift_breaks_read(&self, empty: &EmptyRow) -> bool {
+        let recovery = empty.recovery;
+        let target = self.stamps[recovery as usize];
+
+        for line in empty.row + 1..recovery {
+            let tick = self.stamps[line as usize];
+            for &index in self.rows[line as usize].iter().flatten() {
+                for operand in &self.insn(index).operands {
+                    if operand.direction != Direction::Write || operand.blocking {
+                        continue;
+                    }
+                    let ready = i32::from(operand.latency) + tick - 1;
+                    if ready < target {
+                        let mut k = recovery;
+                        while k < self.end && self.stamps[k as usize] < ready {
+                            k += 1;
+                        }
+                        if k < self.end
+                            && self.stamps[k as usize] == ready
+                            && self.row_reads(k, operand.register)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Remaining issue lock of an early-sampled lower read.

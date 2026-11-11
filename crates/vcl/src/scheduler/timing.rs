@@ -264,7 +264,43 @@ pub fn replay(
     operations: &[TimingOperation],
     outputs: &[TimingOutput],
 ) -> Result<Replay, TimingError> {
+    validate_stream(rows, operations, outputs)?;
+
+    let mut state = ReplayState {
+        events: Vec::new(),
+        units: [0u32; 16],
+        time: 0u32,
+    };
+    let mut issue_times = Vec::with_capacity(rows.len());
+    let mut stalls = Vec::with_capacity(rows.len());
+
+    for (row_index, row) in rows.iter().enumerate() {
+        let row_stalls = state.stall_row(row, operations);
+        state.check_row_reads(row_index, row, operations)?;
+        issue_times.push(state.time);
+        stalls.push(row_stalls);
+        state.issue_row(row, operations)?;
+    }
+
+    let time = state.time;
+    let output_time = state.settle_outputs(outputs);
+    state.check_outputs(outputs, output_time)?;
+    Ok(Replay {
+        issue_times,
+        stalls,
+        elapsed: time,
+        drain_cycles: output_time - time,
+    })
+}
+
+/// Check that rows, operations and outputs are well formed for a replay.
+fn validate_stream(
+    rows: &[TimedRow],
+    operations: &[TimingOperation],
+    outputs: &[TimingOutput],
+) -> Result<(), TimingError> {
     let mut seen = BTreeSet::new();
+
     for (row_index, row) in rows.iter().enumerate() {
         if let Some(Synchronization::Vector {
             components,
@@ -304,6 +340,7 @@ pub fn replay(
             }
         }
     }
+
     for output in outputs {
         valid_mask(output.components)?;
         if output
@@ -313,31 +350,42 @@ pub fn replay(
             return Err(TimingError::InvalidProducer(output.producer.unwrap()));
         }
     }
-    let mut events: Vec<Event> = Vec::new();
-    let mut units = [0u32; 16];
-    let mut time = 0u32;
-    let mut issue_times = Vec::with_capacity(rows.len());
-    let mut stalls = Vec::with_capacity(rows.len());
-    for (row_index, row) in rows.iter().enumerate() {
+    Ok(())
+}
+
+/// Running state of a replay: pending write events, unit availability and
+/// the processor time.
+struct ReplayState {
+    events: Vec<Event>,
+    units: [u32; 16],
+    time: u32,
+}
+
+impl ReplayState {
+    /// Advance the time past the throughput, latency and synchronization
+    /// stalls of a row, returning how long each one lasted.
+    fn stall_row(&mut self, row: &TimedRow, operations: &[TimingOperation]) -> Stalls {
         let mut row_stalls = Stalls::default();
-        let mut ready = time;
+        let mut ready = self.time;
+
         for &operation in row.instructions.iter().flatten() {
             let operation = &operations[operation];
-            for (unit, &available) in units.iter().enumerate() {
+            for (unit, &available) in self.units.iter().enumerate() {
                 if operation.unit_mask & (1 << unit) != 0 {
                     ready = ready.max(available);
                 }
             }
         }
-        row_stalls.throughput = ready - time;
-        time = ready;
+        row_stalls.throughput = ready - self.time;
+        self.time = ready;
+
         for &operation in row.instructions.iter().flatten() {
             for read in operations[operation]
                 .reads
                 .iter()
                 .filter(|read| read.interlocked)
             {
-                ready = ready.max(latest_ready(&events, read.register, read.components));
+                ready = ready.max(latest_ready(&self.events, read.register, read.components));
             }
         }
         if let Some(Synchronization::Vector {
@@ -346,19 +394,34 @@ pub fn replay(
             ..
         }) = row.synchronization
         {
-            ready = ready.max(latest_ready(&events, register, components));
+            ready = ready.max(latest_ready(&self.events, register, components));
         }
-        row_stalls.latency = ready - time;
-        time = ready;
+        row_stalls.latency = ready - self.time;
+        self.time = ready;
+
         if let Some(sync) = row.synchronization
             && !matches!(sync, Synchronization::Vector { .. })
         {
             ready = ready.max(
-                latest_ready(&events, sync.register(), 0x7f).saturating_sub(sync.early_release()),
+                latest_ready(&self.events, sync.register(), 0x7f)
+                    .saturating_sub(sync.early_release()),
             );
         }
-        row_stalls.synchronization = ready - time;
-        time = ready;
+        row_stalls.synchronization = ready - self.time;
+        self.time = ready;
+        row_stalls
+    }
+
+    /// Check that a Vector cap and every read of the row see the value
+    /// definition they expect at the current time.
+    fn check_row_reads(
+        &self,
+        row_index: usize,
+        row: &TimedRow,
+        operations: &[TimingOperation],
+    ) -> Result<(), TimingError> {
+        let time = self.time;
+
         if let Some(Synchronization::Vector {
             register,
             components: mask,
@@ -366,7 +429,7 @@ pub fn replay(
         }) = row.synchronization
         {
             for component in components(mask) {
-                let observed = value_at(&events, register, component, time);
+                let observed = value_at(&self.events, register, component, time);
                 if observed != Some(producer) {
                     return Err(TimingError::CapReadMismatch {
                         row: row_index,
@@ -378,12 +441,13 @@ pub fn replay(
                 }
             }
         }
+
         // Completion of older pending writes during a stall is visible here.
         // Comparing producer identities catches timing-sensitive flag changes.
         for &operation_index in row.instructions.iter().flatten() {
             for read in &operations[operation_index].reads {
                 for component in components(read.components) {
-                    let observed = value_at(&events, read.register, component, time);
+                    let observed = value_at(&self.events, read.register, component, time);
                     if observed != read.producer {
                         return Err(TimingError::ReadMismatch {
                             row: row_index,
@@ -397,8 +461,18 @@ pub fn replay(
                 }
             }
         }
-        issue_times.push(time);
-        stalls.push(row_stalls);
+        Ok(())
+    }
+
+    /// Record the writes and unit occupancy of an issued row and step the
+    /// time past it.
+    fn issue_row(
+        &mut self,
+        row: &TimedRow,
+        operations: &[TimingOperation],
+    ) -> Result<(), TimingError> {
+        let time = self.time;
+
         for &operation_index in row.instructions.iter().flatten() {
             let operation = &operations[operation_index];
             for write in &operation.writes {
@@ -408,7 +482,7 @@ pub fn replay(
                 // The hardware gives upper writes priority for an entire
                 // register, even on disjoint components. Reject such collisions
                 // conservatively instead of losing a lower result silently.
-                if let Some(previous) = events.iter().find(|event| {
+                if let Some(previous) = self.events.iter().find(|event| {
                     event.register == write.register
                         && event.ready == completion
                         && event.writer != operation_index
@@ -420,7 +494,7 @@ pub fn replay(
                         cycle: completion,
                     });
                 }
-                events.push(Event {
+                self.events.push(Event {
                     writer: operation_index,
                     register: write.register,
                     components: write.components,
@@ -430,53 +504,64 @@ pub fn replay(
             let available = time
                 .checked_add(u32::from(operation.throughput))
                 .ok_or(TimingError::TimeOverflow)?;
-            for (unit, deadline) in units.iter_mut().enumerate() {
+            for (unit, deadline) in self.units.iter_mut().enumerate() {
                 if operation.unit_mask & (1 << unit) != 0 {
                     *deadline = (*deadline).max(available);
                 }
             }
         }
-        time = time.checked_add(1).ok_or(TimingError::TimeOverflow)?;
+        self.time = time.checked_add(1).ok_or(TimingError::TimeOverflow)?;
+        Ok(())
     }
-    let mut output_time = time;
-    for output in outputs {
-        // All pending writes to an escaping physical value must settle before
-        // the next separately replayed block can assume a stable input value.
-        output_time = output_time.max(latest_ready(&events, output.register, output.components));
-        for component in components(output.components) {
-            if let Some(producer) = output.producer
-                && let Some(event) = events
-                    .iter()
-                    .filter(|event| {
-                        event.writer == producer
-                            && event.register == output.register
-                            && event.components & (1 << component) != 0
-                    })
-                    .max_by_key(|event| event.ready)
-            {
-                output_time = output_time.max(event.ready);
+
+    /// The time when every pending write to an output has landed.
+    fn settle_outputs(&self, outputs: &[TimingOutput]) -> u32 {
+        let mut output_time = self.time;
+
+        for output in outputs {
+            // All pending writes to an escaping physical value must settle before
+            // the next separately replayed block can assume a stable input value.
+            output_time = output_time.max(latest_ready(
+                &self.events,
+                output.register,
+                output.components,
+            ));
+            for component in components(output.components) {
+                if let Some(producer) = output.producer
+                    && let Some(event) = self
+                        .events
+                        .iter()
+                        .filter(|event| {
+                            event.writer == producer
+                                && event.register == output.register
+                                && event.components & (1 << component) != 0
+                        })
+                        .max_by_key(|event| event.ready)
+                {
+                    output_time = output_time.max(event.ready);
+                }
             }
         }
+        output_time
     }
-    for output in outputs {
-        for component in components(output.components) {
-            let observed = value_at(&events, output.register, component, output_time);
-            if observed != output.producer {
-                return Err(TimingError::OutputMismatch {
-                    register: output.register,
-                    component,
-                    expected: output.producer,
-                    observed,
-                });
+
+    /// Check that every output holds its expected producer at `output_time`.
+    fn check_outputs(&self, outputs: &[TimingOutput], output_time: u32) -> Result<(), TimingError> {
+        for output in outputs {
+            for component in components(output.components) {
+                let observed = value_at(&self.events, output.register, component, output_time);
+                if observed != output.producer {
+                    return Err(TimingError::OutputMismatch {
+                        register: output.register,
+                        component,
+                        expected: output.producer,
+                        observed,
+                    });
+                }
             }
         }
+        Ok(())
     }
-    Ok(Replay {
-        issue_times,
-        stalls,
-        elapsed: time,
-        drain_cycles: output_time - time,
-    })
 }
 
 fn reduce_empty_rows(
@@ -524,7 +609,13 @@ pub fn compress(
     let mut reduced = rows.to_vec();
     let mut origins: Vec<_> = (0..rows.len()).collect();
     let mut inserted_waits = 0;
+
     if insert_waits {
+        let context = WaitContext {
+            operations,
+            outputs,
+            maximum_drain: baseline.drain_cycles,
+        };
         // Try consumers in physical order. The latest available compatible
         // slot can cap a producer without adding a row. A P cap releases one
         // cycle before P availability, so the next MFP can observe the result.
@@ -536,128 +627,21 @@ pub fn compress(
                     .copied()
                     .collect();
                 for wait in waits {
-                    let Some(consumer) = origins
-                        .iter()
-                        .position(|&origin| origin == original_consumer)
-                    else {
-                        continue;
-                    };
-                    let producer = if let Synchronization::Vector { producer, .. } = wait {
-                        Some(producer)
-                    } else {
-                        operations[operation_index]
-                            .reads
-                            .iter()
-                            .find(|read| read.register == wait.register())
-                            .and_then(|read| read.producer)
-                    };
-                    let Some(producer) = producer else {
-                        continue;
-                    };
-                    let Some(producer_row) = reduced
-                        .iter()
-                        .position(|row| row.instructions.contains(&Some(producer)))
-                    else {
-                        continue;
-                    };
-                    let current = replay(&reduced, operations, outputs)?;
-                    let mask = match wait {
-                        Synchronization::Vector { components, .. } => components,
-                        Synchronization::Q { .. } | Synchronization::P { .. } => 0x7f,
-                    };
-                    let Some(latency) = operations[producer]
-                        .writes
-                        .iter()
-                        .filter(|write| {
-                            write.register == wait.register() && write.components & mask != 0
-                        })
-                        .map(|write| u32::from(write.latency))
-                        .max()
-                    else {
-                        continue;
-                    };
-                    let available = current.issue_times[producer_row]
-                        .checked_add(latency)
-                        .ok_or(TimingError::TimeOverflow)?
-                        .saturating_sub(wait.early_release());
-                    // The original keeps the latest candidate sharing a
-                    // nonempty pair. With no such pair it keeps the first
-                    // eligible empty row, rather than the latest empty row.
-                    let mut empty_slot = None;
-                    let mut paired_slot = None;
-                    for (index, row) in reduced
-                        .iter()
-                        .enumerate()
-                        .take(consumer + 1)
-                        .skip(producer_row + 1)
-                    {
-                        if current.issue_times[index] < available
-                            || row.instructions[wait.issue_slot()].is_some()
-                            || row.synchronization.is_some()
-                            || row.protected
-                        {
-                            continue;
-                        }
-                        if row.instructions.iter().any(Option::is_some) {
-                            paired_slot = Some(index);
-                        } else {
-                            empty_slot.get_or_insert(index);
-                        }
-                    }
-                    let Some(cap_row) = paired_slot.or(empty_slot) else {
-                        continue;
-                    };
-                    let mut candidate = reduced.clone();
-                    candidate[cap_row].synchronization = Some(wait);
-                    if replay(&candidate, operations, outputs).is_err() {
-                        continue;
-                    }
-                    let mut candidate_origins = origins.clone();
-                    reduce_empty_rows(
-                        &mut candidate,
-                        &mut candidate_origins,
-                        operations,
-                        outputs,
-                        baseline.drain_cycles,
-                    );
-                    // The original cap pass runs before row reduction. A
-                    // vector cap may remain even when a second status resource
-                    // requires the explicit gap (for example ALU+DIV→FSEQ).
-                    let vector_gap = if let Synchronization::Vector {
-                        register,
-                        components,
-                        ..
-                    } = wait
-                    {
-                        let latency = operations[producer]
-                            .writes
-                            .iter()
-                            .filter(|write| {
-                                write.register == register && write.components & components != 0
-                            })
-                            .map(|write| usize::from(write.latency))
-                            .max()
-                            .unwrap_or(0);
-                        reduced[producer_row + 1..=consumer]
-                            .iter()
-                            .filter(|row| !row.empty())
-                            .count()
-                            < latency
-                            && reduced[producer_row + 1..consumer]
-                                .iter()
-                                .any(TimedRow::empty)
-                    } else {
-                        false
-                    };
-                    if candidate.len() < reduced.len() || vector_gap {
-                        reduced = candidate;
-                        origins = candidate_origins;
+                    let inserted = context.try_insert_wait(
+                        &mut reduced,
+                        &mut origins,
+                        original_consumer,
+                        operation_index,
+                        wait,
+                    )?;
+                    if inserted {
                         inserted_waits += 1;
                     }
                 }
             }
         }
     }
+
     reduce_empty_rows(
         &mut reduced,
         &mut origins,
@@ -677,6 +661,175 @@ pub fn compress(
         replay,
         inserted_waits,
     })
+}
+
+/// Inputs shared by every optional cap attempt of one compression.
+struct WaitContext<'a> {
+    operations: &'a [TimingOperation],
+    outputs: &'a [TimingOutput],
+    /// Output drain debt of the uncompressed stream.
+    maximum_drain: u32,
+}
+
+impl WaitContext<'_> {
+    /// Try to cap the producer of one wait read of an operation, keeping the
+    /// cap (and the rows it frees) when that shortens the stream or leaves a
+    /// vector gap. Returns whether a cap was kept.
+    fn try_insert_wait(
+        &self,
+        reduced: &mut Vec<TimedRow>,
+        origins: &mut Vec<usize>,
+        original_consumer: usize,
+        operation_index: usize,
+        wait: Synchronization,
+    ) -> Result<bool, TimingError> {
+        let (operations, outputs) = (self.operations, self.outputs);
+        let Some(consumer) = origins
+            .iter()
+            .position(|&origin| origin == original_consumer)
+        else {
+            return Ok(false);
+        };
+        let producer = if let Synchronization::Vector { producer, .. } = wait {
+            Some(producer)
+        } else {
+            operations[operation_index]
+                .reads
+                .iter()
+                .find(|read| read.register == wait.register())
+                .and_then(|read| read.producer)
+        };
+        let Some(producer) = producer else {
+            return Ok(false);
+        };
+        let Some(producer_row) = reduced
+            .iter()
+            .position(|row| row.instructions.contains(&Some(producer)))
+        else {
+            return Ok(false);
+        };
+
+        let current = replay(reduced, operations, outputs)?;
+        let mask = match wait {
+            Synchronization::Vector { components, .. } => components,
+            Synchronization::Q { .. } | Synchronization::P { .. } => 0x7f,
+        };
+        let Some(latency) = operations[producer]
+            .writes
+            .iter()
+            .filter(|write| write.register == wait.register() && write.components & mask != 0)
+            .map(|write| u32::from(write.latency))
+            .max()
+        else {
+            return Ok(false);
+        };
+        let available = current.issue_times[producer_row]
+            .checked_add(latency)
+            .ok_or(TimingError::TimeOverflow)?
+            .saturating_sub(wait.early_release());
+        let Some(cap_row) = cap_row(reduced, &current, wait, producer_row, consumer, available)
+        else {
+            return Ok(false);
+        };
+
+        let mut candidate = reduced.clone();
+        candidate[cap_row].synchronization = Some(wait);
+        if replay(&candidate, operations, outputs).is_err() {
+            return Ok(false);
+        }
+        let mut candidate_origins = origins.clone();
+        reduce_empty_rows(
+            &mut candidate,
+            &mut candidate_origins,
+            operations,
+            outputs,
+            self.maximum_drain,
+        );
+
+        // The original cap pass runs before row reduction. A
+        // vector cap may remain even when a second status resource
+        // requires the explicit gap (for example ALU+DIV→FSEQ).
+        let vector_gap = self.vector_gap(reduced, wait, producer, producer_row, consumer);
+        if candidate.len() < reduced.len() || vector_gap {
+            *reduced = candidate;
+            *origins = candidate_origins;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Whether a Vector cap's producer latency is not covered by the nonempty
+    /// rows before the consumer while an empty row still separates them.
+    fn vector_gap(
+        &self,
+        reduced: &[TimedRow],
+        wait: Synchronization,
+        producer: usize,
+        producer_row: usize,
+        consumer: usize,
+    ) -> bool {
+        let Synchronization::Vector {
+            register,
+            components,
+            ..
+        } = wait
+        else {
+            return false;
+        };
+        let latency = self.operations[producer]
+            .writes
+            .iter()
+            .filter(|write| write.register == register && write.components & components != 0)
+            .map(|write| usize::from(write.latency))
+            .max()
+            .unwrap_or(0);
+        reduced[producer_row + 1..=consumer]
+            .iter()
+            .filter(|row| !row.empty())
+            .count()
+            < latency
+            && reduced[producer_row + 1..consumer]
+                .iter()
+                .any(TimedRow::empty)
+    }
+}
+
+/// The row to hold a cap between a producer and its consumer.
+///
+/// The original keeps the latest candidate sharing a nonempty pair. With no
+/// such pair it keeps the first eligible empty row, rather than the latest
+/// empty row.
+fn cap_row(
+    reduced: &[TimedRow],
+    current: &Replay,
+    wait: Synchronization,
+    producer_row: usize,
+    consumer: usize,
+    available: u32,
+) -> Option<usize> {
+    let mut empty_slot = None;
+    let mut paired_slot = None;
+
+    for (index, row) in reduced
+        .iter()
+        .enumerate()
+        .take(consumer + 1)
+        .skip(producer_row + 1)
+    {
+        if current.issue_times[index] < available
+            || row.instructions[wait.issue_slot()].is_some()
+            || row.synchronization.is_some()
+            || row.protected
+        {
+            continue;
+        }
+        if row.instructions.iter().any(Option::is_some) {
+            paired_slot = Some(index);
+        } else {
+            empty_slot.get_or_insert(index);
+        }
+    }
+    paired_slot.or(empty_slot)
 }
 
 // ----------------------------------------------

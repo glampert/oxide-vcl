@@ -224,12 +224,7 @@ pub fn annotate_sources(
         constants: graph.constants.clone(),
     }
     .analyze()?;
-    let boundary_mask = |values: &BTreeSet<flow::Access>, register| {
-        values
-            .iter()
-            .filter(|access| access.register == register)
-            .fold(0, |mask, access| mask | access.mask)
-    };
+
     for update in sources {
         let Some(spec) = immediate::affine_spec(update.instruction.metadata.index) else {
             continue;
@@ -241,18 +236,7 @@ pub fn annotate_sources(
         {
             return Err(LoopIrError::InvalidFlowBlock(block));
         }
-        let setter_count = stream
-            .operations
-            .iter()
-            .filter(|&&id| {
-                graph.operations.get(id).is_some_and(|operation| {
-                    operation
-                        .writes
-                        .iter()
-                        .any(|access| access.register == output.register && access.mask & 1 != 0)
-                })
-            })
-            .count();
+        let setter_count = count_local_setters(graph, stream, output.register);
         if graph.constants.contains(&output.register)
             || !immediate::eligible_induction(immediate::InductionFacts {
                 external_input_mask: boundary_mask(inputs, output.register),
@@ -272,60 +256,115 @@ pub fn annotate_sources(
                 .and_then(|value| value.immediate.as_deref()),
             immediate::StrideSource::Constant(_) => None,
         };
-        for consumer in sources {
-            let Some(index) = immediate::consumer_operand(consumer.instruction.metadata.index)
-            else {
-                continue;
-            };
-            let operand = usize::from(index);
-            let address = required_operand_flow(&bindings, consumer.id, operand)?;
-            if address.register != output.register {
-                continue;
-            }
-            let read = scalar_read(&local, address.operation, address.register)?;
-            if read.definitions.contains(&Definition::Uninitialized) {
-                return Err(LoopIrError::UndefinedAddress {
-                    instruction: consumer.id,
-                    operand,
-                });
-            }
-            let phase = if read.definitions == BTreeSet::from([Definition::Input]) {
-                immediate::Phase::Before
-            } else if read.definitions == BTreeSet::from([Definition::Operation(output.operation)])
-            {
-                immediate::Phase::After
-            } else {
-                continue;
-            };
-            let destination = result
-                .sources
-                .iter_mut()
-                .find(|source| source.id == consumer.id)
-                .expect("source copied above");
-            if destination
-                .fixups
-                .iter()
-                .any(|fixup| usize::from(fixup.operand) == operand)
-            {
-                return Err(LoopIrError::DuplicateFixup {
-                    source: consumer.id,
-                    operand,
-                });
-            }
-            destination.fixups.push(
-                Fixup::from_update(spec, consumer.instruction.metadata.index, phase, stride)?
-                    .expect("eligible memory consumer"),
-            );
-            result.annotations.push(InductionAnnotation {
-                consumer: consumer.id,
-                operand,
-                update: update.id,
-                register: output.register,
-                phase,
-            });
-        }
+        let site = UpdateSite {
+            update,
+            spec,
+            output,
+            stride,
+        };
+        annotate_consumers(sources, &bindings, &local, &site, &mut result)?;
     }
     Ok(result)
+}
+
+/// An eligible induction update and the facts its consumers need.
+struct UpdateSite<'a> {
+    update: &'a SourceOperation,
+    spec: immediate::AffineSpec,
+    output: OperandFlow,
+    stride: Option<&'a str>,
+}
+
+/// The union of the component masks of `register` in a boundary set.
+fn boundary_mask(values: &BTreeSet<flow::Access>, register: flow::RegisterId) -> u8 {
+    values
+        .iter()
+        .filter(|access| access.register == register)
+        .fold(0, |mask, access| mask | access.mask)
+}
+
+/// How many operations of the stream write the x component of `register`.
+fn count_local_setters(graph: &flow::Graph, stream: &flow::Block, register: usize) -> usize {
+    stream
+        .operations
+        .iter()
+        .filter(|&&id| {
+            graph.operations.get(id).is_some_and(|operation| {
+                operation
+                    .writes
+                    .iter()
+                    .any(|access| access.register == register && access.mask & 1 != 0)
+            })
+        })
+        .count()
+}
+
+/// Attach a fixup to every memory consumer addressed through the updated
+/// register, according to which side of the update it reads.
+fn annotate_consumers(
+    sources: &[SourceOperation],
+    bindings: &BTreeMap<(usize, usize), OperandFlow>,
+    local: &flow::Analysis,
+    site: &UpdateSite,
+    result: &mut AnnotatedSources,
+) -> Result<(), LoopIrError> {
+    let UpdateSite {
+        update,
+        spec,
+        output,
+        stride,
+    } = *site;
+    for consumer in sources {
+        let Some(index) = immediate::consumer_operand(consumer.instruction.metadata.index) else {
+            continue;
+        };
+        let operand = usize::from(index);
+        let address = required_operand_flow(bindings, consumer.id, operand)?;
+        if address.register != output.register {
+            continue;
+        }
+        let read = scalar_read(local, address.operation, address.register)?;
+        if read.definitions.contains(&Definition::Uninitialized) {
+            return Err(LoopIrError::UndefinedAddress {
+                instruction: consumer.id,
+                operand,
+            });
+        }
+        let phase = if read.definitions == BTreeSet::from([Definition::Input]) {
+            immediate::Phase::Before
+        } else if read.definitions == BTreeSet::from([Definition::Operation(output.operation)]) {
+            immediate::Phase::After
+        } else {
+            continue;
+        };
+        let destination = result
+            .sources
+            .iter_mut()
+            .find(|source| source.id == consumer.id)
+            .expect("source copied above");
+        if destination
+            .fixups
+            .iter()
+            .any(|fixup| usize::from(fixup.operand) == operand)
+        {
+            return Err(LoopIrError::DuplicateFixup {
+                source: consumer.id,
+                operand,
+            });
+        }
+        destination.fixups.push(
+            Fixup::from_update(spec, consumer.instruction.metadata.index, phase, stride)?
+                .expect("eligible memory consumer"),
+        );
+        result.annotations.push(InductionAnnotation {
+            consumer: consumer.id,
+            operand,
+            update: update.id,
+            register: output.register,
+            phase,
+        });
+    }
+    Ok(())
 }
 
 fn operand_map(
@@ -393,6 +432,31 @@ pub fn expand(
         return Err(LoopIrError::InvalidLoopId(loop_id));
     }
     let plan = pipeline::expand(schedule)?;
+    let source_map = checked_source_map(sources)?;
+    check_schedule_sources(schedule, sources, &source_map)?;
+
+    let conditional = &source_map[&schedule.conditional].instruction;
+    // A conditional branch to a label, not to a register.
+    let target = subtype::branch::REGISTER | subtype::branch::CONDITIONAL;
+    if !conditional.metadata.is_branch()
+        || conditional.metadata.subtype & target != subtype::branch::CONDITIONAL
+    {
+        return Err(LoopIrError::InvalidConditional(schedule.conditional));
+    }
+
+    let (operations, rows) = clone_parts(&plan, &source_map)?;
+    Ok(ExpandedLoop {
+        loop_id,
+        plan,
+        operations,
+        rows,
+    })
+}
+
+/// Index the sources by id, rejecting duplicates and invalid fixups.
+fn checked_source_map(
+    sources: &[SourceOperation],
+) -> Result<BTreeMap<usize, &SourceOperation>, LoopIrError> {
     let mut source_map = BTreeMap::new();
     for source in sources {
         if source_map.insert(source.id, source).is_some() {
@@ -425,6 +489,16 @@ pub fn expand(
             }
         }
     }
+    Ok(source_map)
+}
+
+/// Check that every scheduled operation has a source in a legal slot and
+/// that no source is left unscheduled.
+fn check_schedule_sources(
+    schedule: &LoopSchedule,
+    sources: &[SourceOperation],
+    source_map: &BTreeMap<usize, &SourceOperation>,
+) -> Result<(), LoopIrError> {
     for op in &schedule.operations {
         let source = source_map
             .get(&op.id)
@@ -445,14 +519,18 @@ pub fn expand(
     {
         return Err(LoopIrError::ExtraSource(source.id));
     }
-    let conditional = &source_map[&schedule.conditional].instruction;
-    // A conditional branch to a label, not to a register.
-    let target = subtype::branch::REGISTER | subtype::branch::CONDITIONAL;
-    if !conditional.metadata.is_branch()
-        || conditional.metadata.subtype & target != subtype::branch::CONDITIONAL
-    {
-        return Err(LoopIrError::InvalidConditional(schedule.conditional));
-    }
+    Ok(())
+}
+
+/// Clone ids by part, row and pipe.
+type CloneRows = Vec<Vec<[Option<CloneId>; 2]>>;
+
+/// The clone operations of every part of the plan, and the table of their
+/// ids by part, row and pipe.
+fn clone_parts(
+    plan: &Expansion,
+    source_map: &BTreeMap<usize, &SourceOperation>,
+) -> Result<(Vec<CloneOperation>, CloneRows), LoopIrError> {
     let mut operations = Vec::new();
     let mut rows = Vec::new();
     for (part_id, part) in plan.parts.iter().enumerate() {
@@ -511,12 +589,7 @@ pub fn expand(
         }
         rows.push(part_rows);
     }
-    Ok(ExpandedLoop {
-        loop_id,
-        plan,
-        operations,
-        rows,
-    })
+    Ok((operations, rows))
 }
 
 impl ExpandedLoop {
@@ -531,13 +604,48 @@ impl ExpandedLoop {
         operands: &[OperandFlow],
     ) -> Result<Vec<ReachingSetters>, LoopIrError> {
         let bindings = operand_map(operands)?;
+        let writers = self.writers_by_flow(&bindings)?;
+
+        let mut result = Vec::new();
+        for operation in &self.operations {
+            for fixup in &operation.fixups {
+                let operand = usize::from(fixup.operand);
+                let binding = required_operand_flow(&bindings, operation.id, operand)?;
+                let read = scalar_read(analysis, binding.operation, binding.register)?;
+                let mut setters = BTreeSet::new();
+                for definition in &read.definitions {
+                    setters.insert(resolve_setter(
+                        definition,
+                        &writers,
+                        binding.register,
+                        operation.id,
+                        operand,
+                    )?);
+                }
+                result.push(ReachingSetters {
+                    clone: operation.id,
+                    operand,
+                    setters: setters.into_iter().collect(),
+                });
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Group the written register operands of all clones by the flow
+    /// operation and register they map to.
+    fn writers_by_flow(
+        &self,
+        bindings: &BTreeMap<(usize, usize), OperandFlow>,
+    ) -> Result<BTreeMap<(usize, usize), Vec<Setter>>, LoopIrError> {
         let mut writers: BTreeMap<(usize, usize), Vec<Setter>> = BTreeMap::new();
         for operation in &self.operations {
             for (index, operand) in operation.instruction.operands.iter().enumerate() {
                 if operand.direction != Direction::Write || operand.register.is_none() {
                     continue;
                 }
-                let binding = required_operand_flow(&bindings, operation.id, index)?;
+                let binding = required_operand_flow(bindings, operation.id, index)?;
                 writers
                     .entry((binding.operation, binding.register))
                     .or_default()
@@ -547,44 +655,7 @@ impl ExpandedLoop {
                     });
             }
         }
-        let mut result = Vec::new();
-        for operation in &self.operations {
-            for fixup in &operation.fixups {
-                let operand = usize::from(fixup.operand);
-                let binding = required_operand_flow(&bindings, operation.id, operand)?;
-                let read = scalar_read(analysis, binding.operation, binding.register)?;
-                let mut setters = BTreeSet::new();
-                for definition in &read.definitions {
-                    setters.insert(match definition {
-                        Definition::Input => Setter::External,
-                        Definition::Uninitialized => {
-                            return Err(LoopIrError::UndefinedAddress {
-                                instruction: operation.id,
-                                operand,
-                            });
-                        }
-                        Definition::Operation(writer) => {
-                            match writers.get(&(*writer, binding.register)) {
-                                None => Setter::External,
-                                Some(values) if values.len() == 1 => values[0],
-                                Some(_) => {
-                                    return Err(LoopIrError::AmbiguousFlowSetter {
-                                        operation: *writer,
-                                        register: binding.register,
-                                    });
-                                }
-                            }
-                        }
-                    });
-                }
-                result.push(ReachingSetters {
-                    clone: operation.id,
-                    operand,
-                    setters: setters.into_iter().collect(),
-                });
-            }
-        }
-        Ok(result)
+        Ok(writers)
     }
 
     /// Convenience bridge once the caller has rebuilt expanded component flow.
@@ -625,9 +696,54 @@ impl ExpandedLoop {
         reaching: &[ReachingSetters],
     ) -> Result<RepairedLoop, LoopIrError> {
         let mut result = self.clone();
+        result.apply_bindings(bindings)?;
+        let definitions = self.index_reaching(reaching)?;
+
+        let mut corrections = Vec::new();
+        for operation in &self.operations {
+            for fixup in &operation.fixups {
+                let operand = usize::from(fixup.operand);
+                let input = definitions.get(&(operation.id, operand)).ok_or(
+                    LoopIrError::MissingSetters {
+                        clone: operation.id,
+                        operand,
+                    },
+                )?;
+                let setters = self.setter_locations(operation.id, operand, input)?;
+                let location = self.setter_location(operation.id)?;
+                let context = immediate::Context {
+                    loop_id: self.loop_id,
+                    part: location.part,
+                    iteration_bias: Some(location.iteration_bias),
+                    external_input: false,
+                    setters,
+                };
+                let source = self
+                    .operand(operation.id, operand)?
+                    .immediate
+                    .as_deref()
+                    .ok_or(LoopIrError::InvalidOperand {
+                        clone: operation.id,
+                        operand,
+                    })?;
+                let applied = immediate::apply(&ImmediateValue::parse(source)?, fixup, &context)?;
+                result.operand_mut(operation.id, operand)?.immediate = Some(applied.value.source());
+                corrections.push((operation.id, applied));
+            }
+        }
+
+        Ok(RepairedLoop {
+            expanded: result,
+            corrections,
+        })
+    }
+
+    /// Install each binding's register on its operand, rejecting duplicates
+    /// and bindings that do not name a register operand.
+    fn apply_bindings(&mut self, bindings: &[OperandBinding]) -> Result<(), LoopIrError> {
         let mut bound = BTreeSet::new();
         for binding in bindings {
-            let operand = result.operand_mut(binding.clone, binding.operand)?;
+            let operand = self.operand_mut(binding.clone, binding.operand)?;
             if !bound.insert((binding.clone, binding.operand)) {
                 return Err(LoopIrError::DuplicateBinding {
                     clone: binding.clone,
@@ -642,6 +758,15 @@ impl ExpandedLoop {
             }
             operand.register = Some(binding.register.clone());
         }
+        Ok(())
+    }
+
+    /// Index the reaching setters by clone and operand, rejecting entries
+    /// for operands without a fixup and duplicates.
+    fn index_reaching<'a>(
+        &self,
+        reaching: &'a [ReachingSetters],
+    ) -> Result<BTreeMap<(CloneId, usize), &'a ReachingSetters>, LoopIrError> {
         let mut definitions = BTreeMap::new();
         for input in reaching {
             let key = (input.clone, input.operand);
@@ -666,61 +791,34 @@ impl ExpandedLoop {
                 });
             }
         }
-        let mut corrections = Vec::new();
-        for operation in &self.operations {
-            for fixup in &operation.fixups {
-                let operand = usize::from(fixup.operand);
-                let input = definitions.get(&(operation.id, operand)).ok_or(
-                    LoopIrError::MissingSetters {
-                        clone: operation.id,
-                        operand,
-                    },
-                )?;
-                let mut seen = BTreeSet::new();
-                let mut setters = Vec::new();
-                for setter in &input.setters {
-                    if !seen.insert(*setter) {
-                        return Err(LoopIrError::DuplicateSetters {
-                            clone: operation.id,
-                            operand,
-                        });
-                    }
-                    setters.push(match *setter {
-                        Setter::External => SetterLocation::external(),
-                        Setter::Operation { clone, operand } => {
-                            let value = self.operand(clone, operand)?;
-                            if value.direction != Direction::Write || value.register.is_none() {
-                                return Err(LoopIrError::InvalidSetter { clone, operand });
-                            }
-                            self.setter_location(clone)?
-                        }
-                    });
-                }
-                let location = self.setter_location(operation.id)?;
-                let context = immediate::Context {
-                    loop_id: self.loop_id,
-                    part: location.part,
-                    iteration_bias: Some(location.iteration_bias),
-                    external_input: false,
-                    setters,
-                };
-                let source = self
-                    .operand(operation.id, operand)?
-                    .immediate
-                    .as_deref()
-                    .ok_or(LoopIrError::InvalidOperand {
-                        clone: operation.id,
-                        operand,
-                    })?;
-                let applied = immediate::apply(&ImmediateValue::parse(source)?, fixup, &context)?;
-                result.operand_mut(operation.id, operand)?.immediate = Some(applied.value.source());
-                corrections.push((operation.id, applied));
+        Ok(definitions)
+    }
+
+    /// The locations of the setters reaching one fixed-up operand of a clone.
+    fn setter_locations(
+        &self,
+        clone: CloneId,
+        operand: usize,
+        input: &ReachingSetters,
+    ) -> Result<Vec<SetterLocation>, LoopIrError> {
+        let mut seen = BTreeSet::new();
+        let mut setters = Vec::new();
+        for setter in &input.setters {
+            if !seen.insert(*setter) {
+                return Err(LoopIrError::DuplicateSetters { clone, operand });
             }
+            setters.push(match *setter {
+                Setter::External => SetterLocation::external(),
+                Setter::Operation { clone, operand } => {
+                    let value = self.operand(clone, operand)?;
+                    if value.direction != Direction::Write || value.register.is_none() {
+                        return Err(LoopIrError::InvalidSetter { clone, operand });
+                    }
+                    self.setter_location(clone)?
+                }
+            });
         }
-        Ok(RepairedLoop {
-            expanded: result,
-            corrections,
-        })
+        Ok(setters)
     }
 
     fn operand(&self, clone: CloneId, operand: usize) -> Result<&Operand, LoopIrError> {
@@ -741,6 +839,32 @@ impl ExpandedLoop {
             .operands
             .get_mut(operand)
             .ok_or(LoopIrError::InvalidOperand { clone, operand })
+    }
+}
+
+/// The setter a definition reaching a fixed-up operand stands for: external
+/// when it comes from outside the expanded group, else its unique clone.
+fn resolve_setter(
+    definition: &Definition,
+    writers: &BTreeMap<(usize, usize), Vec<Setter>>,
+    register: flow::RegisterId,
+    clone: CloneId,
+    operand: usize,
+) -> Result<Setter, LoopIrError> {
+    match definition {
+        Definition::Input => Ok(Setter::External),
+        Definition::Uninitialized => Err(LoopIrError::UndefinedAddress {
+            instruction: clone,
+            operand,
+        }),
+        Definition::Operation(writer) => match writers.get(&(*writer, register)) {
+            None => Ok(Setter::External),
+            Some(values) if values.len() == 1 => Ok(values[0]),
+            Some(_) => Err(LoopIrError::AmbiguousFlowSetter {
+                operation: *writer,
+                register,
+            }),
+        },
     }
 }
 
