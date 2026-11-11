@@ -716,7 +716,6 @@ struct ScheduleContext<'a> {
     notes: Vec<TableNote>,
     wrangled_tables: BTreeMap<usize, WrangledTable>,
     block_ranges: Vec<Option<std::ops::Range<usize>>>,
-    absolute_positions: BTreeMap<usize, usize>,
     total_rows: usize,
 }
 
@@ -775,7 +774,6 @@ impl<'a> ScheduleContext<'a> {
             notes: Vec::new(),
             wrangled_tables: BTreeMap::new(),
             block_ranges: Vec::new(),
-            absolute_positions: BTreeMap::new(),
             total_rows: 0,
         }
     }
@@ -840,7 +838,7 @@ impl<'a> ScheduleContext<'a> {
         let mut note = TableNote::default();
         let mut rows = if let Some(fixed) = &block.selected_table {
             note.kernel_strategy = fixed.kernel_strategy;
-            self.fixed_table_rows(&fixed.rows, &local)
+            Self::fixed_table_rows(&fixed.rows, &local)
         } else if raw {
             self.raw_table_rows(&live)?
         } else {
@@ -998,21 +996,10 @@ impl<'a> ScheduleContext<'a> {
     }
 
     /// The rows of a table the loop optimizer already fixed.
-    fn fixed_table_rows(
-        &mut self,
-        fixed: &[[Option<usize>; 2]],
-        local: &BTreeMap<usize, usize>,
-    ) -> Rows {
+    fn fixed_table_rows(fixed: &[[Option<usize>; 2]], local: &BTreeMap<usize, usize>) -> Rows {
         fixed
             .iter()
-            .enumerate()
-            .map(|(row, pair)| {
-                pair.map(|id| {
-                    id.filter(|id| local.contains_key(id)).inspect(|&id| {
-                        self.absolute_positions.insert(id, self.total_rows + row);
-                    })
-                })
-            })
+            .map(|pair| pair.map(|id| id.filter(|id| local.contains_key(id))))
             .collect()
     }
 
@@ -1032,8 +1019,6 @@ impl<'a> ScheduleContext<'a> {
             if slot > 1 || located.instruction.metadata.issue_mask & (1 << slot) == 0 {
                 return Err(error(located.line, CompileMessage::WrongRawPipe));
             }
-            self.absolute_positions
-                .insert(id, self.total_rows + rows.len() - 1);
             if located.instruction.metadata.name != "nop" || located.instruction.modifiers != 0 {
                 rows.last_mut().unwrap()[slot] = Some(id);
             }
@@ -1079,12 +1064,6 @@ impl<'a> ScheduleContext<'a> {
             note.strategy = table.strategy;
             note.lower_bound = Some(table.lower_bound);
             self.wrangled_tables.insert(block_id, table);
-            for (row, pair) in rows.iter().enumerate() {
-                for &local_id in pair.iter().flatten() {
-                    self.absolute_positions
-                        .insert(live[local_id], self.total_rows + row);
-                }
-            }
             return Ok(rows
                 .iter()
                 .map(|row| row.map(|op| op.map(|id| live[id])))
@@ -1106,12 +1085,6 @@ impl<'a> ScheduleContext<'a> {
         }
         .map_err(|e| internal(0, e))?;
         note.strategy = Some(schedule.strategy);
-        for (local_id, placement) in schedule.placements.iter().enumerate() {
-            self.absolute_positions.insert(
-                live[local_id],
-                self.total_rows + usize::from(placement.cycle),
-            );
-        }
         Ok(schedule
             .rows
             .iter()
@@ -1147,14 +1120,6 @@ impl<'a> ScheduleContext<'a> {
                 problem,
                 rows,
             )?;
-            for &id in live {
-                self.absolute_positions.remove(&id);
-            }
-            for (row, pair) in rows.iter().enumerate() {
-                for &id in pair.iter().flatten() {
-                    self.absolute_positions.insert(id, self.total_rows + row);
-                }
-            }
         }
         Ok(())
     }
@@ -1224,11 +1189,6 @@ impl<'a> ScheduleContext<'a> {
         .iter()
         .map(|pair| pair.map(|id| id.map(|id| live[id])))
         .collect();
-        for (row, pair) in rows.iter().enumerate() {
-            for &id in pair.iter().flatten() {
-                self.absolute_positions.insert(id, self.total_rows + row);
-            }
-        }
     }
 }
 
