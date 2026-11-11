@@ -85,10 +85,11 @@ pub(super) fn normalize_copies(
                 });
             }
             let mut instruction = located.instruction.clone();
-            instruction.metadata = &instruction::INSTRUCTIONS[match kind {
-                Kind::Integer => 178,
-                Kind::Vector => 180,
-            }];
+            let descriptor = match kind {
+                Kind::Integer => id::IMOVE,
+                Kind::Vector => id::VMOVE,
+            };
+            instruction.metadata = &instruction::INSTRUCTIONS[usize::from(descriptor)];
             instruction.mnemonic = instruction.metadata.name.into();
             instruction.operands.truncate(2);
             instruction.generated_copy = Some(kind);
@@ -120,7 +121,7 @@ pub(super) fn coalesce_immediates(
         .collect();
     let view = |id: usize, located: &Located| {
         let operand = match located.instruction.metadata.index {
-            109 | 110 | 112 => 2,
+            id::IADDI | id::IADDIU | id::ISUBIU => 2,
             _ => 1,
         };
         let immediate = located
@@ -148,7 +149,7 @@ pub(super) fn coalesce_immediates(
         instruction.mnemonic = instruction.metadata.name.into();
         let operand = &mut instruction.operands[usize::from(change.immediate_operand)];
         operand.immediate = change.after.immediate.map(|value| value.to_string());
-        if operand.class == 27 {
+        if operand.class == class::IMMEDIATE {
             operand.text = operand.immediate.clone().unwrap_or_default();
         }
         region.instructions[id] = program.lower(instruction, region.instructions[id].line)?;
@@ -370,9 +371,14 @@ pub(super) fn prune_source_region(
         let updates: Vec<_> = instruction
             .operands
             .iter()
-            .filter(|operand| matches!(operand.class, 32 | 33))
+            .filter(|operand| {
+                matches!(
+                    operand.class,
+                    class::ADDRESS_INCREMENT | class::ADDRESS_DECREMENT
+                )
+            })
             .map(|operand| ExpandedOperand {
-                class: 2,
+                class: class::INTEGER,
                 direction: Direction::Write,
                 latency: 1,
                 implicit: true,
@@ -505,7 +511,7 @@ pub(super) fn prune_source_region(
         if !located.effects.side_effect {
             for (index, operand) in pruned.expanded.iter().enumerate() {
                 // Class 11 is the xyz-only destination of OPMSUB.
-                if matches!(operand.class, 1 | 11)
+                if matches!(operand.class, class::VECTOR | class::VECTOR_XYZ)
                     && operand.direction == Direction::Write
                     && pruned.live_output_masks[index] == 0
                     && located.instruction.operands[operand.source_operand].direction
@@ -629,8 +635,10 @@ pub(super) fn construct_register_webs(
                     let linked_operand = (direction == Direction::Write
                         && located.instruction.operands.iter().enumerate().any(
                             |(index, operand)| {
-                                matches!(operand.class, 32 | 33)
-                                    && located.operands[index] == Some(access.register)
+                                matches!(
+                                    operand.class,
+                                    class::ADDRESS_INCREMENT | class::ADDRESS_DECREMENT
+                                ) && located.operands[index] == Some(access.register)
                             },
                         ))
                     .then(|| {
@@ -648,7 +656,8 @@ pub(super) fn construct_register_webs(
                         .iter()
                         .enumerate()
                         .any(|(index, operand)| {
-                            operand.class == 34 && located.operands[index] == Some(access.register)
+                            operand.class == class::INTEGER_FLAG
+                                && located.operands[index] == Some(access.register)
                         })
                         .then(|| interface_base(access.register))
                         .flatten()
@@ -963,15 +972,17 @@ pub(super) fn spell_zero_webs(
             {
                 continue;
             }
-            let numeric_immediate = matches!(located.instruction.metadata.index, 109 | 110 | 112)
-                && located
-                    .instruction
-                    .operands
-                    .get(2)
-                    .and_then(|operand| operand.immediate.as_deref())
-                    .and_then(|text| crate::parser::expression::evaluate(text).ok())
-                    .and_then(|value| value.number())
-                    .is_some();
+            let numeric_immediate = matches!(
+                located.instruction.metadata.index,
+                id::IADDI | id::IADDIU | id::ISUBIU
+            ) && located
+                .instruction
+                .operands
+                .get(2)
+                .and_then(|operand| operand.immediate.as_deref())
+                .and_then(|text| crate::parser::expression::evaluate(text).ok())
+                .and_then(|value| value.number())
+                .is_some();
             if located.instruction.generated_copy.is_some() || (allowed && numeric_immediate) {
                 return Err(CompileError {
                     line: located.line,

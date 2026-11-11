@@ -5,6 +5,7 @@
 //! reconstruction, not a port of VCL's full register-lock/move-repair engine.
 //! See `docs/SCHEDULING.md` for the exact evidence and compatibility boundary.
 
+use crate::isa::instruction::issue;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -429,7 +430,7 @@ fn validate(problem: &SchedulingProblem, options: &ScheduleOptions) -> Result<()
         return Err(ScheduleError::InvalidHorizon(options.max_cycle));
     }
     for (index, operation) in problem.operations.iter().enumerate() {
-        if operation.issue_mask == 0 || operation.issue_mask & !3 != 0 {
+        if operation.issue_mask == 0 || operation.issue_mask & !issue::EITHER != 0 {
             return Err(ScheduleError::InvalidIssueMask {
                 operation: index,
                 mask: operation.issue_mask,
@@ -565,13 +566,13 @@ fn modulo_bounds_fit(problem: &SchedulingProblem) -> bool {
         || problem
             .operations
             .iter()
-            .filter(|op| op.issue_mask == 1)
+            .filter(|op| op.issue_mask == issue::UPPER)
             .count()
             > p
         || problem
             .operations
             .iter()
-            .filter(|op| op.issue_mask == 2)
+            .filter(|op| op.issue_mask == issue::LOWER)
             .count()
             > p
     {
@@ -938,6 +939,7 @@ pub fn schedule_modulo(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::isa::instruction::unit;
 
     fn access(register: usize, components: u8) -> RegisterAccess {
         RegisterAccess {
@@ -1190,10 +1192,10 @@ mod tests {
     #[test]
     fn division_throughput_blocks_its_resource() {
         let mut a = Operation::new(0, 2);
-        a.unit_mask = 32;
+        a.unit_mask = unit::DIVIDE;
         a.throughput = 7;
         let mut b = Operation::new(1, 2);
-        b.unit_mask = 32;
+        b.unit_mask = unit::DIVIDE;
         b.throughput = 7;
         let problem = SchedulingProblem {
             operations: vec![a, b],
@@ -1255,7 +1257,7 @@ mod tests {
     #[test]
     fn modulo_resource_pressure_is_proved_before_search() {
         let mut operation = Operation::new(0, 2);
-        operation.unit_mask = 16;
+        operation.unit_mask = unit::EFU;
         operation.throughput = 8;
         let problem = SchedulingProblem {
             operations: vec![operation],
@@ -1397,7 +1399,7 @@ mod tests {
             schedule(&problem, &Default::default()),
             Err(ScheduleError::InvalidIssueMask { .. })
         ));
-        problem.operations[0].issue_mask = 1;
+        problem.operations[0].issue_mask = issue::UPPER;
         problem.dependencies.push(Dependency {
             from: 0,
             to: 1,

@@ -5,6 +5,7 @@
 //! allocation, prologue/epilogue construction, or original strategy selection.
 
 use crate::analysis::flow::{self, Definition};
+use crate::isa::instruction::issue;
 use crate::loops::pipeline;
 use crate::scheduler::schedule::{self, Dependency, SchedulingProblem};
 use std::collections::{BTreeMap, BTreeSet};
@@ -212,7 +213,7 @@ pub fn build(
         .ok_or(LoopError::InvalidConditional)?;
     if conditional + 1 != ordered.len()
         || !ordered[conditional].scheduling.is_branch
-        || ordered[conditional].scheduling.issue_mask != 2
+        || ordered[conditional].scheduling.issue_mask != issue::LOWER
         || ordered.iter().filter(|op| op.scheduling.is_branch).count() != 1
     {
         return Err(LoopError::InvalidConditional);
@@ -426,12 +427,12 @@ fn resource_bound(
     let upper = problem
         .operations
         .iter()
-        .filter(|op| op.issue_mask == 1)
+        .filter(|op| op.issue_mask == issue::UPPER)
         .count() as u64;
     let lower = problem
         .operations
         .iter()
-        .filter(|op| op.issue_mask == 2)
+        .filter(|op| op.issue_mask == issue::LOWER)
         .count() as u64;
     let mut bound = 2u64
         .max(upper)
@@ -763,7 +764,7 @@ mod tests {
     fn original_counted_vector_fixture_has_four_row_recurrence_bound() {
         // loop-vector-counted: ADD b,b,a; ISUBIU c,c,1; IBNE c,VI00,loop.
         let mut vector = op(0, 1, &[(2, 15), (3, 15)], &[(2, 15, 4)]);
-        vector.scheduling.unit_mask = 1;
+        vector.scheduling.unit_mask = crate::isa::instruction::unit::FMAC;
         let mut update = integer().remove(0);
         update.id = 1;
         let mut branch = integer().remove(1);
@@ -957,7 +958,7 @@ mod tests {
     #[test]
     fn execution_resource_occupancy_raises_period_bound() {
         let mut body = integer();
-        body[0].scheduling.unit_mask = 16;
+        body[0].scheduling.unit_mask = crate::isa::instruction::unit::EFU;
         body[0].scheduling.throughput = 8;
         let problem = problem(&body);
         assert_eq!(problem.lower_bound, 8);

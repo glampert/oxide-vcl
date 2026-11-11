@@ -308,6 +308,7 @@ pub fn adjust_branch_delay(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::isa::instruction::unit;
     use crate::scheduler::schedule::{Dependency, Operation, RegisterAccess};
 
     fn tail_problem() -> SchedulingProblem {
@@ -365,12 +366,12 @@ mod tests {
     #[test]
     fn delay_exchange_checks_upper_pair_and_execution_unit_conflicts() {
         let mut p = tail_problem();
-        p.operations[1].unit_mask = 1;
-        p.operations[2].unit_mask = 1;
+        p.operations[1].unit_mask = unit::FMAC;
+        p.operations[2].unit_mask = unit::FMAC;
         assert_eq!(adjust_branch_delay(&p, &TAIL, &[0], 0), TAIL);
-        p.operations[2].unit_mask = 0;
+        p.operations[2].unit_mask = unit::NONE;
         p.operations[1].throughput = 2;
-        p.operations[0].unit_mask = 1;
+        p.operations[0].unit_mask = unit::FMAC;
         assert_eq!(adjust_branch_delay(&p, &TAIL, &[0], 0), TAIL);
     }
 
@@ -559,8 +560,8 @@ mod tests {
     #[test]
     fn throughput_prevents_an_otherwise_available_final_slot() {
         let mut p = problem();
-        p.operations[0].unit_mask = 4;
-        p.operations[3].unit_mask = 4;
+        p.operations[0].unit_mask = unit::MOVE;
+        p.operations[3].unit_mask = unit::MOVE;
         p.operations[3].throughput = 2;
         let rows = [
             [None, Some(0)],

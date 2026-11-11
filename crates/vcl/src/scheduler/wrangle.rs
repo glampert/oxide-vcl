@@ -18,6 +18,7 @@
 //! wall-clock watchdog is replaced by a deterministic step budget.
 #![allow(clippy::needless_range_loop)]
 
+use crate::isa::instruction::subtype;
 use crate::scheduler::schedule::{self, Candidate, PriorityMetrics, Strategy};
 use std::collections::BTreeMap;
 
@@ -110,7 +111,7 @@ pub struct Instruction {
     /// Functional-unit bitset.
     pub units: u16,
     pub branch: bool,
-    /// Memory kind: 0 none, 1 load, 2 store.
+    /// Memory kind: 0 none, else `subtype::memory::LOAD` or `STORE`.
     pub memory: u8,
     /// Larger of the two minimum-position bounds.
     pub minimum_position: i32,
@@ -3411,7 +3412,9 @@ impl<'a> Table<'a> {
                 let Some(setter) = self.locks[producer].instruction() else {
                     continue;
                 };
-                if self.insn(setter).memory != 1 && self.slots[setter].depth != 0 {
+                if self.insn(setter).memory != subtype::memory::LOAD
+                    && self.slots[setter].depth != 0
+                {
                     continue;
                 }
                 let at = self.slots[setter].line;

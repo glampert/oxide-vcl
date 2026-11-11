@@ -4,6 +4,8 @@
 //! operation. The shipped move-pruning pass is a successful no-op.
 //! Callers prove pool-zero identity and whether secondary outputs are used.
 
+use crate::isa::instruction::id;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Integer,
@@ -15,10 +17,10 @@ impl Kind {
     /// Integer moves only admit the lower pipe in scheduling.
     pub const fn resolved_descriptor(self, pipe: crate::scheduler::schedule::Pipe) -> u16 {
         match self {
-            Self::Integer => 179,
+            Self::Integer => id::LIMOVE,
             Self::Vector => match pipe {
-                crate::scheduler::schedule::Pipe::Lower => 181,
-                crate::scheduler::schedule::Pipe::Upper => 182,
+                crate::scheduler::schedule::Pipe::Lower => id::LVMOVE,
+                crate::scheduler::schedule::Pipe::Upper => id::UVMOVE,
             },
         }
     }
@@ -38,11 +40,13 @@ pub struct Facts {
 pub fn detect(facts: Facts) -> Option<Kind> {
     use Kind::*;
     match facts.instruction {
-        108 | 111 if facts.third_is_pool_zero => Some(Integer),
-        109 | 110 | 112 if facts.numeric_immediate == Some(0) => Some(Integer),
-        153 => Some(Vector),
-        34 | 48 if facts.mask & 8 != 0 => None, // VF00.w is one, not zero.
-        34 | 37..=39 | 48 | 68 if facts.third_is_pool_zero && !facts.secondary_outputs_live => {
+        id::IADD | id::ISUB if facts.third_is_pool_zero => Some(Integer),
+        id::IADDI | id::IADDIU | id::ISUBIU if facts.numeric_immediate == Some(0) => Some(Integer),
+        id::MOVE => Some(Vector),
+        id::ADD | id::SUB if facts.mask & 8 != 0 => None, // VF00.w is one, not zero.
+        id::ADD | id::ADDX..=id::ADDZ | id::SUB | id::MULW
+            if facts.third_is_pool_zero && !facts.secondary_outputs_live =>
+        {
             Some(Vector)
         }
         _ => None,

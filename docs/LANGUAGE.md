@@ -22,13 +22,18 @@ count,0(base)` selects W in memory while reading the scalar base address; see
 
 The instruction table has 214 entries in the original's order; an entry's
 index is its instruction ID, and several passes compare IDs directly (the
-raw-only NOP is 12, `waitp` and `waitq` are 115 and 116). The first twelve
-entries are the generalized new-syntax FMAC operations. The directive table
-has exactly 28 entries.
+raw-only NOP is 12, `waitp` and `waitq` are 115 and 116; the ones the port
+compares are named in `instruction::id`). The first twelve entries are the
+generalized new-syntax FMAC operations. The directive table has exactly 28
+entries.
 
 `local/tools/extract_tables.py` (local, not tracked) extracts both tables from
 `local/vcl` and writes `local/evidence/tables/{instructions,directives,operand_classes,manifest}.json`.
-The port's copy is generated into `crates/vcl/src/isa/instruction_data.rs`:
+The port's copy is generated into `crates/vcl/src/isa/instruction_data.rs`,
+with every coded field spelt with the names `crates/vcl/src/isa/instruction.rs`
+defines: operand classes (`class::VECTOR`), field-selection modes
+(`MaskMode`), issue pipes, functional units, memory order flags, kinds and
+subtypes, and immediate selectors (`ImmediateKind::signed(11)`):
 
 ```sh
 python3 local/tools/extract_tables.py   # reads local/vcl
@@ -176,14 +181,14 @@ NOP, are rejected; see [PIPELINE_INTEGRATION.md](PIPELINE_INTEGRATION.md).
 
 ## Memory operands and tags
 
-| Operand class | Source shape |
-| --- | --- |
-| `OP_V_EA` | `(integer_register)` |
-| `OP_V_EA_IMM` | `displacement(integer_register)` |
-| `OP_V_EA_REG` | `(integer_register)x` |
-| `OP_V_EA_IMM_REG` | `displacement(integer_register)x` |
-| `OP_V_EA_INC` | `(integer_register++)` |
-| `OP_V_EA_DEC` | `(--integer_register)` |
+| Operand class | Port name (`class::`) | Source shape |
+| --- | --- | --- |
+| `OP_V_EA` | `ADDRESS` | `(integer_register)` |
+| `OP_V_EA_IMM` | `ADDRESS_OFFSET` | `displacement(integer_register)` |
+| `OP_V_EA_REG` | `ADDRESS_REGISTER` | `(integer_register)x` |
+| `OP_V_EA_IMM_REG` | `ADDRESS_REGISTER_OFFSET` | `displacement(integer_register)x` |
+| `OP_V_EA_INC` | `ADDRESS_INCREMENT` | `(integer_register++)` |
+| `OP_V_EA_DEC` | `ADDRESS_DECREMENT` | `(--integer_register)` |
 
 An omitted displacement is zero. Integer load/store field forms need a
 component on the instruction or on the operand, and conflicting selections

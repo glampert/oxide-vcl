@@ -6,6 +6,7 @@
 //! Callers supply complete operand-level flow, including escaping observations.
 //! Equal register names, adjacent rows, or clone biases do not prove eligibility.
 
+use crate::isa::instruction::id;
 use std::collections::BTreeSet;
 use std::fmt;
 
@@ -129,9 +130,9 @@ pub fn plan(producer: Operation, users: &[User]) -> Result<Option<Plan>, Inducti
             return Err(InductionError::DuplicateConsumer(operation.id));
         }
         let (read_operand, immediate_operand, subtract, memory) = match operation.instruction {
-            110 => (1, 2, false, false),
-            112 => (1, 2, true, false),
-            155 | 156 | 160 | 161 => (1, 1, false, true),
+            id::IADDIU => (1, 2, false, false),
+            id::ISUBIU => (1, 2, true, false),
+            id::LQ | id::ILW | id::SQ | id::ISW => (1, 1, false, true),
             _ => return Ok(None),
         };
         if consumer.read_operand != read_operand {

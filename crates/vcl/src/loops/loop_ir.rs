@@ -6,7 +6,7 @@
 //! caller rebuilds component flow and supplies actual reaching definitions.
 
 use crate::analysis::flow::{self, Definition};
-use crate::isa::instruction::{self, Direction, Mask, Syntax};
+use crate::isa::instruction::{self, Direction, Mask, Syntax, class, subtype};
 use crate::loops::immediate::{self, Applied, Fixup, ImmediateValue, SetterLocation};
 use crate::loops::pipeline::{self, Expansion, LoopSchedule};
 use crate::parser::{Instruction, Operand, ParseMode};
@@ -446,7 +446,11 @@ pub fn expand(
         return Err(LoopIrError::ExtraSource(source.id));
     }
     let conditional = &source_map[&schedule.conditional].instruction;
-    if !conditional.metadata.is_branch() || conditional.metadata.subtype & 6 != 4 {
+    // A conditional branch to a label, not to a register.
+    let target = subtype::branch::REGISTER | subtype::branch::CONDITIONAL;
+    if !conditional.metadata.is_branch()
+        || conditional.metadata.subtype & target != subtype::branch::CONDITIONAL
+    {
         return Err(LoopIrError::InvalidConditional(schedule.conditional));
     }
     let mut operations = Vec::new();
@@ -761,7 +765,7 @@ fn reverse_branch(instruction: &mut Instruction) -> Result<(), LoopIrError> {
 }
 
 fn change_target(instruction: &mut Instruction, target: &str) -> Result<(), LoopIrError> {
-    if instruction.metadata.subtype & 2 != 0 {
+    if instruction.metadata.subtype & subtype::branch::REGISTER != 0 {
         return Err(LoopIrError::InvalidBranchTarget);
     }
     let index = usize::from(instruction.metadata.target_operand)
@@ -770,7 +774,7 @@ fn change_target(instruction: &mut Instruction, target: &str) -> Result<(), Loop
     let operand = instruction
         .operands
         .get_mut(index)
-        .filter(|operand| operand.class == 27)
+        .filter(|operand| operand.class == class::IMMEDIATE)
         .ok_or(LoopIrError::InvalidBranchTarget)?;
     operand.immediate = Some(target.into());
     operand.text = target.into();
@@ -786,7 +790,7 @@ fn unconditional_branch(target: &str) -> Instruction {
         modifiers: 0,
         operands: vec![Operand {
             text: target.into(),
-            class: 27,
+            class: class::IMMEDIATE,
             direction: Direction::Read,
             implicit: false,
             mask: Mask::X,
@@ -1323,7 +1327,9 @@ mod tests {
                 });
                 let access = flow::Access {
                     register,
-                    mask: if matches!(value.class, 2 | 28..=34 | 36) {
+                    mask: if instruction::register_family(value.class)
+                        == instruction::RegisterFamily::Integer
+                    {
                         1
                     } else {
                         value.mask.0

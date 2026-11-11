@@ -105,7 +105,7 @@ impl<'a> Adapter<'a> {
         id: usize,
     ) -> bool {
         let op = &region.instructions[id];
-        if op.instruction.metadata.unit_mask != 1 {
+        if op.instruction.metadata.unit_mask != unit::FMAC {
             return false;
         }
         // Re-lowering can recreate implicit flag effects after pruning. Only

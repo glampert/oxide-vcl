@@ -447,13 +447,13 @@ pub(super) fn compile_region_candidate(
         let mut ops = Vec::new();
         for &id in &live {
             let located = &region.instructions[id];
-            let mut op = Operation::new(id, located.instruction.metadata.issue_mask as u8);
+            let mut op = Operation::new(id, located.instruction.metadata.issue_mask);
             // DetectMoves turns an unscheduled vector copy into a two-pipe
             // move. Its upper form is MAX source,source (no flag side effects).
-            if located.instruction.metadata.index == 153
+            if located.instruction.metadata.index == id::MOVE
                 && located.instruction.mode == ParseMode::Vcl
             {
-                op.issue_mask = 3;
+                op.issue_mask = issue::EITHER;
             }
             op.unit_mask = located.instruction.metadata.unit_mask;
             op.throughput = located.instruction.metadata.throughput.max(1);
@@ -1128,7 +1128,8 @@ pub(super) fn compile_region_candidate(
                     .iter()
                     .enumerate()
                     .find_map(|(index, operand)| {
-                        (matches!(operand.class, 1 | 11) && operand.direction == Direction::Write)
+                        (matches!(operand.class, class::VECTOR | class::VECTOR_XYZ)
+                            && operand.direction == Direction::Write)
                             .then_some(index)
                     });
             let Some(destination) = destination else {
@@ -1828,7 +1829,7 @@ pub(super) fn compile_region_candidate(
                         instruction.mnemonic = instruction.metadata.name.into();
                     }
                     if pipe == 0
-                        && instruction.metadata.index == 153
+                        && instruction.metadata.index == id::MOVE
                         && instruction.mode == ParseMode::Vcl
                     {
                         instruction.metadata = instruction::lookup("max", Syntax::Old)

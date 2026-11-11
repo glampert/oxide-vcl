@@ -5,6 +5,8 @@
 //! not merge or mutate a caller's graph: analysis edges and emission visibility
 //! must remain separate, as they do in the original program.
 
+use crate::isa::instruction::{id, subtype::branch};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum StreamEnd {
@@ -24,17 +26,18 @@ pub enum LinkKind {
     IndirectLink = 4,
 }
 
-/// Translate a branch descriptor's subtype as the original does. Bit 1 means
-/// a register target, bit 3 means link. Bit 2 (conditional) does not change the
-/// taken edge's kind; a conditional also has a separate fallthrough edge.
+/// Translate a branch descriptor's subtype as the original does. CONDITIONAL
+/// does not change the taken edge's kind; a conditional also has a separate
+/// fallthrough edge.
 pub const fn branch_link_kind(subtype: u8) -> LinkKind {
+    const INDIRECT_LINK: u8 = branch::REGISTER | branch::LINK;
     if subtype == 0 {
         LinkKind::Fallthrough
     } else {
-        match subtype & 10 {
-            2 => LinkKind::Indirect,
-            8 => LinkKind::DirectLink,
-            10 => LinkKind::IndirectLink,
+        match subtype & INDIRECT_LINK {
+            branch::REGISTER => LinkKind::Indirect,
+            branch::LINK => LinkKind::DirectLink,
+            INDIRECT_LINK => LinkKind::IndirectLink,
             _ => LinkKind::Direct,
         }
     }
@@ -74,12 +77,12 @@ impl LowerInstruction {
 /// source-level raw instruction spelling.
 pub fn safe_end(lower_slots: &[Option<LowerInstruction>]) -> bool {
     if let Some(Some(last)) = lower_slots.last()
-        && (last.memory || last.branch || (165..=167).contains(&last.descriptor_index))
+        && (last.memory || last.branch || (id::XGKICK..=id::XITOP).contains(&last.descriptor_index))
     {
         return false;
     }
     if let Some(Some(previous)) = lower_slots.iter().rev().nth(1)
-        && previous.descriptor_index == 165
+        && previous.descriptor_index == id::XGKICK
     {
         return false;
     }
@@ -155,12 +158,16 @@ mod tests {
 
     #[test]
     fn branch_subtypes_keep_conditional_and_link_distinct() {
+        use branch::*;
         assert_eq!(branch_link_kind(0), LinkKind::Fallthrough);
-        assert_eq!(branch_link_kind(1), LinkKind::Direct);
-        assert_eq!(branch_link_kind(3), LinkKind::Indirect);
-        assert_eq!(branch_link_kind(5), LinkKind::Direct);
-        assert_eq!(branch_link_kind(9), LinkKind::DirectLink);
-        assert_eq!(branch_link_kind(11), LinkKind::IndirectLink);
+        assert_eq!(branch_link_kind(JUMP), LinkKind::Direct);
+        assert_eq!(branch_link_kind(JUMP | REGISTER), LinkKind::Indirect);
+        assert_eq!(branch_link_kind(JUMP | CONDITIONAL), LinkKind::Direct);
+        assert_eq!(branch_link_kind(JUMP | LINK), LinkKind::DirectLink);
+        assert_eq!(
+            branch_link_kind(JUMP | REGISTER | LINK),
+            LinkKind::IndirectLink
+        );
     }
 
     #[test]

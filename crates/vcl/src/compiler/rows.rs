@@ -186,7 +186,7 @@ pub(super) fn finish_rows_planned(
     let branch = matches!(block.end, End::Branch { .. });
     let kick_padding: BTreeSet<_> = positions
         .iter()
-        .filter(|(id, _)| region.instructions[**id].instruction.metadata.index == 165)
+        .filter(|(id, _)| region.instructions[**id].instruction.metadata.index == id::XGKICK)
         .flat_map(|(_, &row)| [row + 1, row + 2])
         .collect();
     let mut started = false;

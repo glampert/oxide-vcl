@@ -8,7 +8,7 @@
 //! The original validates undefined reads before pruning. Narrowing a later
 //! dead lane must not retroactively make an invalid original source valid.
 
-use crate::isa::instruction::{Direction, Mask};
+use crate::isa::instruction::{Direction, Hook, InstructionKind, Mask, MaskMode, class};
 use crate::parser::{Instruction, ParseMode};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -144,8 +144,8 @@ fn rotate_right(mask: u8) -> u8 {
     (mask >> 1) & 7 | (mask & 1) << 3
 }
 
-fn lane_wise(class: u8) -> bool {
-    matches!(class, 1 | 9)
+fn lane_wise(operand_class: u8) -> bool {
+    matches!(operand_class, class::VECTOR | class::ACC)
 }
 
 fn status_operand(
@@ -175,7 +175,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
     let mut operands = Vec::new();
     for (index, source) in instruction.operands.iter().enumerate() {
         match source.class {
-            22 => {
+            class::STATUS_FROM_DIVIDE => {
                 let latency = instruction
                     .metadata
                     .operands
@@ -183,7 +183,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                     .map_or(1, |o| i16::from(o.latency));
                 operands.push(status_operand(
                     index,
-                    20,
+                    class::STAT_DIV,
                     Direction::Write,
                     "STAT_DIV",
                     latency,
@@ -191,17 +191,17 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 ));
                 operands.push(status_operand(
                     index,
-                    19,
+                    class::STAT_DIV_STICKY,
                     Direction::Read,
                     "STAT_DIV_S",
                     -1,
                     true,
                 ));
             }
-            23 => {
+            class::STATUS_FROM_ALU => {
                 operands.push(status_operand(
                     index,
-                    21,
+                    class::STAT_ALU,
                     Direction::Write,
                     "STAT_ALU",
                     4,
@@ -209,14 +209,14 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 ));
                 operands.push(status_operand(
                     index,
-                    18,
+                    class::STAT_ALU_STICKY,
                     Direction::Read,
                     "STAT_ALU_S",
                     -1,
                     true,
                 ));
             }
-            24 => {
+            class::STATUS_TEST => {
                 let mut bits = instruction
                     .operands
                     .iter()
@@ -238,7 +238,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 if alu || sticky_alu {
                     operands.push(status_operand(
                         index,
-                        21,
+                        class::STAT_ALU,
                         Direction::Read,
                         "STAT_ALU",
                         -1,
@@ -248,7 +248,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 if div || sticky_div {
                     operands.push(status_operand(
                         index,
-                        20,
+                        class::STAT_DIV,
                         Direction::Read,
                         "STAT_DIV",
                         -1,
@@ -258,7 +258,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 if sticky_alu {
                     operands.push(status_operand(
                         index,
-                        18,
+                        class::STAT_ALU_STICKY,
                         Direction::Read,
                         "STAT_ALU_S",
                         -1,
@@ -266,7 +266,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                     ));
                     operands.push(status_operand(
                         index,
-                        18,
+                        class::STAT_ALU_STICKY,
                         Direction::Write,
                         "STAT_ALU_S",
                         1,
@@ -276,7 +276,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 if sticky_div {
                     operands.push(status_operand(
                         index,
-                        19,
+                        class::STAT_DIV_STICKY,
                         Direction::Read,
                         "STAT_DIV_S",
                         -1,
@@ -284,7 +284,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                     ));
                     operands.push(status_operand(
                         index,
-                        19,
+                        class::STAT_DIV_STICKY,
                         Direction::Write,
                         "STAT_DIV_S",
                         1,
@@ -292,10 +292,10 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                     ));
                 }
             }
-            25 => {
+            class::STATUS_SET => {
                 operands.push(status_operand(
                     index,
-                    18,
+                    class::STAT_ALU_STICKY,
                     Direction::Write,
                     "STAT_ALU_S",
                     1,
@@ -303,7 +303,7 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 ));
                 operands.push(status_operand(
                     index,
-                    19,
+                    class::STAT_DIV_STICKY,
                     Direction::Write,
                     "STAT_DIV_S",
                     1,
@@ -315,9 +315,9 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                 // Memory field selectors belong to the transferred qword,
                 // not to its scalar VI base. Keep the parsed mask for ILW/
                 // ISW emission, but address dependencies always use bit 0.
-                let mask = if matches!(source.class, 28..=33) {
+                let mask = if class::is_address(source.class) {
                     Mask::X.0
-                } else if instruction.metadata.hook == crate::isa::instruction::Hook::Mr32
+                } else if instruction.metadata.hook == Hook::Mr32
                     && source.direction == Direction::Read
                     && lane_wise(source.class)
                 {
@@ -348,10 +348,10 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
 /// unmarked. Stores, branches and structural synthetics are retained roots.
 pub fn can_prune(instruction: &Instruction) -> bool {
     let info = instruction.metadata;
-    info.flags == 0
-        && !(info.kind == 2 && info.subtype != 0)
-        && !(info.kind == 4 && info.subtype == 2)
-        && !(info.kind == 3 && info.subtype != 0)
+    info.order_flags == 0
+        && !(info.kind == InstructionKind::Synthetic && info.subtype != 0)
+        && !info.is_store()
+        && !(info.kind == InstructionKind::Branch && info.subtype != 0)
 }
 
 fn normalize_outputs(operands: &[ExpandedOperand], live: &[u8]) -> Result<Vec<u8>, PruneError> {
@@ -376,7 +376,7 @@ fn normalize_outputs(operands: &[ExpandedOperand], live: &[u8]) -> Result<Vec<u8
                 available: operand.mask,
             });
         }
-        if matches!(operand.class, 10 | 11) {
+        if matches!(operand.class, class::ACC_XYZ | class::VECTOR_XYZ) {
             *live = operand.mask;
         }
     }
@@ -402,7 +402,7 @@ pub fn required_inputs_expanded(
                 continue;
             }
             let required = if lane_wise(input.class) && lane_wise(output.class) {
-                if instruction.instruction.metadata.hook == crate::isa::instruction::Hook::Mr32 {
+                if instruction.instruction.metadata.hook == Hook::Mr32 {
                     rotate_left(live)
                 } else {
                     live
@@ -505,7 +505,7 @@ pub fn prune_expanded(
     let retained = forced || outputs.iter().any(|&mask| mask != 0);
     let mut instruction = source.clone();
     let mut operands = expanded.operands.clone();
-    if retained && !forced && source.metadata.mask_mode == 1 {
+    if retained && !forced && source.metadata.mask_mode == MaskMode::Any {
         let mut read_mask = 0;
         let mut write_mask = None;
         let mut vector_inputs = 0;
@@ -525,7 +525,7 @@ pub fn prune_expanded(
                 write_mask = Some(outputs[index]);
             }
         }
-        if instruction.metadata.hook == crate::isa::instruction::Hook::Mr32 {
+        if instruction.metadata.hook == Hook::Mr32 {
             read_mask = rotate_right(read_mask);
         }
         let mask = if vector_inputs != 0 {
@@ -549,7 +549,7 @@ pub fn prune_expanded(
         }
         for operand in &mut operands {
             if lane_wise(operand.class) {
-                operand.mask = if instruction.metadata.hook == crate::isa::instruction::Hook::Mr32
+                operand.mask = if instruction.metadata.hook == Hook::Mr32
                     && operand.direction == Direction::Read
                 {
                     rotate_left(mask)
@@ -558,7 +558,7 @@ pub fn prune_expanded(
                 };
             }
         }
-        if instruction.metadata.hook == crate::isa::instruction::Hook::Mr32
+        if instruction.metadata.hook == Hook::Mr32
             && let Some(input) = instruction.operands.get_mut(1)
         {
             input.mask = Mask(rotate_left(mask));
@@ -569,7 +569,14 @@ pub fn prune_expanded(
         for (index, operand) in operands.iter().enumerate() {
             if outputs[index] == 0
                 && operand.direction == Direction::Write
-                && matches!(operand.class, 1 | 2 | 34 | 35 | 36)
+                && matches!(
+                    operand.class,
+                    class::VECTOR
+                        | class::INTEGER
+                        | class::INTEGER_FLAG
+                        | class::DECLARED_VECTOR
+                        | class::DECLARED_INTEGER
+                )
                 && operand
                     .register
                     .as_deref()

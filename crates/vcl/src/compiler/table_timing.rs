@@ -163,7 +163,7 @@ impl<'a> TimingContext<'a> {
     /// Early-sampled conditional branch source.
     pub(super) fn offset(&self, reader: usize, register: usize) -> i32 {
         let metadata = self.region.instructions[reader].instruction.metadata;
-        if !(metadata.is_branch() && metadata.subtype & 4 != 0)
+        if !metadata.is_conditional_branch()
             || self.program.registers.named(register).family != Family::Integer
         {
             return 0;
@@ -399,7 +399,7 @@ impl<'a> TimingContext<'a> {
             // strategies compare that length. Code running into `--exit` is
             // still an ordinary stream then (Tidy folds it into E later).
             if matches!(self.region.blocks[block].end, End::Continue)
-                && self.region.instructions[id].instruction.metadata.index == 165
+                && self.region.instructions[id].instruction.metadata.index == id::XGKICK
             {
                 end = end.max(2);
             }

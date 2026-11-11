@@ -343,6 +343,7 @@ pub fn reduce(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::isa::instruction::unit;
     use crate::scheduler::schedule::{Dependency, Operation, RegisterAccess};
 
     fn movable(count: usize) -> Vec<Bounds> {
@@ -533,10 +534,10 @@ mod tests {
     #[test]
     fn retain_execution_unit_throughput_and_whole_register_pair_exclusion() {
         let mut a = Operation::new(0, 1);
-        a.unit_mask = 1;
+        a.unit_mask = unit::FMAC;
         a.throughput = 2;
         let mut b = Operation::new(1, 2);
-        b.unit_mask = 1;
+        b.unit_mask = unit::FMAC;
         let problem = SchedulingProblem {
             operations: vec![a, b],
             ..Default::default()
@@ -546,7 +547,7 @@ mod tests {
         assert_eq!((position(&result, 0), position(&result, 1)), (0, 2));
         let mut problem = problem;
         for op in &mut problem.operations {
-            op.unit_mask = 0;
+            op.unit_mask = unit::NONE;
         }
         problem.operations[0].writes.push(RegisterAccess {
             register: 4,

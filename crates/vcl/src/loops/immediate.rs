@@ -5,6 +5,7 @@
 //! of those primitives. The caller must supply proven component reaching
 //! setters from its rebuilt flow graph; source order alone is insufficient.
 
+use crate::isa::instruction::id;
 use crate::parser::expression::{self, Evaluation};
 use std::fmt;
 
@@ -33,49 +34,49 @@ pub struct AffineSpec {
 /// syntax is an output operand with an implicit read of the same VI register.
 pub const AFFINE_SPECS: [AffineSpec; 7] = [
     AffineSpec {
-        instruction: 109,
+        instruction: id::IADDI,
         operator: AffineOperator::Add,
         input_operand: 1,
         output_operand: 0,
         stride: StrideSource::Operand(2),
     },
     AffineSpec {
-        instruction: 110,
+        instruction: id::IADDIU,
         operator: AffineOperator::Add,
         input_operand: 1,
         output_operand: 0,
         stride: StrideSource::Operand(2),
     },
     AffineSpec {
-        instruction: 112,
+        instruction: id::ISUBIU,
         operator: AffineOperator::Subtract,
         input_operand: 1,
         output_operand: 0,
         stride: StrideSource::Operand(2),
     },
     AffineSpec {
-        instruction: 158,
+        instruction: id::LQI,
         operator: AffineOperator::Add,
         input_operand: 2,
         output_operand: 1,
         stride: StrideSource::Constant(1),
     },
     AffineSpec {
-        instruction: 163,
+        instruction: id::SQI,
         operator: AffineOperator::Add,
         input_operand: 2,
         output_operand: 1,
         stride: StrideSource::Constant(1),
     },
     AffineSpec {
-        instruction: 159,
+        instruction: id::LQD,
         operator: AffineOperator::Subtract,
         input_operand: 2,
         output_operand: 1,
         stride: StrideSource::Constant(1),
     },
     AffineSpec {
-        instruction: 164,
+        instruction: id::SQD,
         operator: AffineOperator::Subtract,
         input_operand: 2,
         output_operand: 1,
@@ -113,7 +114,7 @@ pub fn eligible_induction(facts: InductionFacts) -> bool {
 /// this pass; IADDIU immediates and branch-label immediates are not rewritten.
 pub const fn consumer_operand(instruction: u16) -> Option<u8> {
     match instruction {
-        155 | 160 | 156 | 161 => Some(1),
+        id::LQ | id::SQ | id::ILW | id::ISW => Some(1),
         _ => None,
     }
 }

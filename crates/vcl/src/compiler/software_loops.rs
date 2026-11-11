@@ -107,7 +107,7 @@ pub(super) fn normal_loop_plan(
             let instruction = &source.instructions[id].instruction;
             instruction.mode != ParseMode::Vcl
                 || instruction.modifiers != 0
-                || instruction.metadata.unit_mask & (64 | 128) != 0
+                || instruction.metadata.unit_mask & (unit::RANDOM | unit::EXTERNAL) != 0
         }) {
             return None;
         }
@@ -140,10 +140,10 @@ pub(super) fn normal_loop_plan(
         let metadata = located.instruction.metadata;
         // External transfers and volatile random state need additional original
         // effect/lock rules. Retain their legal linear schedule for now.
-        if metadata.unit_mask & (32 | 128) != 0 {
+        if metadata.unit_mask & (unit::DIVIDE | unit::EXTERNAL) != 0 {
             return None;
         }
-        let mut scheduling = Operation::new(id, metadata.issue_mask as u8);
+        let mut scheduling = Operation::new(id, metadata.issue_mask);
         scheduling.unit_mask = metadata.unit_mask;
         scheduling.throughput = metadata.throughput.max(1);
         scheduling.reads = located
@@ -210,7 +210,7 @@ pub(super) fn normal_loop_plan(
             // iteration beyond an early exit (notably VI induction outputs).
             Effect::Critical
         } else if metadata.is_memory() {
-            if metadata.subtype == 2 {
+            if metadata.is_store() {
                 Effect::Store
             } else {
                 Effect::MemoryRead
@@ -419,8 +419,7 @@ pub(super) fn lpgen_schedule(
         .collect();
     for (index, &id) in live.iter().enumerate() {
         let located = &source.instructions[id];
-        let store =
-            located.instruction.metadata.is_memory() && located.instruction.metadata.subtype == 2;
+        let store = located.instruction.metadata.is_store();
         let escapes = located.effects.writes.iter().any(|write| {
             exits.iter().any(|&exit| {
                 analysis.live_in[exit]
@@ -572,7 +571,7 @@ pub(super) fn lpgen_schedule(
                 if operand.direction == direction
                     && located.operands.get(i).copied().flatten() == Some(program_register)
                 {
-                    let mask = if operand.class == 2 {
+                    let mask = if operand.class == class::INTEGER {
                         1
                     } else {
                         operand.mask.0
@@ -649,10 +648,18 @@ pub(super) fn lpgen_schedule(
         }
         let (write, read) = (&mv.operands[0], &mv.operands[1]);
         let vector = outcome.problem.registers[write.register].pool == 1;
-        let (kind, descriptor, class) = if vector {
-            (crate::analysis::copies::Kind::Vector, 180, 1)
+        let (kind, descriptor, operand_class) = if vector {
+            (
+                crate::analysis::copies::Kind::Vector,
+                id::VMOVE,
+                class::VECTOR,
+            )
         } else {
-            (crate::analysis::copies::Kind::Integer, 178, 2)
+            (
+                crate::analysis::copies::Kind::Integer,
+                id::IMOVE,
+                class::INTEGER,
+            )
         };
         // VI operands carry component x; an ordinary VI instruction's own
         // mask is the parser default.
@@ -663,18 +670,18 @@ pub(super) fn lpgen_schedule(
         };
         let operand = |name: String, direction: Direction| crate::parser::Operand {
             text: name.clone(),
-            class,
+            class: operand_class,
             direction,
             implicit: false,
             mask,
             register: Some(name),
             forced_register: None,
             immediate: None,
-            immediate_kind: 0,
+            immediate_kind: instruction::ImmediateKind::NONE,
             tags: Vec::new(),
             field_letters: None,
         };
-        let metadata = &instruction::INSTRUCTIONS[descriptor];
+        let metadata = &instruction::INSTRUCTIONS[usize::from(descriptor)];
         let instruction = Instruction {
             metadata,
             mnemonic: metadata.name.into(),
@@ -1076,7 +1083,7 @@ pub(super) fn expand_software_loops(
                 continue;
             }
             for operand in &mut instruction.operands {
-                if operand.class == 27
+                if operand.class == class::IMMEDIATE
                     && operand
                         .immediate
                         .as_deref()

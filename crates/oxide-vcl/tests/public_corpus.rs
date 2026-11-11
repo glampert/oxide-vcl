@@ -47,7 +47,11 @@ fn every_program_matches_the_original() {
 
 #[test]
 fn memory_selector_does_not_become_a_vi_component_dependency() {
-    use vcl::{analysis::prune, isa::instruction::Direction, parser};
+    use vcl::{
+        analysis::prune,
+        isa::instruction::{Direction, class},
+        parser,
+    };
     for lane in ["x", "y", "z", "w"] {
         let source = format!(
             "--enter\n\
@@ -74,14 +78,14 @@ fn memory_selector_does_not_become_a_vi_component_dependency() {
         let address = instruction
             .operands
             .iter()
-            .find(|operand| operand.class == 31)
+            .find(|operand| operand.class == class::ADDRESS_REGISTER_OFFSET)
             .unwrap();
         assert_eq!(address.mask.suffix(), lane);
         let expanded = prune::expand(instruction);
         let base = expanded
             .operands
             .iter()
-            .find(|operand| operand.class == 31)
+            .find(|operand| operand.class == class::ADDRESS_REGISTER_OFFSET)
             .unwrap();
         assert_eq!(base.mask, 1);
         assert_eq!(base.direction, Direction::Read);

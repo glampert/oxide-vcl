@@ -686,6 +686,7 @@ pub fn compress(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::isa::instruction::unit;
 
     fn write(register: usize, latency: u16) -> TimingOperation {
         TimingOperation {
@@ -1244,10 +1245,10 @@ mod tests {
     #[test]
     fn throughput_stalls_both_pipes() {
         let mut a = write(1, 1);
-        a.unit_mask = 32;
+        a.unit_mask = unit::DIVIDE;
         a.throughput = 7;
         let mut b = write(2, 1);
-        b.unit_mask = 32;
+        b.unit_mask = unit::DIVIDE;
         b.throughput = 7;
         let result = replay(
             &[

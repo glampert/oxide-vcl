@@ -64,17 +64,17 @@ pub(super) fn lower_nop(
 ) -> &'static instruction::InstructionDef {
     static LOWER: std::sync::OnceLock<instruction::InstructionDef> = std::sync::OnceLock::new();
     LOWER.get_or_init(|| instruction::InstructionDef {
-        issue_mask: 2,
+        issue_mask: issue::LOWER,
         ..*nop
     })
 }
 
 pub(super) fn issue_pipes(located: &Located) -> u8 {
     let metadata = located.instruction.metadata;
-    if metadata.index == 153 && located.instruction.mode == ParseMode::Vcl {
-        3
+    if metadata.index == id::MOVE && located.instruction.mode == ParseMode::Vcl {
+        issue::EITHER
     } else {
-        metadata.issue_mask as u8
+        metadata.issue_mask
     }
 }
 
@@ -265,14 +265,17 @@ pub(super) fn build_wrangle_table_span(
             }
             for (consumer, &id) in live.iter().enumerate() {
                 let user = &region.instructions[id];
-                if !matches!(user.instruction.metadata.index, 155 | 156 | 160 | 161) {
+                if !matches!(
+                    user.instruction.metadata.index,
+                    id::LQ | id::ILW | id::SQ | id::ISW
+                ) {
                     continue;
                 }
                 let Some(ea) = user
                     .instruction
                     .operands
                     .iter()
-                    .position(|o| (28..=33).contains(&o.class))
+                    .position(|o| class::is_address(o.class))
                 else {
                     continue;
                 };
@@ -358,7 +361,7 @@ pub(super) fn build_wrangle_table_span(
             };
             let access = slot.take().unwrap();
             if direction == WDirection::Read
-                && (28..=33).contains(&operand.class)
+                && class::is_address(operand.class)
                 && affine_bases.get(&operands_index) == Some(&register)
             {
                 continue;
@@ -426,7 +429,7 @@ pub(super) fn build_wrangle_table_span(
     for (index, &id) in live.iter().enumerate() {
         let located = &region.instructions[id];
         let metadata = located.instruction.metadata;
-        let conditional = metadata.is_branch() && metadata.subtype & 4 != 0;
+        let conditional = metadata.is_conditional_branch();
         let mut operands = Vec::new();
         let mut registers_here = Vec::new();
         for &(register, direction, mask, latency, blocking) in &operand_lists[index] {
@@ -591,7 +594,7 @@ pub(super) fn build_wrangle_table_span(
             .instruction
             .operands
             .iter()
-            .position(|o| (28..=33).contains(&o.class))?;
+            .position(|o| class::is_address(o.class))?;
         let operand = &located.instruction.operands[index];
         let base = located.operands[index].and_then(|r| {
             let register = program.registers.named(r);
@@ -609,12 +612,13 @@ pub(super) fn build_wrangle_table_span(
             })
             .unwrap_or_else(|| "0".into());
         // Compares the EA operands' mask byte, which does
-        // not separate `disp(reg)` from `disp(reg)mask` (class 29 vs 31): an
+        // not separate `disp(reg)` from `disp(reg)mask` (ADDRESS_OFFSET vs
+        // ADDRESS_REGISTER_OFFSET): an
         // `sq ...,3(vi04)` aliases `ilw.w ...,3(vi04)` (vu_1518195603). Only
         // the post-increment and pre-decrement forms differ.
         let kind = match operand.class {
-            32 => 1,
-            33 => 2,
+            class::ADDRESS_INCREMENT => 1,
+            class::ADDRESS_DECREMENT => 2,
             _ => 0,
         };
         Some((base, offset, kind))
@@ -630,45 +634,49 @@ pub(super) fn build_wrangle_table_span(
             .instruction
             .operands
             .iter()
-            .find(|operand| (28..=33).contains(&operand.class))
+            .find(|operand| class::is_address(operand.class))
             .map_or(&[], |operand| operand.tags.as_slice())
     };
     let shares_tag = |a: usize, b: usize| tags(a).iter().any(|tag| tags(b).contains(tag));
     let ram_bits = |id: usize| -> u8 {
         let instruction = &region.instructions[id].instruction;
-        if instruction.metadata.mask_mode == 0 {
+        if instruction.metadata.mask_mode == MaskMode::Unmasked {
             0xf
         } else {
             instruction.mask.0
         }
     };
-    // Order classes (descriptor flags): 0x10 and
-    // 0x20 compare like a store and a load against earlier loads and stores,
-    // 0x40 links to the nearest earlier instruction of that class. Only
-    // XGKICK (0x60) carries any: it follows every earlier store (it has no
-    // address to compare) and the previous XGKICK, and a later store
-    // follows it.
-    let order_flags = |id: usize| region.instructions[id].instruction.metadata.flags;
+    // Order classes (the descriptor's order flags): WRITES_MEMORY and
+    // READS_MEMORY compare like a store and a load against earlier loads and
+    // stores, CHAINED links to the nearest earlier instruction of that class.
+    // Only XGKICK (READS_MEMORY | CHAINED) carries any: it follows every
+    // earlier store (it has no address to compare) and the previous XGKICK,
+    // and a later store follows it.
+    let order_flags = |id: usize| region.instructions[id].instruction.metadata.order_flags;
+    const LOAD: u8 = subtype::memory::LOAD;
+    const STORE: u8 = subtype::memory::STORE;
     for i in 0..live.len() {
         let kind = instructions[i].memory;
         let flags = order_flags(live[i]);
-        let after_loads = kind == 2 || flags & 0x10 != 0;
-        let after_stores = kind != 0 || flags & 0x20 != 0;
-        let mut nearest_class = flags & 0x40 != 0;
+        let after_loads = kind == STORE || flags & order::WRITES_MEMORY != 0;
+        let after_stores = kind != 0 || flags & order::READS_MEMORY != 0;
+        let mut nearest_class = flags & order::CHAINED != 0;
         if !after_loads && !after_stores && !nearest_class {
             continue;
         }
         let ea = address(live[i]);
         for j in (0..i).rev() {
             let other = instructions[j].memory;
-            let ordered = (after_stores && other == 2) || (after_loads && other == 1);
+            let ordered = (after_stores && other == STORE) || (after_loads && other == LOAD);
             let other_flags = order_flags(live[j]);
             let mut flagged = false;
-            if nearest_class && other_flags & 0x40 != 0 {
+            if nearest_class && other_flags & order::CHAINED != 0 {
                 nearest_class = false;
                 flagged = true;
             }
-            if (kind == 2 && other_flags & 0x20 != 0) || (kind == 1 && other_flags & 0x10 != 0) {
+            if (kind == STORE && other_flags & order::READS_MEMORY != 0)
+                || (kind == LOAD && other_flags & order::WRITES_MEMORY != 0)
+            {
                 flagged = true;
             }
             if !ordered && !flagged {
@@ -678,7 +686,7 @@ pub(super) fn build_wrangle_table_span(
                 || ea.is_none()
                 || (ram_bits(live[i]) & ram_bits(live[j]) != 0
                     && (timid
-                        || (shares_tag(live[i], live[j]) && !(kind == 2 && other == 2))
+                        || (shares_tag(live[i], live[j]) && !(kind == STORE && other == STORE))
                         || {
                             let other_ea = address(live[j]);
                             match (&ea, &other_ea) {
@@ -702,7 +710,7 @@ pub(super) fn build_wrangle_table_span(
                                 _ => false,
                             }
                         }));
-            if std::env::var_os("VCL_ALIAS_TRACE").is_some() && kind == 2 {
+            if std::env::var_os("VCL_ALIAS_TRACE").is_some() && kind == STORE {
                 crate::trace!(
                     "alias {i} {:?} vs {j} {:?} -> {alias} timid {timid}",
                     ea,
@@ -898,12 +906,12 @@ pub(super) fn add_memory_tag_resources(
         let Some(memory) = instruction
             .operands
             .iter()
-            .find(|operand| (28..=33).contains(&operand.class))
+            .find(|operand| class::is_address(operand.class))
         else {
             continue;
         };
-        let store = instruction.metadata.subtype == 2;
-        let mask = if instruction.metadata.mask_mode == 0 {
+        let store = instruction.metadata.is_store();
+        let mask = if instruction.metadata.mask_mode == MaskMode::Unmasked {
             0xf
         } else {
             instruction.mask.0

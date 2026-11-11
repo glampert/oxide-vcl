@@ -3,7 +3,10 @@
 pub mod expression;
 
 pub use crate::diagnostics::ParseMessage;
-use crate::isa::instruction::{self, Direction, InstructionDef, Mask, OperandSpec, Syntax};
+use crate::isa::instruction::{
+    self, Direction, Hook, ImmediateKind, InstructionDef, InstructionKind, Mask, MaskMode,
+    OperandSpec, Syntax, class, id, subtype,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Program {
@@ -95,21 +98,24 @@ pub struct Instruction {
 
 impl Instruction {
     pub fn synthetic(&self) -> Option<Synthetic> {
-        (self.metadata.kind == 2).then_some(match self.metadata.subtype {
-            1 => Synthetic::Enter,
-            2 => Synthetic::EndEnter,
-            3 => Synthetic::Exit,
-            4 => Synthetic::EndExit,
-            5 => Synthetic::Continue,
-            6 => Synthetic::Input,
-            7 => Synthetic::Output,
-            8 => Synthetic::LoopCount,
-            9 => Synthetic::LoopExtra,
-            10 => Synthetic::Barrier,
-            11 => Synthetic::ExitMacro,
-            12 => Synthetic::LoopAbsolute,
-            _ => Synthetic::Unknown,
-        })
+        use subtype::synthetic::*;
+        self.metadata
+            .is_synthetic()
+            .then_some(match self.metadata.subtype {
+                ENTER => Synthetic::Enter,
+                END_ENTER => Synthetic::EndEnter,
+                EXIT => Synthetic::Exit,
+                END_EXIT => Synthetic::EndExit,
+                CONTINUE => Synthetic::Continue,
+                INPUT => Synthetic::Input,
+                OUTPUT => Synthetic::Output,
+                LOOP_COUNT => Synthetic::LoopCount,
+                LOOP_EXTRA => Synthetic::LoopExtra,
+                BARRIER => Synthetic::Barrier,
+                EXIT_MACRO => Synthetic::ExitMacro,
+                LOOP_ABSOLUTE => Synthetic::LoopAbsolute,
+                _ => Synthetic::Unknown,
+            })
     }
 }
 
@@ -141,7 +147,7 @@ pub struct Operand {
     pub forced_register: Option<String>,
     pub immediate: Option<String>,
     /// Original operand conversion selector survives opcode normalization.
-    pub immediate_kind: u8,
+    pub immediate_kind: ImmediateKind,
     pub tags: Vec<String>,
     /// The whole token when old syntax read the trailing x/y/z/w letters of
     /// a symbolic name as a field selection with no dot before them (`copy`
@@ -717,15 +723,15 @@ fn parse_instruction(
     if modifiers & !allowed_flags != 0 {
         return Err(ParseMessage::InstructionBits);
     }
-    if state.mode == ParseMode::Vcl && metadata.kind == 0 {
+    if state.mode == ParseMode::Vcl && metadata.kind == InstructionKind::RawOnly {
         return Err(ParseMessage::RawOnlyInstruction { name: name.clone() });
     }
     let mut mask = match (metadata.mask_mode, specified_mask) {
-        (0, Some(_)) => {
+        (MaskMode::Unmasked, Some(_)) => {
             return Err(ParseMessage::MaskNotAccepted { name: name.clone() });
         }
-        (2, None | Some(Mask(7))) => Mask::XYZ,
-        (2, _) => return Err(ParseMessage::XyzMaskRequired),
+        (MaskMode::Xyz, None | Some(Mask::XYZ)) => Mask::XYZ,
+        (MaskMode::Xyz, _) => return Err(ParseMessage::XyzMaskRequired),
         (_, Some(mask)) if mask.0 == 0 => return Err(ParseMessage::EmptyMask),
         (_, Some(mask)) => mask,
         _ => Mask::XYZW,
@@ -751,7 +757,9 @@ fn parse_instruction(
             }
         }
         // --exitm's empty macro operand is an intentional exception.
-        if text.is_empty() && !(metadata.kind == 2 && metadata.subtype == 11) {
+        if text.is_empty()
+            && !(metadata.is_synthetic() && metadata.subtype == subtype::synthetic::EXIT_MACRO)
+        {
             return Err(ParseMessage::MissingOperand {
                 position: operand_index + 1,
                 name: name.clone(),
@@ -766,35 +774,49 @@ fn parse_instruction(
         specified_mask.is_some(),
         state.syntax,
     )?;
-    if metadata.index < 12
-        && operands
-            .iter()
-            .take(2)
-            .any(|operand| operand.class == 38 && bracket_field(&operand.text).is_some())
+    if metadata.index < id::GENERALIZED_END
+        && operands.iter().take(2).any(|operand| {
+            operand.class == class::GENERALIZED && bracket_field(&operand.text).is_some()
+        })
     {
         return Err(ParseMessage::ScalarNotThird);
     }
     if specified_mask.is_none() {
-        if let Some(operand) = operands
-            .iter()
-            .find(|operand| !operand.implicit && matches!(operand.class, 1 | 9 | 35 | 38 | 30 | 31))
-        {
+        if let Some(operand) = operands.iter().find(|operand| {
+            use class::*;
+            !operand.implicit
+                && matches!(
+                    operand.class,
+                    VECTOR
+                        | ACC
+                        | DECLARED_VECTOR
+                        | GENERALIZED
+                        | ADDRESS_REGISTER
+                        | ADDRESS_REGISTER_OFFSET
+                )
+        }) {
             mask = operand.mask;
         }
         let mismatched = operands
             .iter()
-            .filter(|operand| !operand.implicit && matches!(operand.class, 1 | 9 | 35))
+            .filter(|operand| {
+                !operand.implicit
+                    && matches!(
+                        operand.class,
+                        class::VECTOR | class::ACC | class::DECLARED_VECTOR
+                    )
+            })
             .any(|operand| operand.mask != mask);
         if mismatched {
             return Err(ParseMessage::VectorMasksDiffer);
         }
     }
     for operand in &mut operands {
-        if operand.implicit && operand.class == 9 {
+        if operand.implicit && operand.class == class::ACC {
             operand.mask = mask;
         }
     }
-    let mut metadata = if metadata.index < 12 {
+    let mut metadata = if metadata.index < id::GENERALIZED_END {
         let derived = derive_generalized_name(&name, &operands)?;
         let concrete = instruction::lookup(&derived, Syntax::Old).ok_or_else(|| {
             ParseMessage::CannotDerive {
@@ -805,11 +827,11 @@ fn parse_instruction(
         // adapt the explicit strings to the concrete opcode before decoding.
         for (operand, spec) in operands.iter_mut().zip(concrete.operands) {
             operand.class = spec.class;
-            operand.direction = spec.direction();
-            // The generalized third operand was decoded as OP_V_TBD with a
-            // vector mask. Resolving it to a scalar I/Q/P/R resource changes
+            operand.direction = spec.direction;
+            // The generalized third operand was decoded as GENERALIZED with
+            // a vector mask. Resolving it to a scalar I/Q/P/R resource changes
             // its component count as well as its class.
-            if matches!(spec.class, 4..=8) {
+            if matches!(spec.class, class::I..=class::R) {
                 operand.mask = Mask::X;
             }
         }
@@ -826,25 +848,19 @@ fn parse_instruction(
     } {
         metadata = instruction::lookup(name, Syntax::Old).expect("original table has ILW/ISW");
         if let Some(address) = operands.get_mut(1) {
-            address.class = 31;
+            address.class = class::ADDRESS_REGISTER_OFFSET;
             address.immediate = Some("0".into());
         }
     }
     // The original's EFU hook installs the fixed input fields before flow.
     // These descriptor operands are FL4 even for XYZ/XY/XZ operations.
-    if metadata.hook == instruction::Hook::Efu
-        && let Some(mask) = match metadata.hook_argument {
-            2 => Some(Mask(3)),
-            3 => Some(Mask(5)),
-            4 => Some(Mask::XYZ),
-            5 => Some(Mask::XYZW),
-            _ => None,
-        }
+    if let Hook::Efu(fields) = metadata.hook
+        && !fields.is_scalar()
     {
-        operands[1].mask = mask;
+        operands[1].mask = fields;
     }
-    if metadata.mask_mode == 3
-        && metadata.subtype == 1
+    if metadata.mask_mode == MaskMode::OneLane
+        && metadata.subtype == subtype::memory::LOAD
         && !mask.is_scalar()
         && specified_mask.is_some()
     {
@@ -896,7 +912,7 @@ fn normalize_zero_sources(index: u16, operands: &mut [Operand]) {
         return;
     }
     match index {
-        34 | 108 => {
+        id::ADD | id::IADD => {
             if is_zero_register(&operands[1]) && !is_zero_register(&operands[2]) {
                 let (first, second) = operands.split_at_mut(2);
                 std::mem::swap(&mut first[1].register, &mut second[0].register);
@@ -904,13 +920,13 @@ fn normalize_zero_sources(index: u16, operands: &mut [Operand]) {
                 first[1].forced_register = second[0].forced_register.take();
             }
         }
-        48 | 111 => {
+        id::SUB | id::ISUB => {
             let same = match (&operands[1].register, &operands[2].register) {
                 (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
                 _ => false,
             };
             if same {
-                let zero = if index == 48 { "vf00" } else { "vi00" };
+                let zero = if index == id::SUB { "vf00" } else { "vi00" };
                 for operand in &mut operands[1..3] {
                     operand.register = Some(zero.into());
                     operand.text = zero.into();
@@ -924,11 +940,9 @@ fn normalize_zero_sources(index: u16, operands: &mut [Operand]) {
 
 fn derive_generalized_name(name: &str, operands: &[Operand]) -> Result<String, ParseMessage> {
     let mut name = name.to_string();
-    if operands
-        .iter()
-        .take(2)
-        .any(|operand| operand.class == 38 && bracket_field(&operand.text).is_some())
-    {
+    if operands.iter().take(2).any(|operand| {
+        operand.class == class::GENERALIZED && bracket_field(&operand.text).is_some()
+    }) {
         return Err(ParseMessage::ScalarNotThird);
     }
     if operands.first().is_some_and(|operand| {
@@ -985,14 +999,14 @@ fn parse_operands(
                 instruction::implicit_register(spec.class).map(str::to_string)
             };
             let implicit_mask = match spec.class {
-                9 => mask,
-                10 => Mask::XYZ,
+                class::ACC => mask,
+                class::ACC_XYZ => Mask::XYZ,
                 _ => Mask::X,
             };
             result.push(Operand {
                 text: register.clone().unwrap_or_default(),
                 class: spec.class,
-                direction: spec.direction(),
+                direction: spec.direction,
                 implicit: true,
                 mask: implicit_mask,
                 register,
@@ -1028,16 +1042,17 @@ fn parse_operands(
 /// - 31 `off(reg)mask` (ILW/ISW): at least 5 bytes.
 /// - 32 `(reg++)` and 33 `(--reg)`: at least 5 bytes.
 ///
-/// In 30 and 31 only lowercase `x`, `y`, `z` and `w` may follow the `)`.
+/// In the register forms only lowercase `x`, `y`, `z` and `w` may follow the `)`.
 /// The length floors count the mask. So `ilw.x t,0(p)` and `ilwr.x t,(p)`
 /// fail while `0(p)x`, `10(p)` and `(p)x` decode, whatever the register is
 /// named.
-fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), ParseMessage> {
+fn memory_operand(body: &str, operand_class: u8) -> Result<(usize, &str, usize), ParseMessage> {
+    use class::*;
     let bytes = body.as_bytes();
     let length = bytes.len();
-    let minimum = match class {
-        28 | 29 => 3,
-        30 => 4,
+    let minimum = match operand_class {
+        ADDRESS | ADDRESS_OFFSET => 3,
+        ADDRESS_REGISTER => 4,
         _ => 5,
     };
     let malformed = || ParseMessage::MalformedMemoryOperand {
@@ -1047,17 +1062,21 @@ fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), ParseMe
         return Err(malformed());
     }
     let last = length - 1;
-    match class {
-        28 | 32 | 33 if bytes[0] != b'(' || bytes[last] != b')' => Err(malformed()),
-        28 => Ok((0, &body[1..last], last)),
-        29 => {
+    match operand_class {
+        ADDRESS | ADDRESS_INCREMENT | ADDRESS_DECREMENT
+            if bytes[0] != b'(' || bytes[last] != b')' =>
+        {
+            Err(malformed())
+        }
+        ADDRESS => Ok((0, &body[1..last], last)),
+        ADDRESS_OFFSET => {
             if bytes[last] != b')' {
                 return Err(malformed());
             }
             let open = body[..last].rfind('(').ok_or_else(malformed)?;
             Ok((open, &body[open + 1..last], last))
         }
-        30 | 31 => {
+        ADDRESS_REGISTER | ADDRESS_REGISTER_OFFSET => {
             let lanes = bytes
                 .iter()
                 .rev()
@@ -1067,7 +1086,7 @@ fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), ParseMe
                 return Err(malformed());
             }
             let close = last - lanes;
-            let open = if class == 30 {
+            let open = if operand_class == ADDRESS_REGISTER {
                 (bytes[0] == b'(').then_some(0)
             } else {
                 body[..close].rfind('(')
@@ -1075,7 +1094,7 @@ fn memory_operand(body: &str, class: u8) -> Result<(usize, &str, usize), ParseMe
             .ok_or_else(malformed)?;
             Ok((open, &body[open + 1..close], close))
         }
-        32 => body[1..last]
+        ADDRESS_INCREMENT => body[1..last]
             .strip_suffix("++")
             .map(|register| (0, register, last))
             .ok_or(ParseMessage::PostincrementRequired),
@@ -1111,7 +1130,7 @@ fn parse_operand(
     let mut operand = Operand {
         text: body.to_string(),
         class: spec.class,
-        direction: spec.direction(),
+        direction: spec.direction,
         implicit: false,
         mask: Mask::X,
         register: None,
@@ -1121,17 +1140,18 @@ fn parse_operand(
         tags,
         field_letters: None,
     };
+    use class::*;
     match spec.class {
-        27 => {
+        IMMEDIATE => {
             operand.immediate = Some(body.to_string());
             return Ok(operand);
         }
-        28..=33 => {
+        ADDRESS..=ADDRESS_DECREMENT => {
             let (open, register, close) = memory_operand(body, spec.class)?;
-            if matches!(spec.class, 29 | 31) {
+            if matches!(spec.class, ADDRESS_OFFSET | ADDRESS_REGISTER_OFFSET) {
                 operand.immediate = Some(if open == 0 { "0" } else { &body[..open] }.into());
             }
-            if matches!(spec.class, 30 | 31) {
+            if matches!(spec.class, ADDRESS_REGISTER | ADDRESS_REGISTER_OFFSET) {
                 operand.mask =
                     Mask::parse(&body[close + 1..]).ok_or(ParseMessage::InvalidMemoryMask)?;
                 if operand.mask.0 == 0 {
@@ -1152,22 +1172,32 @@ fn parse_operand(
         _ => {}
     }
     let mut register = body.to_string();
-    if matches!(spec.class, 35 | 36)
+    if matches!(spec.class, DECLARED_VECTOR | DECLARED_INTEGER)
         && let Some((name, mapping)) = body.split_once('(')
     {
         register = name.into();
         operand.forced_register = Some(mapping.trim_end_matches(')').to_string());
     }
     let mut operand_mask = None;
-    if syntax == Syntax::New && matches!(spec.class, 3 | 11 | 13..=16 | 38) {
+    if syntax == Syntax::New
+        && matches!(
+            spec.class,
+            SCALAR | VECTOR_XYZ | FIELD_X..=FIELD_W | GENERALIZED
+        )
+    {
         if let Some((name, mask)) = bracket_field(&register) {
-            if spec.class == 38 && !mask.is_scalar() {
+            if spec.class == GENERALIZED && !mask.is_scalar() {
                 return Err(ParseMessage::GeneralizedScalarComponent);
             }
             operand_mask = Some(mask);
             register = name.to_string();
         }
-    } else if syntax == Syntax::Old && matches!(spec.class, 1 | 3 | 11 | 13..=16 | 35) {
+    } else if syntax == Syntax::Old
+        && matches!(
+            spec.class,
+            VECTOR | SCALAR | VECTOR_XYZ | FIELD_X..=FIELD_W | DECLARED_VECTOR
+        )
+    {
         // The original scans a maximal case-insensitive trailing lane string
         // and strips that string and its optional preceding dot, in vector
         // interface operands too: `in_vf caty(vf01)` binds `cat`. A name made
@@ -1188,12 +1218,12 @@ fn parse_operand(
             // suffix (`res.xyz`); glued letters (`resxyz`) only shorten the
             // name and the operand keeps every field (observed from vcl
             // 1.4beta7, `field-letters-*`).
-            if dotted || spec.class != 35 {
+            if dotted || spec.class != DECLARED_VECTOR {
                 operand_mask = Some(mask);
             }
             if dotted {
                 register.pop();
-            } else if matches!(spec.class, 1 | 35)
+            } else if matches!(spec.class, VECTOR | DECLARED_VECTOR)
                 && physical_register(&register, true).is_none()
                 && physical_register(&register, false).is_none()
             {
@@ -1208,22 +1238,28 @@ fn parse_operand(
         // vector one: vcl rejects `in_vi cnt.x(vi01)`, and in new syntax
         // `out_vf res.xyz(vf02)`, with its invalid-character error (observed
         // from vcl 1.4beta7, `field-letters-new-*`).
-        .filter(|_| !(spec.class == 36 || (spec.class == 35 && syntax == Syntax::New)))
+        .filter(|_| {
+            !(spec.class == DECLARED_INTEGER
+                || (spec.class == DECLARED_VECTOR && syntax == Syntax::New))
+        })
     {
         operand_mask = Some(Mask::parse(suffix).ok_or(ParseMessage::InvalidOperandMask)?);
         register = name.into();
     }
     let required_mask = match spec.class {
-        11 | 10 => Some(Mask::XYZ),
-        13 => Some(Mask::X),
-        14 => Some(Mask::Y),
-        15 => Some(Mask::Z),
-        16 => Some(Mask::W),
+        VECTOR_XYZ | ACC_XYZ => Some(Mask::XYZ),
+        FIELD_X => Some(Mask::X),
+        FIELD_Y => Some(Mask::Y),
+        FIELD_Z => Some(Mask::Z),
+        FIELD_W => Some(Mask::W),
         _ => None,
     };
-    let vector = matches!(spec.class, 1 | 3 | 9..=16 | 35 | 38);
+    let vector = matches!(
+        spec.class,
+        VECTOR | SCALAR | ACC..=FIELD_W | DECLARED_VECTOR | GENERALIZED
+    );
     if vector {
-        if spec.class == 3 && !operand_mask.is_some_and(Mask::is_scalar) {
+        if spec.class == SCALAR && !operand_mask.is_some_and(Mask::is_scalar) {
             return Err(ParseMessage::ScalarComponentRequired);
         }
         if let Some(required) = required_mask {
@@ -1231,18 +1267,18 @@ fn parse_operand(
                 return Err(ParseMessage::FieldSelectionsDiffer);
             }
             operand.mask = required;
-        } else if forced_mask && !matches!(spec.class, 3 | 38) {
+        } else if forced_mask && !matches!(spec.class, SCALAR | GENERALIZED) {
             operand.mask = instruction_mask;
         } else {
             operand.mask = operand_mask.unwrap_or(instruction_mask);
         }
     }
     match spec.class {
-        4 | 5 | 7 | 8 => {
+        I | P | Q | R => {
             let expected = match spec.class {
-                4 => "I",
-                5 => "P",
-                7 => "Q",
+                I => "I",
+                P => "P",
+                Q => "Q",
                 _ => "R",
             };
             if !register.eq_ignore_ascii_case(expected) {
@@ -1252,9 +1288,9 @@ fn parse_operand(
             }
             register = expected.into();
         }
-        9 | 10 => register = "ACC".into(),
-        17 => register = "CLIP".into(),
-        34 if physical_register(&register, false) != Some(1) => {
+        ACC | ACC_XYZ => register = "ACC".into(),
+        CLIP => register = "CLIP".into(),
+        INTEGER_FLAG if physical_register(&register, false) != Some(1) => {
             return Err(ParseMessage::OperandMustBe {
                 expected: "vi01".into(),
             });
@@ -1263,7 +1299,7 @@ fn parse_operand(
     }
     validate_register_name(&register)?;
     if let Some(mapping) = &operand.forced_register {
-        let vector = spec.class == 35;
+        let vector = spec.class == DECLARED_VECTOR;
         if physical_register(mapping, vector).is_none() {
             return Err(ParseMessage::ForcedRegisterNotPhysical {
                 register: mapping.clone(),
@@ -1601,7 +1637,7 @@ mod tests {
             .collect();
         assert_eq!(names, ["addx", "mula", "addi", "addq", "add", "add"]);
         assert_eq!(instructions[0].operands[2].register.as_deref(), Some("c"));
-        assert_eq!(instructions[0].operands[2].class, 13);
+        assert_eq!(instructions[0].operands[2].class, class::FIELD_X);
         rejected(
             ".syntax new\n\
                   add b[x],a,a",
@@ -1713,7 +1749,7 @@ mod tests {
             parsed[2]
                 .operands
                 .iter()
-                .any(|operand| operand.implicit && operand.class == 9)
+                .any(|operand| operand.implicit && operand.class == class::ACC)
         );
         assert_eq!(parsed[3].metadata.name, "msub");
         assert_eq!(parsed[4].metadata.name, "madda");
@@ -1806,7 +1842,10 @@ mod tests {
         assert_eq!(parsed[0].metadata.name, "ilw");
         assert_eq!(parsed[1].metadata.name, "isw");
         for instruction in parsed {
-            assert_eq!(instruction.operands[1].class, 31);
+            assert_eq!(
+                instruction.operands[1].class,
+                class::ADDRESS_REGISTER_OFFSET
+            );
             assert_eq!(instruction.operands[1].immediate.as_deref(), Some("0"));
             assert_eq!(instruction.operands[1].register.as_deref(), Some("vi03"));
         }
@@ -1837,11 +1876,9 @@ mod tests {
                 .iter()
                 .any(|operand| operand.implicit && operand.register.as_deref() == Some("MAC"))
         );
-        assert!(
-            instruction.operands.iter().any(|operand| operand.implicit
-                && operand.class == 23
-                && operand.register.is_none())
-        );
+        assert!(instruction.operands.iter().any(|operand| operand.implicit
+            && operand.class == class::STATUS_FROM_ALU
+            && operand.register.is_none()));
     }
 
     #[test]

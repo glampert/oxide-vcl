@@ -4,6 +4,7 @@
 //! This layer formats an already allocated instruction. It does not choose
 //! issue slots, reverse branch senses, or synthesize allocator-internal moves.
 
+use crate::isa::instruction::{ImmediateKind, ImmediateType, Mask, MaskMode, class, id};
 use crate::parser::expression::{self, Evaluation, ExpressionOptions, Number};
 use crate::parser::{Instruction, Operand};
 use std::fmt;
@@ -47,27 +48,28 @@ pub fn instruction(
         let mut resolved = inst.clone();
         let mut registers = registers.to_vec();
         match (inst.generated_copy, inst.metadata.index) {
-            (Some(crate::analysis::copies::Kind::Integer), 179) => {
+            (Some(crate::analysis::copies::Kind::Integer), id::LIMOVE) => {
                 resolved.metadata =
                     crate::isa::instruction::lookup("iaddiu", crate::isa::instruction::Syntax::Old)
                         .unwrap();
                 let mut zero = inst.operands[1].clone();
-                zero.class = 27;
+                zero.class = class::IMMEDIATE;
                 zero.register = None;
                 zero.forced_register = None;
                 zero.text = "0".into();
                 zero.immediate = Some("0".into());
-                zero.immediate_kind = 37; // the move hook writes literal decimal zero
+                // The move hook writes a literal decimal zero.
+                zero.immediate_kind = ImmediateKind::signed(5);
                 zero.tags.clear();
                 resolved.operands.push(zero);
                 registers.push(None);
             }
-            (Some(crate::analysis::copies::Kind::Vector), 181) => {
+            (Some(crate::analysis::copies::Kind::Vector), id::LVMOVE) => {
                 resolved.metadata =
                     crate::isa::instruction::lookup("move", crate::isa::instruction::Syntax::Old)
                         .unwrap();
             }
-            (Some(crate::analysis::copies::Kind::Vector), 182) => {
+            (Some(crate::analysis::copies::Kind::Vector), id::UVMOVE) => {
                 resolved.metadata =
                     crate::isa::instruction::lookup("max", crate::isa::instruction::Syntax::Old)
                         .unwrap();
@@ -88,7 +90,7 @@ pub fn instruction(
 
     // The original's collapse of IADDI preserves all register effects and
     // the operand's signed selector while replacing opcode and magnitude.
-    let collapsed_iaddi = if inst.metadata.index == 109 {
+    let collapsed_iaddi = if inst.metadata.index == id::IADDI {
         inst.operands
             .get(2)
             .and_then(|operand| operand.immediate.as_deref())
@@ -115,13 +117,13 @@ pub fn instruction(
         mnemonic.push_str(".xyz");
     } else {
         match inst.metadata.mask_mode {
-            0 => {}
-            1 if inst.mask.0 == 0 || inst.mask.0 & !15 != 0 => {
+            MaskMode::Unmasked => {}
+            MaskMode::Any if inst.mask.0 == 0 || inst.mask.0 & !15 != 0 => {
                 return Err(EmitError("invalid instruction component mask".into()));
             }
-            1 => append_mask(&mut mnemonic, inst.mask.0),
-            2 if inst.mask.0 == 7 => mnemonic.push_str(".xyz"),
-            3 if inst.mask.is_scalar() => append_mask(&mut mnemonic, inst.mask.0),
+            MaskMode::Any => append_mask(&mut mnemonic, inst.mask.0),
+            MaskMode::Xyz if inst.mask == Mask::XYZ => mnemonic.push_str(".xyz"),
+            MaskMode::OneLane if inst.mask.is_scalar() => append_mask(&mut mnemonic, inst.mask.0),
             _ => {
                 return Err(EmitError(
                     "instruction component mask does not match descriptor".into(),
@@ -205,13 +207,16 @@ fn register_name(operand: &Operand, replacement: Option<&str>) -> Result<String,
 fn emit_operand(
     operand: &Operand,
     replacement: Option<&str>,
-    selector: u8,
+    selector: ImmediateKind,
 ) -> Result<String, EmitError> {
+    use class::*;
     let register = || register_name(operand, replacement);
     let lane = |suffix: &str| register().map(|name| name + suffix);
     match operand.class {
-        1 | 2 | 34 | 39..=44 | 54 => register(),
-        3 => {
+        VECTOR | INTEGER | INTEGER_FLAG | CORE_GPR32..=CORE_FPR_SCALAR | CORE_RETURN_ADDRESS => {
+            register()
+        }
+        SCALAR => {
             if !operand.mask.is_scalar() {
                 return Err(EmitError(
                     "scalar operand does not select one component".into(),
@@ -219,32 +224,32 @@ fn emit_operand(
             }
             lane(&operand.mask.suffix())
         }
-        4 => Ok("I".into()),
-        5 => Ok("P".into()),
-        6 => Ok("nP".into()),
-        7 => Ok("Q".into()),
-        8 => Ok("R".into()),
-        9 => Ok("ACC".into()),
-        10 => Ok("ACCxyz".into()),
-        11 => lane("xyz"),
-        13 => lane("x"),
-        14 => lane("y"),
-        15 => lane("z"),
-        16 => lane("w"),
-        27 => immediate(
+        I => Ok("I".into()),
+        P => Ok("P".into()),
+        NEXT_P => Ok("nP".into()),
+        Q => Ok("Q".into()),
+        R => Ok("R".into()),
+        ACC => Ok("ACC".into()),
+        ACC_XYZ => Ok("ACCxyz".into()),
+        VECTOR_XYZ => lane("xyz"),
+        FIELD_X => lane("x"),
+        FIELD_Y => lane("y"),
+        FIELD_Z => lane("z"),
+        FIELD_W => lane("w"),
+        IMMEDIATE => immediate(
             operand.immediate.as_deref().unwrap_or(&operand.text),
             selector,
             false,
         ),
-        28 | 30 => register().map(|name| format!("({name})")),
-        29 | 31 | 46 => {
+        ADDRESS | ADDRESS_REGISTER => register().map(|name| format!("({name})")),
+        ADDRESS_OFFSET | ADDRESS_REGISTER_OFFSET | CORE_ADDRESS_OFFSET => {
             let name = register()?;
             let offset = immediate(operand.immediate.as_deref().unwrap_or("0"), selector, true)?;
             Ok(format!("{offset}({name})"))
         }
-        32 => register().map(|name| format!("({name}++)")),
-        33 => register().map(|name| format!("(--{name})")),
-        37 => register().map(|name| format!("ramreg-[{name}]")),
+        ADDRESS_INCREMENT => register().map(|name| format!("({name}++)")),
+        ADDRESS_DECREMENT => register().map(|name| format!("(--{name})")),
+        MEMORY => register().map(|name| format!("ramreg-[{name}]")),
         _ => Err(EmitError(format!(
             "cannot emit operand class {}",
             operand.class
@@ -252,22 +257,17 @@ fn emit_operand(
     }
 }
 
-/// The original selector helper yields value type 1=unsigned,
-/// 2=signed, 3=float, 4=literal. The low five bits describe field width and
-/// are consumed by validation/fixup, not by this final formatting layer.
-fn immediate(source: &str, selector: u8, memory: bool) -> Result<String, EmitError> {
-    let value_type = if selector == 0 {
-        0
-    } else {
-        ((selector & 0x60) >> 5) + 1
-    };
-    if value_type == 4 {
+/// The selector's value type picks the conversion. Its field width is
+/// consumed by validation and fixups, not by this final formatting layer.
+fn immediate(source: &str, selector: ImmediateKind, memory: bool) -> Result<String, EmitError> {
+    let value_type = selector.value_type();
+    if value_type == Some(ImmediateType::Literal) {
         return Ok(source.to_owned());
     }
     let evaluation = expression::evaluate_with_options(
         source,
         ExpressionOptions {
-            hex_is_float: value_type == 3,
+            hex_is_float: value_type == Some(ImmediateType::Float),
         },
     )
     .map_err(|error| EmitError(error.to_string()))?;
@@ -276,9 +276,9 @@ fn immediate(source: &str, selector: u8, memory: bool) -> Result<String, EmitErr
         Evaluation::Number(number) => number,
     };
     let converted = match value_type {
-        1 => Number::Unsigned(number.to_u32()),
-        2 => Number::Signed(number.to_i32()),
-        3 => Number::Float(number.to_f32()),
+        Some(ImmediateType::Unsigned) => Number::Unsigned(number.to_u32()),
+        Some(ImmediateType::Signed) => Number::Signed(number.to_i32()),
+        Some(ImmediateType::Float) => Number::Float(number.to_f32()),
         _ => number,
     };
     if memory {
@@ -290,7 +290,7 @@ fn immediate(source: &str, selector: u8, memory: bool) -> Result<String, EmitErr
             Number::Float(value) => scientific(value),
         });
     }
-    Ok(if value_type == 2 {
+    Ok(if value_type == Some(ImmediateType::Signed) {
         converted.to_i32().to_string()
     } else {
         format!("0x{:08x}", converted.bits())
@@ -517,8 +517,11 @@ mod tests {
         inst.metadata =
             crate::isa::instruction::lookup("iaddiu", crate::isa::instruction::Syntax::Old)
                 .unwrap();
-        assert_eq!(inst.operands[2].immediate_kind, 37);
-        assert_eq!(inst.metadata.operands[2].immediate_kind, 15);
+        assert_eq!(inst.operands[2].immediate_kind, ImmediateKind::signed(5));
+        assert_eq!(
+            inst.metadata.operands[2].immediate_kind,
+            ImmediateKind::unsigned(15)
+        );
         assert_eq!(
             instruction(&inst, &[], 0).unwrap(),
             oracle_lower("expr-fix-iaddi-3", "iaddiu")
@@ -534,7 +537,7 @@ mod tests {
             instruction(&inst, &[], 0).unwrap_err().0,
             "trying to emit an abstract move"
         );
-        inst.metadata = &crate::isa::instruction::INSTRUCTIONS[179];
+        inst.metadata = &crate::isa::instruction::INSTRUCTIONS[usize::from(id::LIMOVE)];
         assert_eq!(
             instruction(&inst, &[], 0).unwrap(),
             oracle_lower("copy-iadd-zero", "iaddiu")

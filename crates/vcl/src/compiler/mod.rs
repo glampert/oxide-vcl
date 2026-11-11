@@ -8,7 +8,9 @@ use crate::Options;
 use crate::allocator::allocation::{Allocator, VirtualRegister};
 use crate::analysis::flow::{self, Access, Definition};
 use crate::diagnostics::{CompileMessage, Diagnostic, Message, Severity};
-use crate::isa::instruction::{self, Direction, RegisterFamily, Syntax};
+use crate::isa::instruction::{
+    self, Direction, MaskMode, RegisterFamily, Syntax, class, id, issue, order, subtype, unit,
+};
 use crate::parser::{self, Directive, Instruction, ParseMode, StatementKind, Synthetic};
 use crate::scheduler::schedule::{
     self, Dependency, Operation, RegisterAccess, ScheduleOptions, SchedulingProblem,
@@ -579,7 +581,10 @@ impl Source {
             let id = if let Some(name) = &operand.register {
                 if let Some(family) = family(operand.class) {
                     Some(self.registers.get(name, family))
-                } else if matches!(operand.class, 22..=25 | 55) {
+                } else if matches!(
+                    operand.class,
+                    class::STATUS_FROM_DIVIDE..=class::STATUS_SET | class::EXTERNAL
+                ) {
                     None
                 } else {
                     return Err(error(line, CompileMessage::OperandPoolUnsupported));
@@ -594,7 +599,7 @@ impl Source {
         // data-flow effects.
         if instruction.metadata.is_memory() {
             for operand in &instruction.operands {
-                if (28..=33).contains(&operand.class) {
+                if class::is_address(operand.class) {
                     for tag in &operand.tags {
                         self.registers.get(&format!(":{tag}"), Family::Hardware);
                     }
@@ -622,16 +627,19 @@ impl Source {
                 }
                 Direction::Unknown => {}
             }
-            if matches!(operand.class, 32 | 33) {
+            if matches!(
+                operand.class,
+                class::ADDRESS_INCREMENT | class::ADDRESS_DECREMENT
+            ) {
                 effects.writes.push(access);
                 effects.latencies.insert(register, 1);
             }
         }
         effects.side_effect = instruction.metadata.is_branch()
-            || (instruction.metadata.is_memory() && instruction.metadata.subtype == 2)
+            || instruction.metadata.is_store()
             // XGKICK starts a transfer; XTOP/XITOP only read VIF state and
             // are pruned when unused (`can_prune`, as in the original).
-            || (instruction.metadata.unit_mask & 128 != 0
+            || (instruction.metadata.unit_mask & unit::EXTERNAL != 0
                 && !crate::analysis::prune::can_prune(&instruction))
             || instruction.modifiers != 0
             || instruction.mode == ParseMode::Raw;
@@ -1038,8 +1046,9 @@ impl Source {
                         current.block().end = End::Branch {
                             target,
                             tags,
-                            conditional: metadata.subtype == 5,
-                            call: metadata.subtype & 8 != 0,
+                            conditional: metadata.subtype
+                                == subtype::branch::JUMP | subtype::branch::CONDITIONAL,
+                            call: metadata.subtype & subtype::branch::LINK != 0,
                         };
                     }
                     let id = current.instructions.len();
