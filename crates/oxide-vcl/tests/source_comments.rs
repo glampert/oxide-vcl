@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn probe(name: &str) -> PathBuf {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/probes")).join(name)
@@ -39,9 +40,13 @@ fn arguments(case: &Path) -> (Vec<String>, String) {
 /// Run the driver on a probe's input with its recorded arguments.
 fn run(case: &Path, mode: Option<&str>) -> String {
     let (arguments, input) = arguments(case);
+    // Tests run in parallel and may run one probe in one mode at the same
+    // time, so every run gets its own directory.
+    static RUNS: AtomicUsize = AtomicUsize::new(0);
     let directory = std::env::temp_dir().join(format!(
-        "oxide-vcl-comments-{}-{}-{}",
+        "oxide-vcl-comments-{}-{}-{}-{}",
         std::process::id(),
+        RUNS.fetch_add(1, Ordering::Relaxed),
         case.file_name().unwrap().to_string_lossy(),
         mode.unwrap_or("default")
     ));
