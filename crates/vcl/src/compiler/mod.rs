@@ -1174,12 +1174,10 @@ pub fn compile(
             crate::VERSION
         ));
     } else {
-        output
-            .assembly
-            .push_str(&format!(
-                "; oxide-vcl {} produced this code\n",
-                crate::VERSION
-            ));
+        output.assembly.push_str(&format!(
+            "; oxide-vcl {} produced this code\n",
+            crate::VERSION
+        ));
     }
     // Prologue: old syntax or an explicit `.vu`, unless MPG output.
     if (program.syntax == Syntax::Old || program.vu_directive) && program.mpg.is_none() {
@@ -1284,9 +1282,10 @@ pub fn compile(
             "; register stats:\n;{integer:4} VU User integer\n;{float:4} VU User floating point\n"
         ));
     } else {
-        output
-            .assembly
-            .push_str(&format!("; instruction pairs: {}\n", output.instruction_pairs));
+        output.assembly.push_str(&format!(
+            "; instruction pairs: {}\n",
+            output.instruction_pairs
+        ));
         output.assembly.push_str(&format!(
             "; registers used: {integer} VU integer; {float} VU floating point\n"
         ));

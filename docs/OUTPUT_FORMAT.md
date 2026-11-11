@@ -106,7 +106,8 @@ markers.
 
 In vcl mode (the default) the port prints vcl's comments; `--mode=oxide`
 keeps its own shorter listing (`; oxide-vcl {VERSION} produced this code`, no
-banners, table comments or statistics, and `; source line N` for `-c`).
+banners, table comments or statistics). `-c` prints vcl's layout in both
+modes: each row as a comment with source register names, then the row.
 
 - Standard output is wrapped in the five-line `VCL CODE` banner and five
   closing separators; an `-o` file is not (`cli-output-file`).

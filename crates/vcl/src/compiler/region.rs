@@ -1760,8 +1760,8 @@ pub(super) fn compile_region_candidate(
         // row as a comment with source register names, the row itself one
         // space further in, and a blank line; each walked row that is not
         // printed is a bare `; ` line. An exit's padding stream keeps the
-        // plain layout.
-        let source_comments = options.comments && options.mode == crate::Mode::Vcl && commented;
+        // plain layout. Both modes use it.
+        let source_comments = options.comments && commented;
         let mut next_origin = 0;
         for (row_id, timed) in finished.rows.iter().enumerate() {
             let row = &timed.instructions;
@@ -1839,10 +1839,6 @@ pub(super) fn compile_region_candidate(
                             if pipe == 0 { extra } else { 0 },
                         )
                         .map_err(|e| internal(located.line, e))?;
-                    } else if options.comments && options.mode == crate::Mode::Oxide {
-                        output
-                            .assembly
-                            .push_str(&format!("; source line {}\n", located.line));
                     }
                 }
             }

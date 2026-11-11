@@ -153,9 +153,20 @@ fn raw_code_comments_show_its_own_registers() {
 }
 
 #[test]
-fn oxide_mode_keeps_its_own_comment_layout() {
-    let listing = run(&probe("comments-pairs"), Some("--mode=oxide"));
-    assert!(listing.contains("; source line 7\n"), "{listing}");
+fn oxide_mode_prints_the_same_source_comments() {
+    let case = probe("comments-pairs");
+    let listing = run(&case, Some("--mode=oxide"));
+    let copies = |listing: &str| -> Vec<String> {
+        listing
+            .lines()
+            .filter(|line| line.starts_with(";         ") || *line == "; ")
+            .map(str::to_string)
+            .collect()
+    };
+    let expected = copies(&run(&case, None));
+    assert!(!expected.is_empty());
+    assert_eq!(copies(&listing), expected);
+    assert!(!listing.contains("; source line"), "{listing}");
     assert!(
         !listing.contains("_LNOPT_") && !listing.contains("VCL CODE"),
         "{listing}"
