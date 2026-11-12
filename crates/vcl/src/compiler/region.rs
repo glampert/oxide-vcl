@@ -324,34 +324,61 @@ fn check_source_dependencies(
     region: &Region,
     analysis: &flow::Analysis,
 ) -> Result<(), CompileError> {
-    if let Some(read) = analysis
-        .reads
+    // The `clip` fix sets aside CLIPW's reads of clip history that nothing
+    // observes, and has the region declare the history instead.
+    let unobserved = if program.fixes.contains(Fix::Clip) {
+        clip_history::unobserved_reads(program, region, analysis)
+    } else {
+        BTreeSet::new()
+    };
+    let set_aside: BTreeSet<(usize, usize)> = unobserved
         .iter()
-        .find(|read| read.definitions.contains(&Definition::Uninitialized))
-    {
-        return Err(error(
-            region.instructions[read.operation].line,
+        .map(|&index| {
+            (
+                analysis.reads[index].operation,
+                analysis.reads[index].register,
+            )
+        })
+        .collect();
+    let used_before_set = |operation: Option<usize>, register: usize, component: u8| {
+        let line = operation.map_or(0, |id| region.instructions[id].line);
+        let component = ["x", "y", "z", "w", "4", "5", "6", "7"][usize::from(component)];
+        error(
+            line,
             CompileMessage::UsedBeforeSet {
-                register: program.registers.named(read.register).name.clone(),
-                component: ["x", "y", "z", "w", "4", "5", "6"][usize::from(read.component)].into(),
+                register: program.registers.named(register).name.clone(),
+                component: component.into(),
             },
+        )
+    };
+
+    if let Some(read) = analysis.reads.iter().find(|read| {
+        read.definitions.contains(&Definition::Uninitialized)
+            && !set_aside.contains(&(read.operation, read.register))
+    }) {
+        return Err(used_before_set(
+            Some(read.operation),
+            read.register,
+            read.component,
+        ));
+    }
+    if let Some(undefined) = analysis.undefined.iter().find(|undefined| {
+        undefined
+            .operation
+            .is_none_or(|operation| !set_aside.contains(&(operation, undefined.register)))
+    }) {
+        return Err(used_before_set(
+            undefined.operation,
+            undefined.register,
+            undefined.component,
         ));
     }
 
-    if let Some(undefined) = analysis.undefined.first() {
-        let name = &program.registers.named(undefined.register).name;
-        let line = undefined
-            .operation
-            .map_or(0, |id| region.instructions[id].line);
-        return Err(error(
-            line,
-            CompileMessage::UsedBeforeSet {
-                register: name.clone(),
-                component: ["x", "y", "z", "w", "4", "5", "6", "7"]
-                    [usize::from(undefined.component)]
-                .into(),
-            },
-        ));
+    if let Some(&first) = unobserved.first() {
+        let read = &analysis.reads[first];
+        let mut error = used_before_set(Some(read.operation), read.register, read.component);
+        error.kind = CompileErrorKind::UndeclaredClipHistory;
+        return Err(error);
     }
     Ok(())
 }
@@ -2455,7 +2482,7 @@ impl Emitter<'_> {
                 continue;
             };
             self.emit_labels(block_id, block, offset, output);
-            let finished = finish_rows_planned(
+            let mut finished = finish_rows_planned(
                 self.program,
                 self.region,
                 block,
@@ -2465,6 +2492,7 @@ impl Emitter<'_> {
                 self.options,
                 self.plans.get(&block_id),
             )?;
+            let end_row = self.end_row(block, &mut finished, rows.len());
             // An empty stream (after `--cont`, say) takes the uid after the
             // previous stream's.
             let stream = block
@@ -2495,7 +2523,7 @@ impl Emitter<'_> {
             // printed is a bare `; ` line. An exit's padding stream keeps the
             // plain layout. Both modes use it.
             let source_comments = self.options.comments && commented;
-            self.emit_rows(block, &finished, rows.len(), source_comments, output)?;
+            self.emit_rows(block, &finished, end_row, source_comments, output)?;
             offset += finished.rows.len();
             self.emit_exit_macro(block, output);
         }
@@ -2572,12 +2600,64 @@ impl Emitter<'_> {
             .push_str(&note.comment(printed, walked, &name));
     }
 
-    /// Prints the rows of one table.
+    /// The row of a table that carries the E bit, when the block ends the
+    /// program or a `--cont` stream.
+    ///
+    /// vcl 1.4beta7 sets it on the row walked second to last, the row before
+    /// the delay slot. Its final compression can delete that row, leaving the
+    /// exit without an E bit (`external-vf-two`), or delete the delay slot,
+    /// so the next table's first row runs in it. With the `end` fix the E row
+    /// and its delay slot always end the table. Where either is missing, or
+    /// the delay slot holds an instruction the hardware forbids there, the E
+    /// bit goes on the table's last row and an empty delay row follows it
+    /// (an empty table gets both rows).
+    fn end_row(&self, block: &Block, finished: &mut FinishedRows, walked: usize) -> Option<usize> {
+        let ends = self.program.end_bit
+            && matches!(block.end, End::Exit { macro_text: None } | End::Continue);
+        if !ends {
+            return None;
+        }
+        let original = finished
+            .origins
+            .iter()
+            .position(|&origin| origin + 2 == walked);
+        // `-e` asks for no E bit, which the fix respects.
+        if !self.options.fixes(Fix::End) || self.options.disable_end_bit {
+            return original;
+        }
+
+        let length = finished.rows.len();
+        if let Some(row) = original
+            && row + 2 == length
+            && self.allowed_in_end_delay(&finished.rows[row + 1])
+        {
+            return Some(row);
+        }
+        if length == 0 {
+            finished.push_empty_row();
+        }
+        finished.push_empty_row();
+        Some(finished.rows.len() - 2)
+    }
+
+    /// Whether a row may run in the E bit's delay slot. The VU User's Manual
+    /// (section 3.5.3) forbids branches, external synchronization (XTOP,
+    /// XITOP, XGKICK) and VU memory loads and stores there.
+    fn allowed_in_end_delay(&self, row: &TimedRow) -> bool {
+        row.instructions.iter().flatten().all(|&id| {
+            let metadata = self.region.instructions[id].instruction.metadata;
+            !(metadata.is_branch()
+                || metadata.is_memory()
+                || matches!(metadata.index, id::XGKICK | id::XTOP | id::XITOP))
+        })
+    }
+
+    /// Prints the rows of one table, with the E bit on `end_row`.
     fn emit_rows(
         &self,
         block: &Block,
         finished: &FinishedRows,
-        walked: usize,
+        end_row: Option<usize>,
         source_comments: bool,
         output: &mut Compiled,
     ) -> Result<(), CompileError> {
@@ -2589,9 +2669,7 @@ impl Emitter<'_> {
                 }
                 next_origin = finished.origins[row_id] + 1;
             }
-            let end_bit = self.program.end_bit
-                && matches!(block.end, End::Exit { macro_text: None } | End::Continue)
-                && finished.origins[row_id] + 2 == walked;
+            let end_bit = end_row == Some(row_id);
             // Stream label flags are carried onto the first emitted upper
             // instruction, including an otherwise empty NOP.
             let extra = if row_id == 0 { block.debug_top } else { 0 }

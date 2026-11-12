@@ -4,7 +4,6 @@
 //! schedule positions, allocation, and emission. Coverage differences from the
 //! original optimizer are recorded in `docs/COMPATIBILITY.md`.
 
-use crate::Options;
 use crate::allocator::allocation::{Allocator, VirtualRegister};
 use crate::analysis::flow::{self, Access, Definition};
 use crate::diagnostics::{CompileMessage, Diagnostic, Message, Severity};
@@ -18,9 +17,11 @@ use crate::scheduler::schedule::{
 use crate::scheduler::timing::{
     self, Synchronization, TimedRow, TimingOperation, TimingRead, TimingWrite,
 };
+use crate::{Fix, Options};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 
+mod clip_history;
 mod external_assignment;
 mod flow_graph;
 mod generated_rows;
@@ -61,6 +62,10 @@ enum CompileErrorKind {
     /// spilling can help, scheduling strategies cannot.
     ExternalAllocation,
     ZeroCopyDestination,
+    /// A region reads undeclared clip history that nothing observes, which
+    /// the `clip` fix declares before compiling it again. Its message is
+    /// vcl 1.4beta7's "used before set" error.
+    UndeclaredClipHistory,
 }
 
 impl CompileError {
@@ -337,6 +342,8 @@ struct Source {
     unique_labels: bool,
     unique_prefix: Option<String>,
     mode: crate::Mode,
+    /// The fixes for vcl 1.4beta7's defects that apply.
+    fixes: crate::Fixes,
     warnings: Vec<Diagnostic>,
     /// Names already warned about for their trailing field letters.
     field_letter_names: BTreeSet<String>,
@@ -493,6 +500,7 @@ impl Source {
             visibility: Vec::new(),
             scopes_opened: 0,
             mode: options.mode,
+            fixes: options.enabled_fixes(),
             warnings: Vec::new(),
             field_letter_names: BTreeSet::new(),
             bindings: BTreeMap::new(),
@@ -1339,13 +1347,13 @@ pub fn compile(
     })?;
 
     if options.mode != crate::Mode::Oxide {
-        return compile_parsed(parsed, filename, options).map_err(|failure| vec![failure.error]);
+        return compile_fixed(parsed, filename, options).map_err(|failure| vec![failure.error]);
     }
 
     // Oxide mode spills a value to the work area each time a region's
     // registers do not fit, and compiles the rewritten program again.
     let mut spills = spill::Spills::default();
-    let failure = match compile_parsed(parsed.clone(), filename, options) {
+    let failure = match compile_fixed(parsed.clone(), filename, options) {
         Ok(output) => return Ok(output),
         Err(failure) => failure,
     };
@@ -1358,14 +1366,14 @@ pub fn compile(
         disable_loops: true,
         ..options.clone()
     };
-    while let Err(failure) = compile_parsed(spills.apply(&parsed), filename, &linear) {
+    while let Err(failure) = compile_fixed(spills.apply(&parsed), filename, &linear) {
         if spills.add(&parsed, *failure).is_err() {
             break;
         }
     }
 
     loop {
-        match compile_parsed(spills.apply(&parsed), filename, options) {
+        match compile_fixed(spills.apply(&parsed), filename, options) {
             Ok(mut output) => {
                 output.warnings.extend(spills.notes());
                 return Ok(output);
@@ -1390,6 +1398,53 @@ impl From<CompileError> for Box<Failure> {
             lines: None,
             work_areas: Vec::new(),
         })
+    }
+}
+
+/// Compiles a parsed program with the source rewrites its fixes need: with
+/// the `clip` fix, each region whose undeclared clip history nothing
+/// observes gets `in_hw_clip CLIP`, and the program is compiled again.
+fn compile_fixed(
+    mut parsed: parser::Program,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Box<Failure>> {
+    // Each round declares the history in one more region, so there are at
+    // most as many rounds as regions.
+    let regions = parsed
+        .statements
+        .iter()
+        .filter(|statement| {
+            matches!(&statement.kind, StatementKind::Instruction(instruction)
+                if instruction.synthetic() == Some(Synthetic::Enter))
+        })
+        .count();
+    for _ in 0..regions {
+        let failure = match compile_parsed(parsed.clone(), filename, options) {
+            Err(failure) if failure.error.kind == CompileErrorKind::UndeclaredClipHistory => {
+                failure
+            }
+            result => return result,
+        };
+        let declared = failure
+            .lines
+            .as_ref()
+            .and_then(|lines| clip_history::declare_history(&parsed, lines));
+        match declared {
+            Some(declared) => parsed = declared,
+            None => return Err(failure.into_general()),
+        }
+    }
+    compile_parsed(parsed, filename, options).map_err(|failure| failure.into_general())
+}
+
+impl Failure {
+    /// The failure with its error reported as it is, not retried.
+    fn into_general(mut self: Box<Self>) -> Box<Self> {
+        if self.error.kind == CompileErrorKind::UndeclaredClipHistory {
+            self.error.kind = CompileErrorKind::General;
+        }
+        self
     }
 }
 

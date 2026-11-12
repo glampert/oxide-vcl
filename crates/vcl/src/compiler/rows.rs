@@ -10,6 +10,18 @@ pub(super) struct FinishedRows {
     pub(super) physical_names: BTreeMap<usize, String>,
 }
 
+impl FinishedRows {
+    /// Adds an empty row (NOP, NOP) after the last one.
+    pub(super) fn push_empty_row(&mut self) {
+        let origin = self.origins.last().copied().unwrap_or(0);
+        let issue = self.replay.issue_times.last().map_or(0, |time| time + 1);
+        self.rows.push(TimedRow::new([None, None]));
+        self.origins.push(origin);
+        self.replay.issue_times.push(issue);
+        self.replay.stalls.push(Default::default());
+    }
+}
+
 /// Validate physical producer identities before reducing a straight-line block.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn finish_rows(

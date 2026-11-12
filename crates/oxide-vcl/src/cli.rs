@@ -190,6 +190,24 @@ where
             index += 1;
             continue;
         }
+        // oxide-vcl's own option: fixes for vcl 1.4beta7's defects.
+        if let Some(list) = argument.strip_prefix("--fix=") {
+            match parse_fixes(list) {
+                Ok(fixes) => options.compile.fixes = options.compile.fixes.union(fixes),
+                Err(name) => {
+                    return Err(CliError::new(
+                        CliMessage::BadFix {
+                            argument: argument.clone(),
+                            name,
+                        },
+                        false,
+                        options,
+                    ));
+                }
+            }
+            index += 1;
+            continue;
+        }
         let selector = argument.as_bytes().get(1).copied().unwrap_or(0);
         // VCL arguments are byte-oriented. A non-ASCII selector cannot match
         // any switch, so only take this UTF-8 slice when the selector is ASCII.
@@ -287,6 +305,19 @@ where
     Ok(options)
 }
 
+/// The fixes a `--fix=` list names: `all`, or fix names separated by commas.
+/// The error is the first name that is not a fix (empty for an empty list).
+fn parse_fixes(list: &str) -> Result<vcl::Fixes, String> {
+    let mut fixes = vcl::Fixes::NONE;
+    for name in list.split(',') {
+        match name {
+            "all" => fixes = fixes.union(vcl::Fixes::all()),
+            _ => fixes.insert(vcl::Fix::from_name(name).ok_or_else(|| name.to_owned())?),
+        }
+    }
+    Ok(fixes)
+}
+
 /// i386 glibc `strtol(value, NULL, 10)`: whitespace/sign, a decimal prefix,
 /// zero for no digits, and saturation at the signed 32-bit limits.
 fn strtol_decimal_i32(value: &str) -> i32 {
@@ -352,6 +383,59 @@ mod tests {
         // vcl has no long options, so its wording is the unknown-switch one.
         assert_eq!(error.to_string(), "bad args '--mode=sce', try -h for help");
         assert_eq!(error.exit_status(), 255);
+    }
+
+    #[test]
+    fn fixes_are_chosen_by_name_and_accumulate() {
+        let none = parse(["a.vcl"]).unwrap().compile;
+        assert!(none.fixes.is_empty() && !none.fixes(vcl::Fix::End));
+        let end = parse(["--fix=end", "a.vcl"]).unwrap().compile;
+        assert_eq!(end.fixes, vcl::Fixes::NONE.with(vcl::Fix::End));
+        assert_eq!(end.mode, vcl::Mode::Vcl);
+        for flags in [
+            vec!["--fix=all"],
+            vec!["--fix=end,all"],
+            vec!["--fix=clip,end"],
+            vec!["--fix=end", "--fix=clip", "--fix=end"],
+        ] {
+            let options = parse(flags.iter().copied().chain(["a.vcl"]))
+                .unwrap()
+                .compile;
+            assert_eq!(options.fixes, vcl::Fixes::all(), "{flags:?}");
+        }
+        // Oxide mode implies every fix without recording any.
+        let oxide = parse(["--mode=oxide", "a.vcl"]).unwrap().compile;
+        assert!(oxide.fixes.is_empty() && oxide.fixes(vcl::Fix::End));
+
+        for (argument, name) in [
+            ("--fix=", ""),
+            ("--fix=imm", "imm"),
+            ("--fix=end,", ""),
+            ("--fix=End", "End"),
+        ] {
+            let error = parse([argument, "a.vcl"]).unwrap_err();
+            assert!(
+                *error.message()
+                    == CliMessage::BadFix {
+                        argument: argument.into(),
+                        name: name.into()
+                    },
+                "{argument}"
+            );
+            assert_eq!(
+                error.to_string(),
+                format!("bad args '{argument}', try -h for help")
+            );
+            assert_eq!(error.exit_status(), 255);
+        }
+        let error = parse(["--mode=oxide", "--fix=imm"]).unwrap_err();
+        assert_eq!(error.exit_status(), 2);
+        assert!(
+            error
+                .diagnostic
+                .text(vcl::Mode::Oxide)
+                .contains("unknown fix 'imm'")
+        );
     }
 
     #[test]

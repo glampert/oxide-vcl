@@ -339,12 +339,12 @@ compression can also delete the row carrying the E bit: the
 `local/evidence/oracle/external-vf-two/` (local, not tracked) fixture, and one
 `--cont` stream in the local corpus, are printed without any E bit, so
 the VU runs past the end of the program. The port copies this to stay
-compatible.
+compatible; `--fix=end` keeps an E row and its delay slot on every exit and
+`--cont` path ([VCL_BUGS.md](VCL_BUGS.md#f4-exit-rows-without-an-e-bit)).
 
-*Design.* In the improved mode, always keep an E row on every exit and
-`--cont` path; this is a correctness fix, not a tuning. Fill the E row and
-its delay slot as in O5 step 1, and drop the safe-end padding rows: the
-manual guarantees that results in flight complete after termination.
+*Design.* Fill the E row and its delay slot as in O5 step 1, and drop the
+safe-end padding rows: the manual guarantees that results in flight
+complete after termination.
 
 ### O10. Code size budget
 

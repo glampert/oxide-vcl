@@ -99,6 +99,18 @@ fn cli(message: &CliMessage) -> Wording {
             Wording::new(format!("unknown mode '{name}'"))
                 .help("use --mode=vcl (the default) or --mode=oxide")
         }
+        BadFix { name, .. } => {
+            let names: Vec<_> = crate::Fix::ALL.iter().map(|fix| fix.name()).collect();
+            let wording = if name.is_empty() {
+                Wording::new("--fix= names no fix")
+            } else {
+                Wording::new(format!("unknown fix '{name}'"))
+            };
+            wording.help(format!(
+                "use --fix=all, or a comma-separated list of: {}",
+                names.join(", ")
+            ))
+        }
         TooManyArguments => Wording::new("more than one input file").help(
             "oxide-vcl compiles one file per run, and options must come before it; \
              an option's value is attached to it (-oout.vsm), so a separate word is read as \

@@ -19,22 +19,25 @@ original" below) with synthetic probes. The results fall into three groups:
 - OpenVCL-only defects, which the original does not have;
 - problems outside VCL.
 
-An opt-in fix mode for the shared defects is proposed below. It is not
-implemented: the port has no `--fix` switch.
+The shared defects get opt-in fixes, one per defect. `clip` (F3) and `end`
+(F4) are implemented; `imm` (F1) and `alias` (F2) are designed below and not
+yet implemented.
 
-Ground rules for the proposal:
+Ground rules:
 
-- **Compatibility stays the default.** Without the switch, output stays
+- **Compatibility stays the default.** Without a fix, output stays
   identical to the original's, defects included.
-- **One switch, named fixes.** The proposal is `--fix` (all fixes) or
-  `--fix=imm,alias,clip,end` (selected fixes). The original's argument
-  parser rejects every argument whose second byte is `-` with
-  `bad args '…', try -h for help` (see `cli::parse`), so no valid original
-  command line changes meaning.
+- **Named fixes.** `--fix=NAME` enables one fix, `--fix=a,b` several, and
+  `--fix=all` every one; the option may be repeated. `--mode=oxide` enables
+  every fix. The original's argument parser rejects every argument whose
+  second byte is `-` with `bad args '…', try -h for help` (see
+  `cli::parse`), so no valid original command line changes meaning. An
+  unknown name is rejected the same way.
 - **Fixes are not optimizations.** They change output only where the
-  original's output is wrong, or where it rejects a valid program. The
-  `--improve` mode of [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md) should
-  imply `--fix`.
+  original's output is wrong, or where it rejects a valid program. Each
+  keeps vcl's messages unless oxide mode is on too. In the library a fix
+  is `vcl::Fix`, chosen in `Options::fixes`; `Options::fixes(fix)` tells
+  whether it applies.
 
 ## 1. Method
 
@@ -277,44 +280,72 @@ With the history declared (`checker-lat-*-declared`), the same programs
 compile, and the original pads the clip-flag reads correctly across the
 join and the loop entry.
 
-**Fix (`--fix=clip`).**
+**Fix (`--fix=clip`).** `crates/vcl/src/compiler/clip_history.rs`:
 
-1. *Track how many judgments are defined.* On each path, count the CLIPW
-   instructions since entry, capped at 4, and take the minimum at joins.
-   Judgment `j` occupies bits `6j…6j+5`.
-2. *Report only observed garbage.* A clip-flag read is used before set
-   only if its mask reaches a judgment `j ≥ k`, where `k` is that count.
-   - FCAND/FCOR use their immediate as the mask.
-   - FCEQ and `out_hw_clip` see all 24 bits.
-   - FCGET sees the low 12 bits.
-3. *Otherwise* bind the history as an implicit entry input, as if the
-   source declared `in_hw_clip`. Scheduling is then unchanged from the
-   declared program.
-4. *Tests.* With `--fix=clip`, each `repro__clip*` program must equal its
-   `checker-lat-*-declared` counterpart. A program that reads undefined
-   history must still fail. An example is FCAND `0xffffff` after one
-   CLIPW. An FCAND with that mask after four CLIPWs is the quad-ADC
-   pattern, which is legitimately defined.
+1. *Count the defined judgments.* Judgment `j` occupies bits `6j…6j+5`,
+   the current one being 0. On every path from the region's entry, count
+   the CLIPWs, capped at 4, and take the fewest at joins; FCSET and
+   `in_hw_clip` define all four. The count comes from the reaching
+   definitions of the flow analysis: a CLIPW leaves one more judgment than
+   the fewest that reach its read of `CLIPa`, and a loop's CLIPW settles at
+   what its entry path gives it.
+2. *Find what each clip-flag read observes* (VU User's Manual, the FC*
+   instructions):
+   - FCAND tests the bits its immediate sets.
+   - FCOR tests the bits its immediate *clears*: it sets VI01 when the
+     flag OR the immediate is all ones. The manual's example,
+     `fcor vi01,0xffdf7d`, tests three judgments.
+   - FCGET sees the low 12 bits; FCEQ, `out_hw_clip` and an immediate that
+     is not a number see all 24.
+   - CLIPW's own read of `CLIPa` observes nothing: the shift is what the
+     count accounts for.
+3. *Set aside unobserved history.* If every read observes only judgments
+   below its count, CLIPW's undefined reads of `CLIPa` are not errors. The
+   region is then compiled again with `in_hw_clip CLIP` declared in its
+   `--enter` block, so it schedules exactly as the declared program does.
+4. *Otherwise* the program is rejected as the original rejects it, with
+   the same "used before set" error. FCAND `0xffffff` after one CLIPW is
+   rejected; after four CLIPWs it is the quad-ADC pattern, which is
+   defined.
+
+With the fix, `openvcl__repros_clip_join`, `openvcl__repros_clip_loop_entry`
+and `openvcl__test_repro_quad_adc_bug` equal the original's output for
+their `checker-lat-*-declared` counterparts line for line, and
+`openvcl__repros_clipw_implicit_w` and
+`openvcl__test_repro_quad_adc_bug_fjtrujy` compile.
 
 ### F4. Exit rows without an E bit
 
-Already documented as O9 in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
-The original's final compression can delete the row that carries the E
-bit:
+**What the original does.** It sets the E bit on the row it walked second
+to last, the row before the E delay slot. Its final compression can then
+delete that row, or the delay slot after it (observed from vcl 1.4beta7):
 
-- `external-vf-two` is printed without any E bit;
-- so is one `--cont` stream in the local corpus.
+- `external-vf-two` is printed without any E bit, so the VU runs past the
+  end of the program;
+- `end-cont-lost` keeps the final exit's E row, but its `--cont` stream has
+  none, so the program runs on into the continuation instead of stopping;
+- so does one `--cont` stream in the local corpus.
 
-The VU then runs past the end of the program.
+The loss is common in short straight-line programs: of the original's
+recorded runs (public corpus, probes and local corpus), 51 that end in a
+plain `--exit`, without `-e`, have no E bit at all. No recorded run puts a
+forbidden instruction in the delay slot.
 
-**Fix (`--fix=end`).**
+**Fix (`--fix=end`).** After final compression, each table that ends at an
+exit or a `--cont` must end in its E row and the delay row after it
+(`Emitter::end_row` in `crates/vcl/src/compiler/region.rs`):
 
-- After final compression, every exit and `--cont` path must reach a row
-  with E set, followed by its delay row.
-- If compression removed it, keep the last row of that path, or add an
-  empty one, and mark it.
-- This is a correctness rule only. Filling the E delay slot belongs to
-  O9 in `--improve`.
+- If both are in place and the delay row holds nothing the manual forbids
+  there (section 3.5.3: a branch, XTOP, XITOP, XGKICK, or a VU memory load or
+  store), the table is unchanged.
+- Otherwise the E bit goes on the table's last row, and an empty delay row
+  is added after it. The E row itself may hold any instruction. An empty
+  table gets an empty `NOP[E]` row and its delay row.
+
+`external-vf-two` then ends in `add[E] VF04,VF02,VF03` and an empty row,
+one row longer than the original's output. The added rows are counted in the table comment and in `iCount`. With `-e`
+the fix does nothing. Filling the E row and its delay slot with useful work
+belongs to O9 in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
 
 ### F5. Program size (optional)
 
@@ -439,7 +470,7 @@ binding behaviours. They are default-mode behaviour, not opt-in fixes.
    - `crates/oxide-vcl/tests/interface_bindings.rs` checks the 16 `binding-*` probes.
      Acceptance, output and the rejection reason all match the original.
 
-## 6. Testing the proposed fixes
+## 6. Testing the fixes
 
 Fix-mode expectations go into `crates/oxide-vcl/tests/vcl_bugs.rs` beside the
 defect they repair, so each defect stays pinned in both modes. Default-mode
@@ -451,9 +482,18 @@ Per fix:
   `crates/oxide-vcl/tests/vcl_bugs.rs`), and the legalized values execute equal
   in the VU model. `checker-imm-repair-*` keep offsets 1022 and -1023, and the
   repaired loop still executes correctly.
-- F3: `repro__clip*` equal their `-declared` counterparts; a new rejection
-  control covers unobserved-history reads.
+- F3: `the_clip_fix_compiles_the_repros_as_their_declared_versions`
+  compares the repros with the original's `-declared` outputs.
+  `the_clip_fix_declares_history_that_nothing_observes` checks inline
+  programs under `--fix=clip`, `--fix=all` and `--mode=oxide`: those whose
+  reads see only defined judgments compile as their declared versions, and
+  those that read an undefined judgment (on some path) stay rejected.
 - F2: the three alias programs execute to the sequential result;
   `checker-mem-same-base` and the corpus are unchanged where no pair
   resolves. Loop-carried pairs need new `checker-mem-loop-*` probes first.
-- F4: `external-vf-two` keeps an E row under `--fix=end`.
+- F4: `final_compression_can_delete_the_end_row` executes `external-vf-two`
+  and `end-cont-lost` in the VU model, which runs past the end of the first
+  and through the `--cont` of the second;
+  `the_end_fix_keeps_an_end_row_and_its_delay_slot` checks that under
+  `--fix=end`, `--fix=all` and `--mode=oxide` both stop at their E rows with
+  the right results.

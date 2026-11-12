@@ -395,11 +395,17 @@ pub mod id {
     pub const ADDZ: u16 = 39;
     pub const SUB: u16 = 48;
     pub const MULW: u16 = 68;
+    pub const CLIPW: u16 = 104;
     pub const IADD: u16 = 108;
     pub const IADDI: u16 = 109;
     pub const IADDIU: u16 = 110;
     pub const ISUB: u16 = 111;
     pub const ISUBIU: u16 = 112;
+    pub const FCAND: u16 = 138;
+    pub const FCEQ: u16 = 139;
+    pub const FCOR: u16 = 140;
+    pub const FCGET: u16 = 141;
+    pub const FCSET: u16 = 142;
     pub const MOVE: u16 = 153;
     pub const LQ: u16 = 155;
     pub const ILW: u16 = 156;
@@ -419,6 +425,8 @@ pub mod id {
     pub const VMOVE: u16 = 180;
     pub const LVMOVE: u16 = 181;
     pub const UVMOVE: u16 = 182;
+    pub const IN_HW_CLIP: u16 = 199;
+    pub const OUT_HW_CLIP: u16 = 208;
 }
 
 /// Match exactly as the original's lookup does: case-insensitive, table order retained,
@@ -512,6 +520,14 @@ mod tests {
     fn named_ids_are_the_table_indices_of_their_names() {
         for (index, name) in [
             (id::NOP, "nop"),
+            (id::CLIPW, "clipw"),
+            (id::FCAND, "fcand"),
+            (id::FCEQ, "fceq"),
+            (id::FCGET, "fcget"),
+            (id::FCOR, "fcor"),
+            (id::FCSET, "fcset"),
+            (id::IN_HW_CLIP, "in_hw_clip"),
+            (id::OUT_HW_CLIP, "out_hw_clip"),
             (id::ADD, "add"),
             (id::ADDX, "addx"),
             (id::ADDY, "addy"),

@@ -250,6 +250,8 @@ pub enum CliMessage {
     BadArgument { argument: String },
     /// `--mode=` with an unknown mode.
     BadMode { argument: String },
+    /// `--fix=` naming no fix, or an unknown one (`name`).
+    BadFix { argument: String, name: String },
     /// More than one input file.
     TooManyArguments,
     /// `-o` naming the input file.
@@ -278,7 +280,9 @@ impl CliMessage {
                 format!("bad command line option '{argument}' .. only -g+ or -g allowed")
             }
             // vcl has no long options: `--mode=...` is an unknown switch to it.
-            CliMessage::BadArgument { argument } | CliMessage::BadMode { argument } => {
+            CliMessage::BadArgument { argument }
+            | CliMessage::BadMode { argument }
+            | CliMessage::BadFix { argument, .. } => {
                 format!("bad args '{argument}', try -h for help")
             }
             CliMessage::TooManyArguments => "bad args (-o now specifies output file..)".into(),

@@ -3,8 +3,8 @@
 //! Every case here is an original-binary observation under `local/evidence/oracle`
 //! or in the public corpus (`tests/corpus`). The port reproduces the original by
 //! default, defects included; these tests pin both the defect and the
-//! port's compatibility. When the opt-in fixes land, each defect test gains
-//! a fixed-mode counterpart instead of changing.
+//! port's compatibility. Each fixed defect also has a test with its
+//! `--fix=NAME` (and `--mode=oxide`, which implies every fix).
 
 #[path = "support/corpus.rs"]
 mod corpus;
@@ -407,4 +407,288 @@ fn memory_operand_shapes_match_the_original() {
         count += 1;
     }
     assert_eq!(count, 16);
+}
+
+// ----------------------------------------------
+// F4: exit rows without an E bit (`--fix=end`)
+// ----------------------------------------------
+
+/// A probe's directory under `tests/probes`.
+fn probe_directory(case: &str) -> PathBuf {
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .join("tests/probes")
+        .join(case)
+}
+
+/// Compiles a probe with the original's flags followed by `extra`.
+fn compile_probe(case: &str, extra: &[&str]) -> String {
+    let directory = probe_directory(case);
+    let input = std::fs::read_to_string(directory.join("input.vcl")).unwrap();
+    let result = std::fs::read_to_string(directory.join("result.json")).unwrap();
+    let start = result.find("\"guest_argv\"").unwrap();
+    let list = &result[start..];
+    let list = &list[list.find('[').unwrap() + 1..list.find(']').unwrap()];
+    let all: Vec<&str> = list
+        .split(',')
+        .map(|item| item.trim().trim_matches('"'))
+        .collect();
+    let flags = all[1..all.len() - 1]
+        .iter()
+        .copied()
+        .chain(extra.iter().copied());
+    let options = cli::parse(flags).unwrap().compile;
+    vcl::compile(&input, &format!("/work/{case}.vcl"), &options)
+        .unwrap()
+        .assembly
+}
+
+/// Runs a listing from its first row with VF01 = `SOURCE`.
+fn execute_from_entry(assembly: &str) -> Result<vu_model::Execution, String> {
+    let mut state = State::default();
+    state.set_vector(1, SOURCE);
+    Program::parse(assembly)?.execute(state, 64)
+}
+
+const SOURCE: [f32; 4] = [1.5, 2.0, -0.5, 4.0];
+
+/// `src * src + (src + src)`, lane by lane.
+fn square_plus_double() -> [u32; 4] {
+    SOURCE.map(|lane| (lane * lane + (lane + lane)).to_bits())
+}
+
+/// The listing's tables: each one's rows, split at the table comments (vcl
+/// mode) or labels.
+fn tables(assembly: &str) -> Vec<Vec<String>> {
+    let mut tables: Vec<Vec<String>> = vec![Vec::new()];
+    for line in assembly.lines() {
+        let code = line.split(';').next().unwrap();
+        if line.starts_with("; _L") || code.trim_end().ends_with(':') {
+            if !tables.last().unwrap().is_empty() {
+                tables.push(Vec::new());
+            }
+        } else if code.starts_with("         ") && !code.trim().is_empty() {
+            tables.last_mut().unwrap().push(code.trim().to_string());
+        }
+    }
+    tables.retain(|table| !table.is_empty());
+    tables
+}
+
+#[test]
+fn final_compression_can_delete_the_end_row() {
+    // vcl 1.4beta7 puts the E bit on the row walked second to last; its
+    // final compression removes that empty row and its delay slot, so the
+    // program has no E bit and the VU runs past its end.
+    let listing = compile_probe("external-vf-two", &[]);
+    assert!(!listing.contains("[E]"), "{listing}");
+    let error = execute_from_entry(&listing).unwrap_err();
+    assert!(
+        error.contains("left program before E termination"),
+        "{error}"
+    );
+
+    // A `--cont` stream loses its E bit the same way, so the program runs on
+    // into the next stream instead of stopping there.
+    let listing = compile_probe("end-cont-lost", &[]);
+    let streams = tables(&listing);
+    assert_eq!(streams.len(), 2, "{listing}");
+    assert!(
+        !streams[0].iter().any(|row| row.contains("[E]")),
+        "{listing}"
+    );
+    let execution = execute_from_entry(&listing).unwrap();
+    assert_eq!(execution.steps, 7, "stopped only at the final exit");
+    assert_ne!(execution.state.vf[4], [0; 4], "ran the continuation");
+}
+
+#[test]
+fn the_end_fix_keeps_an_end_row_and_its_delay_slot() {
+    let unfixed = compile_probe("end-cont-lost", &[]);
+    for flags in [["--fix=end"], ["--fix=all"], ["--mode=oxide"]] {
+        // The exit stops where it should, with every result written: the
+        // last instruction row takes the E bit, and an empty delay row
+        // follows it.
+        let listing = compile_probe("external-vf-two", &flags);
+        let last = tables(&listing).pop().unwrap();
+        assert!(
+            last[last.len() - 2].starts_with("add[E]"),
+            "{flags:?}: {listing}"
+        );
+        assert_eq!(
+            last[last.len() - 1].split_whitespace().collect::<Vec<_>>(),
+            ["NOP", "NOP"]
+        );
+        let execution = execute_from_entry(&listing).unwrap();
+        assert_eq!(execution.state.vf[4], square_plus_double(), "{flags:?}");
+
+        // The `--cont` stream stops at its own E row, its third instruction,
+        // before the continuation runs.
+        let listing = compile_probe("end-cont-lost", &flags);
+        let rows: Vec<String> = tables(&listing).concat();
+        let end = rows.iter().position(|row| row.contains("[E]")).unwrap();
+        assert_eq!(end, 2, "{flags:?}: {listing}");
+        assert_eq!(
+            rows[end + 1].split_whitespace().collect::<Vec<_>>(),
+            ["NOP", "NOP"]
+        );
+        let execution = execute_from_entry(&listing).unwrap();
+        assert_eq!(execution.steps, end + 2, "{flags:?}");
+        assert_eq!(
+            execution.state.vf[4], [0; 4],
+            "{flags:?}: ran the continuation"
+        );
+        // The final exit kept its E row, so it is unchanged.
+        let unfixed_rows = tables(&unfixed).concat();
+        assert_eq!(rows[end + 2..], unfixed_rows[3..], "{flags:?}");
+    }
+}
+
+#[test]
+fn the_end_fix_respects_disabled_end_bits() {
+    // `-e` asks for no E bit at all, so the fix adds nothing.
+    let disabled = compile_probe("external-vf-two", &["-e"]);
+    assert_eq!(
+        compile_probe("external-vf-two", &["-e", "--fix=end"]),
+        disabled
+    );
+    assert!(!disabled.contains("[E]"));
+}
+
+// ----------------------------------------------
+// F3: clip history counted as read (`--fix=clip`)
+// ----------------------------------------------
+
+/// A program that loads `fA` from qword 1, runs `body`, and stores VI01 to
+/// qword 2, with `inputs` in its `--enter` block.
+fn clip_program(inputs: &str, body: &str) -> String {
+    format!(
+        ".init_vi_all\n\
+         .init_vf_all\n\
+         .syntax new\n\
+         --enter\n\
+         {inputs}\n\
+         --endenter\n\
+         lq fA, 1(vi00)\n\
+         {body}\n\
+         isw.x vi01, 2(vi00)\n\
+         --exit\n\
+         --endexit\n"
+    )
+}
+
+fn compile_with(source: &str, flags: &[&str]) -> Result<String, String> {
+    let flags = ["-t1", "-uCLIP"].iter().chain(flags);
+    let options = cli::parse(flags.copied()).unwrap().compile;
+    vcl::compile(source, "/work/clip.vcl", &options)
+        .map(|compiled| compiled.assembly)
+        .map_err(|errors| format!("{errors:?}"))
+}
+
+/// Programs whose clip-flag reads see only judgments their own CLIPWs
+/// made, on every path: the `clip` fix accepts them. (FCSET before the
+/// first CLIPW defines the whole history, so such a program needs no fix.)
+const UNOBSERVED_HISTORY: [&str; 6] = [
+    // The current judgment only.
+    "clipw.xyz fA, fA[w]\nfcand vi01, 0x3f",
+    // FCOR tests the bits its mask clears: here the current judgment.
+    "clipw.xyz fA, fA[w]\nfcor vi01, 0xffffc0",
+    // Two judgments for two CLIPWs; FCGET reads both.
+    "clipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\nfcand vi01, 0xfff",
+    "clipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\nfcget vi01",
+    // Four CLIPWs define the whole flag (the quad ADC pattern).
+    "clipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\n\
+     fcand vi01, 0xffffff",
+    "clipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\n\
+     fceq vi01, 0",
+];
+
+/// Programs that read a judgment no CLIPW made on some path: they stay
+/// rejected with the fix.
+const OBSERVED_HISTORY: [&str; 6] = [
+    "clipw.xyz fA, fA[w]\nfcand vi01, 0xffffff",
+    "clipw.xyz fA, fA[w]\nfcand vi01, 0x40",
+    // The manual's FCOR example tests three judgments.
+    "clipw.xyz fA, fA[w]\nfcor vi01, 0xffdf7d",
+    "clipw.xyz fA, fA[w]\nfceq vi01, 0",
+    "clipw.xyz fA, fA[w]\nfcget vi01",
+    // Three CLIPWs on one path, one on the other.
+    "ilw.x iFmt, 0(vi00)\nibeq iFmt, vi00, lOne\nclipw.xyz fA, fA[w]\nclipw.xyz fA, fA[w]\n\
+     lOne:\nclipw.xyz fA, fA[w]\nfcand vi01, 0xfff",
+];
+
+#[test]
+fn undeclared_clip_history_is_rejected_even_when_unobserved() {
+    for body in UNOBSERVED_HISTORY.iter().chain(&OBSERVED_HISTORY) {
+        let error = compile_with(&clip_program("", body), &[]).unwrap_err();
+        assert!(error.contains("CLIPA"), "{body}: {error}");
+        // Declared, the same program compiles.
+        compile_with(&clip_program("in_hw_clip CLIP", body), &[]).unwrap();
+    }
+}
+
+#[test]
+fn the_clip_fix_declares_history_that_nothing_observes() {
+    for flags in [["--fix=clip"], ["--fix=all"], ["--mode=oxide"]] {
+        for body in UNOBSERVED_HISTORY {
+            // The program schedules exactly as it does with the history
+            // declared.
+            let fixed = compile_with(&clip_program("", body), &flags);
+            let declared = compile_with(&clip_program("in_hw_clip CLIP", body), &flags);
+            assert_eq!(fixed, declared, "{flags:?}: {body}");
+            assert!(fixed.is_ok(), "{flags:?}: {body}");
+        }
+        for body in OBSERVED_HISTORY {
+            let error = compile_with(&clip_program("", body), &flags).unwrap_err();
+            assert!(error.contains("CLIP"), "{flags:?}: {body}: {error}");
+        }
+    }
+    // Other fixes leave it alone.
+    let error = compile_with(&clip_program("", UNOBSERVED_HISTORY[0]), &["--fix=end"]);
+    assert!(error.unwrap_err().contains("CLIPA"));
+}
+
+#[test]
+fn the_clip_fix_compiles_the_repros_as_their_declared_versions() {
+    // Each public repro, fixed, equals the original's output for the same
+    // program with `in_hw_clip CLIP` declared (`tests/probes`).
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    for (repro, declared) in [
+        (
+            "openvcl__repros_clip_join",
+            "checker-lat-clip-join-declared",
+        ),
+        (
+            "openvcl__repros_clip_loop_entry",
+            "checker-lat-clip-loop-declared",
+        ),
+        (
+            "openvcl__test_repro_quad_adc_bug",
+            "checker-lat-quad-adc-declared",
+        ),
+    ] {
+        let input =
+            std::fs::read_to_string(root.join("tests/corpus").join(repro).join("input.vcl"))
+                .unwrap();
+        let source = corpus::without_header(&input);
+        let options = cli::parse(["-t1", "-uFIX", "--fix=clip"]).unwrap().compile;
+        let fixed = vcl::compile(source, "/work/repro.vcl", &options).unwrap();
+        let original =
+            std::fs::read_to_string(probe_directory(declared).join("stdout.bin")).unwrap();
+        assert_eq!(
+            normalized(&fixed.assembly),
+            normalized(&original),
+            "{repro}"
+        );
+    }
+    // The two that test only defined judgments compile too.
+    for repro in [
+        "openvcl__repros_clipw_implicit_w",
+        "openvcl__test_repro_quad_adc_bug_fjtrujy",
+    ] {
+        let input =
+            std::fs::read_to_string(root.join("tests/corpus").join(repro).join("input.vcl"))
+                .unwrap();
+        let options = cli::parse(["-t1", "-uFIX", "--fix=clip"]).unwrap().compile;
+        vcl::compile(corpus::without_header(&input), "/work/repro.vcl", &options).unwrap();
+    }
 }

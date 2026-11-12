@@ -40,6 +40,14 @@ mode:
                  file(line) diagnostics with the source line and a suggested
                  fix; exit status 1 on failure, 2 for a bad command line
 
+fixes for vcl 1.4beta7's defects (--mode=oxide enables them all):
+  --fix=<names>  enable the named fixes, separated by commas; may be repeated
+  --fix=all      enable every fix
+                 clip: accept CLIPW without in_hw_clip when nothing reads the
+                 undeclared clip history
+                 end: keep the [E] bit and its delay slot on every exit and
+                 --cont, which vcl's final compression can delete
+
 diagnostics:
   -q             quiet mode: prints only warnings and errors
   -p             Microsoft-style errors: file(line): error: message (always

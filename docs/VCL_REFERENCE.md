@@ -348,7 +348,9 @@ out_vi  count(vi01)
 | `out_hw_acc`, `out_hw_i`, ... `out_hw_mac` | a hardware register's value at exit |
 | `xout_hw resource` | an external output dependency |
 
-VCL ends the exit with the E bit and its delay slot. A program may have
+VCL ends the exit with the E bit and its delay slot. vcl 1.4beta7 can lose
+both in its final compression, so that the VU runs past the end of the
+program; `--fix=end` keeps them (see [Fixes](#fixes)). A program may have
 several exits, one per path:
 
 ```text
@@ -407,6 +409,9 @@ in_vf   a(vf01)
 out_vf  c(vf02)
 --endexit
 ```
+
+As at an exit, vcl 1.4beta7 can lose this E bit, so the program runs on
+without stopping; `--fix=end` keeps it (see [Fixes](#fixes)).
 
 `--cont` ends ordinary code only: directly after an exit it is an error
 (`CONT directive encountered - but end mode isn't null`).
@@ -785,18 +790,37 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-h`, `--help` | Print the help screen. |
 | `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
 | `--mode=vcl` | Behave and report exactly as vcl 1.4beta7. The default. |
-| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its own diagnostics and exit statuses (see [Exit status and messages](#exit-status-and-messages)), and future fixes and optimizations. |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its own diagnostics and exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), and future optimizations. |
+| `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 
 The preprocessing stages run in the order `-G`, `-g`, `-g+`, each on the
 previous stage's output; any combination may be given.
 
-`--mode` and `--warnings-as-errors` are oxide-vcl's own options; vcl
-1.4beta7 has no long options and rejects them as unknown switches.
+`--mode`, `--fix` and `--warnings-as-errors` are oxide-vcl's own options;
+vcl 1.4beta7 has no long options and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
 time limit; `oxide-vcl` has none), `-S`, `-D`, `-Q` and `-a`. `-P` and `-Z` only
 print a deprecation warning.
+
+### Fixes
+
+vcl 1.4beta7 has defects that make it emit wrong code for valid programs
+([VCL_BUGS.md](VCL_BUGS.md)). By default oxide-vcl reproduces them, so that
+its output equals the original's. Each fix changes the output only where it
+is wrong, keeps the rest of vcl's behaviour and messages, and is chosen by
+name with `--fix=`; `--mode=oxide` enables all of them.
+
+| Fix | Repairs |
+| --- | --- |
+| `clip` | A program that runs CLIPW without declaring `in_hw_clip`, which vcl rejects ("register CLIPa is used before set") even when nothing reads the earlier judgments. With the fix it compiles as if `--enter` declared `in_hw_clip CLIP`, as long as every FCAND, FCOR, FCEQ, FCGET and `out_hw_clip` sees only judgments its own CLIPWs made on every path; otherwise it is still rejected. |
+| `end` | An exit or `--cont` whose E bit or delay slot vcl's final compression deleted, so that the VU ran on past it. The fix puts the E bit on the table's last row and adds an empty delay row after it. It does the same when the delay slot holds an instruction the hardware forbids there (a branch, a load or store, XGKICK, XTOP or XITOP). With `-e` it does nothing. |
+
+```sh
+oxide-vcl --fix=end -oskin.vsm skin.vcl       # vcl's output, with the E bit fix
+oxide-vcl --fix=all -oskin.vsm skin.vcl       # every fix, vcl's messages
+```
 
 ### Examples
 
