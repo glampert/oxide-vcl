@@ -667,6 +667,32 @@ pub enum CompileMessage {
     WorkAreaNumber {
         token: String,
     },
+    // Fixes for vcl 1.4beta7's defects (`--fix=`); vcl has no counterpart.
+    /// A numeric immediate outside its instruction's encoding field, which
+    /// the assembler would truncate.
+    ImmediateOutOfField {
+        instruction: String,
+        value: String,
+        low: i64,
+        high: i64,
+    },
+    /// A flag-test mask with bits past the flag's width. Those bits do not
+    /// exist, so the test is the same without them.
+    FlagMaskTruncated {
+        instruction: String,
+        value: String,
+        bits: u8,
+    },
+    /// A symbolic immediate in a narrow field: only the assembler can check it.
+    ImmediateUnchecked {
+        instruction: String,
+        value: String,
+        bits: u8,
+    },
+    /// More instructions than VU1 micro memory holds.
+    ProgramTooLarge {
+        rows: usize,
+    },
     /// A failure inside one of the port's own phases, with that phase's
     /// description. vcl has no counterpart message.
     Internal(String),
@@ -769,6 +795,29 @@ impl CompileMessage {
                 register_kind(*vector)
             ),
             WorkAreaNumber { token } => format!("work area value {token} is not a number"),
+            ImmediateOutOfField {
+                instruction,
+                value,
+                low,
+                high,
+            } => format!("immediate {value} of {instruction} is outside its field ({low} to {high})"),
+            FlagMaskTruncated {
+                instruction,
+                value,
+                bits,
+            } => format!(
+                "{instruction} mask {value} has bits past the flag's {bits} bits; they are ignored"
+            ),
+            ImmediateUnchecked {
+                instruction,
+                value,
+                bits,
+            } => format!(
+                "symbolic immediate {value} of {instruction} is not checked against its {bits}-bit field"
+            ),
+            ProgramTooLarge { rows } => {
+                format!("program is {rows} instructions; VU1 micro memory holds 2048")
+            }
             Internal(detail) => detail.clone(),
         }
     }
@@ -781,6 +830,8 @@ impl CompileMessage {
                 | CompileMessage::LoopCsSafeCount
                 | CompileMessage::LoopAbsCount
                 | CompileMessage::FieldLettersInName { .. }
+                | CompileMessage::FlagMaskTruncated { .. }
+                | CompileMessage::ImmediateUnchecked { .. }
         )
     }
 }

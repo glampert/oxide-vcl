@@ -43,10 +43,12 @@ mode:
 fixes for vcl 1.4beta7's defects (--mode=oxide enables them all):
   --fix=<names>  enable the named fixes, separated by commas; may be repeated
   --fix=all      enable every fix
+                 imm: rewrite or reject immediates that do not fit their field
                  clip: accept CLIPW without in_hw_clip when nothing reads the
                  undeclared clip history
                  end: keep the [E] bit and its delay slot on every exit and
                  --cont, which vcl's final compression can delete
+                 size: warn about programs larger than VU1 micro memory
 
 diagnostics:
   -q             quiet mode: prints only warnings and errors

@@ -454,7 +454,8 @@ impl<'a> TableBuilder<'a> {
         if !matches!(
             user.instruction.metadata.index,
             id::LQ | id::ILW | id::SQ | id::ISW
-        ) {
+        ) || user.instruction.fixed_offset
+        {
             return None;
         }
         let ea = user

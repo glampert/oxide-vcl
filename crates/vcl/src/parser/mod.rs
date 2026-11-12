@@ -98,6 +98,10 @@ pub struct Instruction {
     pub optional: bool,
     /// Proven compiler-generated copy; source-written abstract moves stay None.
     pub generated_copy: Option<crate::analysis::copies::Kind>,
+    /// A memory instruction whose displacement stays as written: no affine
+    /// repair moves it across its base register's update. Set by the `imm`
+    /// fix where a repair would push the offset out of its field.
+    pub fixed_offset: bool,
 }
 
 impl Instruction {
@@ -806,6 +810,7 @@ fn parse_instruction(
         loop_id: explicit_loop_id,
         optional,
         generated_copy: None,
+        fixed_offset: false,
     })
 }
 

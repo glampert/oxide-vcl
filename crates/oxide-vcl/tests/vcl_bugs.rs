@@ -11,6 +11,7 @@ mod corpus;
 #[path = "support/vu_model.rs"]
 mod vu_model;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use vcl_cli as cli;
 use vu_model::{Program, State};
@@ -691,4 +692,315 @@ fn the_clip_fix_compiles_the_repros_as_their_declared_versions() {
         let options = cli::parse(["-t1", "-uFIX", "--fix=clip"]).unwrap().compile;
         vcl::compile(corpus::without_header(&input), "/work/repro.vcl", &options).unwrap();
     }
+}
+
+// ----------------------------------------------
+// F1: immediates outside their field (`--fix=imm`)
+// ----------------------------------------------
+
+/// A one-region program with `inputs`, `body` and `outputs`.
+fn region_program(inputs: &str, body: &str, outputs: &str) -> String {
+    format!(
+        ".init_vf_all\n\
+         .init_vi_all\n\
+         --enter\n\
+         {inputs}\n\
+         --endenter\n\
+         {body}\n\
+         --exit\n\
+         {outputs}\n\
+         --endexit\n"
+    )
+}
+
+fn compiled(source: &str, flags: &[&str]) -> Result<vcl::Compiled, Vec<vcl::CompileError>> {
+    let flags = ["-t1", "-uIMM"].iter().chain(flags);
+    let options = cli::parse(flags.copied()).unwrap().compile;
+    vcl::compile(source, "/work/imm.vcl", &options)
+}
+
+/// The text of every warning and error, in vcl's wording.
+fn messages(result: &Result<vcl::Compiled, Vec<vcl::CompileError>>) -> Vec<String> {
+    match result {
+        Ok(compiled) => compiled
+            .warnings
+            .iter()
+            .map(|warning| warning.located(vcl::Mode::Vcl))
+            .collect(),
+        Err(errors) => errors
+            .iter()
+            .map(|error| error.diagnostic().located(vcl::Mode::Vcl))
+            .collect(),
+    }
+}
+
+const IMM_FLAGS: [&[&str]; 3] = [&["--fix=imm"], &["--fix=all"], &["--mode=oxide"]];
+
+#[test]
+fn the_imm_fix_rewrites_vi_steps_exactly() {
+    // `checker-imm-iaddiu-source`: vcl 1.4beta7 prints 40000 and 70000,
+    // which the assembler truncates to 7232 and 4464.
+    let unfixed = compile_probe("checker-imm-iaddiu-source", &[]);
+    assert_eq!(
+        out_of_field(&unfixed),
+        ["iaddiu 0x00009c40", "isubiu 0x00011170"]
+    );
+    for flags in IMM_FLAGS {
+        let listing = compile_probe("checker-imm-iaddiu-source", flags);
+        assert!(out_of_field(&listing).is_empty(), "{flags:?}: {listing}");
+        let steps: Vec<_> = lowers(&listing)
+            .into_iter()
+            .filter(|(mnemonic, _)| mnemonic == "isubiu")
+            .map(|(_, operands)| operands[2].clone())
+            .collect();
+        assert_eq!(steps, ["0x000063c0", "0x00001170"], "{flags:?}");
+        // The 16-bit results are the source's: 100 + 40000 and 100 - 70000.
+        let mut state = State::default();
+        state.vi[1] = 100;
+        let state = Program::parse(&listing)
+            .unwrap()
+            .execute(state, 64)
+            .unwrap()
+            .state;
+        assert_eq!(state.vi[2], 40100, "{flags:?}");
+        assert_eq!(
+            state.vi[3],
+            100u16.wrapping_sub(70000u32 as u16),
+            "{flags:?}"
+        );
+    }
+
+    // Steps inside the field are left as written, 0x7fff included; those
+    // outside it take the other instruction.
+    for (step, expected) in [
+        ("iaddiu b,a,0x7fff", ("iaddiu", "0x00007fff")),
+        ("isubiu b,a,5", ("isubiu", "0x00000005")),
+        ("iaddiu b,a,0xffff", ("isubiu", "0x00000001")),
+        ("isubiu b,a,-1", ("iaddiu", "0x00000001")),
+        ("iaddiu b,a,-32767", ("isubiu", "0x00007fff")),
+    ] {
+        let source = region_program("in_vi a(vi01)", step, "out_vi b(vi02)");
+        let listing = compiled(&source, &["--fix=imm"]).unwrap().assembly;
+        let (mnemonic, operands) = lowers(&listing)
+            .into_iter()
+            .find(|(mnemonic, _)| mnemonic.starts_with("i"))
+            .unwrap();
+        assert_eq!(
+            (mnemonic.as_str(), operands[2].as_str()),
+            expected,
+            "{step}"
+        );
+    }
+
+    // Neither instruction adds 0x8000 in one step.
+    for step in ["iaddiu b,a,0x8000", "isubiu b,a,32768", "iaddiu b,a,-32768"] {
+        let source = region_program("in_vi a(vi01)", step, "out_vi b(vi02)");
+        assert!(compiled(&source, &[]).is_ok(), "{step}");
+        let result = compiled(&source, &["--fix=imm"]);
+        assert!(
+            messages(&result)[0].starts_with("line 6: immediate"),
+            "{step}: {result:?}"
+        );
+    }
+}
+
+#[test]
+fn the_imm_fix_rejects_offsets_and_flag_values_outside_their_fields() {
+    for flags in IMM_FLAGS {
+        for case in [
+            "lq a,1024(p)",
+            "sq a,-1025(p)",
+            "ilw.x iv,2047(p)",
+            "isw.x iv,-2000(p)",
+            "lq a,1000+24(p)",
+            "fceq vi01,0x1000000",
+            "fcset 0x1000002",
+            "fsset 0x1000",
+            "fsset -1",
+        ] {
+            // The status and clip flags are set before the case reads them.
+            let body = format!("lq a,0(p)\niaddiu iv,p,1\nadd a,a,a\n{case}");
+            let source = region_program(
+                "in_vi p(vi02)\nin_hw_clip CLIP",
+                &body,
+                "out_vf a(vf01)\nout_vi iv(vi03)",
+            );
+            assert!(compiled(&source, &[]).is_ok(), "{case}");
+            let result = compiled(&source, flags);
+            assert!(result.is_err(), "{flags:?}: {case}");
+            let message = &messages(&result)[0];
+            assert!(
+                message.starts_with("line 10: immediate"),
+                "{case}: {message}"
+            );
+        }
+        // The public repro: `isw.x iVal, 2000(vi00)`.
+        let input = std::fs::read_to_string(
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+                .join("tests/corpus/openvcl__repros_immediates_out_of_range/input.vcl"),
+        )
+        .unwrap();
+        let result = compiled(corpus::without_header(&input), flags);
+        assert!(
+            messages(&result)[0].contains("immediate 2000 of isw"),
+            "{result:?}"
+        );
+    }
+}
+
+#[test]
+fn the_imm_fix_warns_about_masks_and_symbols_it_cannot_check() {
+    // Bits past a flag do not exist, so FCAND, FCOR, FSAND and FSOR test the
+    // same thing without them: a warning, and the listing keeps the bits
+    // that exist, as the assembler would.
+    let source = region_program(
+        "in_vf a(vf01)\nin_hw_clip CLIP",
+        "fcand vi01,0x1000001\nadd vf02,a,a\nfsand vi02,0x1001",
+        "out_vi vi01\nout_vi vi02\nout_vf vf02",
+    );
+    let unfixed = compiled(&source, &[]).unwrap();
+    assert!(unfixed.warnings.is_empty());
+    assert_eq!(
+        out_of_field(&unfixed.assembly),
+        ["fcand 16777217", "fsand 0x00001001"]
+    );
+    let result = compiled(&source, &["--fix=imm"]);
+    assert_eq!(
+        messages(&result),
+        [
+            "line 7: fcand mask 0x1000001 has bits past the flag's 24 bits; they are ignored",
+            "line 9: fsand mask 0x1001 has bits past the flag's 12 bits; they are ignored",
+        ]
+    );
+    assert!(out_of_field(&result.unwrap().assembly).is_empty());
+
+    // A symbolic offset or IADDI step is the assembler's to check.
+    let source = region_program(
+        "in_vi p(vi01)",
+        "lq a,OFFSET(p)\niaddi next1,p,STEP",
+        "out_vf a(vf01)\nout_vi next1(vi02)",
+    );
+    let result = compiled(&source, &["--fix=imm"]);
+    assert_eq!(
+        messages(&result),
+        [
+            "line 6: symbolic immediate OFFSET of lq is not checked against its 11-bit field",
+            "line 7: symbolic immediate STEP of iaddi is not checked against its 5-bit field",
+        ]
+    );
+    assert_eq!(
+        result.unwrap().assembly,
+        compiled(&source, &[]).unwrap().assembly
+    );
+}
+
+/// Runs a repair probe: VF01 = 0.5, VF02 = 0, VI01 = 5 iterations, VI02 =
+/// `pointer`, and each qword holding its own index.
+fn run_repair_loop(listing: &str, pointer: u16) -> State {
+    let mut state = State::default();
+    state.set_vector(1, [0.5; 4]);
+    state.vi[1] = 5;
+    state.vi[2] = pointer;
+    for (index, qword) in state.memory.iter_mut().enumerate().skip(1) {
+        *qword = [float(index as f32); 4];
+    }
+    Program::parse(listing)
+        .unwrap()
+        .execute(state, 256)
+        .unwrap()
+        .state
+}
+
+#[test]
+fn the_imm_fix_keeps_repaired_offsets_in_their_fields() {
+    // Each iteration steps the pointer by 3, then loads at 1022 (or -1023
+    // after a subtracting step): b sums half of each loaded index.
+    for (case, pointer, offset) in [
+        ("checker-imm-repair-add", 0u16.wrapping_sub(20), 1022),
+        ("checker-imm-repair-subtract", 1040, -1023),
+    ] {
+        let step: i64 = if offset > 0 { 3 } else { -3 };
+        let expected: f32 = (1..=5)
+            .map(|k| (i64::from(pointer as i16) + k * step + offset) as f32 * 0.5)
+            .sum();
+
+        // vcl 1.4beta7 moves the load across the step and repairs its offset
+        // to 1025 (-1026), which the assembler wraps.
+        let unfixed = compile_probe(case, &[]);
+        assert_eq!(out_of_field(&unfixed).len(), 2, "{case}");
+
+        for flags in IMM_FLAGS {
+            let listing = compile_probe(case, flags);
+            assert!(
+                out_of_field(&listing).is_empty(),
+                "{case} {flags:?}: {listing}"
+            );
+            let offsets: BTreeSet<_> = lowers(&listing)
+                .into_iter()
+                .filter(|(mnemonic, _)| mnemonic == "lq")
+                .map(|(_, operands)| operands[1].clone())
+                .collect();
+            assert_eq!(
+                offsets,
+                BTreeSet::from([format!("{offset}(VI02)")]),
+                "{case}"
+            );
+            // The loop is still pipelined, and computes the source's sum.
+            assert!(listing.contains("MAIN_LOOP"), "{case} {flags:?}");
+            let state = run_repair_loop(&listing, pointer);
+            assert_eq!(state.vf[2], [float(expected); 4], "{case} {flags:?}");
+        }
+    }
+}
+
+// ----------------------------------------------
+// F5: program size (`--fix=size`)
+// ----------------------------------------------
+
+/// A raw program whose last branch jumps back over `rows` rows.
+fn far_branch_program(rows: usize) -> String {
+    let mut lines = vec![
+        ".init_vi_all".to_string(),
+        "--enter".into(),
+        "in_vi flag(vi01)".into(),
+        "--endenter".into(),
+        ".vsm".into(),
+        "top:".into(),
+    ];
+    lines.extend(std::iter::repeat_n("nop nop".to_string(), rows));
+    lines.extend([
+        "nop ibne flag, vi00, top".into(),
+        "nop nop".into(),
+        ".endvsm".into(),
+        "--exit".into(),
+        "--endexit".into(),
+    ]);
+    lines.join("\n") + "\n"
+}
+
+#[test]
+fn the_size_fix_warns_only_about_programs_too_large() {
+    // A branch 1025 rows back is past its offset's reach, but the program
+    // counter wraps around micro memory, so it still lands: no warning.
+    let far = far_branch_program(1024);
+    for flags in [&["--fix=size"][..], &["--fix=all"], &["--mode=oxide"]] {
+        assert_eq!(messages(&compiled(&far, flags)), Vec::<String>::new());
+    }
+    assert_eq!(
+        compiled(&far, &[]).unwrap().assembly,
+        compiled(&far, &["--fix=size"]).unwrap().assembly
+    );
+
+    // A program larger than VU1 micro memory (its exit adds padding rows).
+    let source = far_branch_program(2047);
+    let large = compiled(&source, &["--fix=size"]);
+    let rows = large.as_ref().unwrap().instruction_pairs;
+    assert!(rows > 2048);
+    assert_eq!(
+        messages(&large),
+        [format!(
+            "program is {rows} instructions; VU1 micro memory holds 2048"
+        )]
+    );
+    assert!(compiled(&source, &[]).unwrap().warnings.is_empty());
 }

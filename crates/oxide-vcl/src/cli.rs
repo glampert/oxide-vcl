@@ -395,8 +395,8 @@ mod tests {
         for flags in [
             vec!["--fix=all"],
             vec!["--fix=end,all"],
-            vec!["--fix=clip,end"],
-            vec!["--fix=end", "--fix=clip", "--fix=end"],
+            vec!["--fix=imm,clip,end,size"],
+            vec!["--fix=end", "--fix=clip,size", "--fix=imm", "--fix=end"],
         ] {
             let options = parse(flags.iter().copied().chain(["a.vcl"]))
                 .unwrap()
@@ -409,7 +409,7 @@ mod tests {
 
         for (argument, name) in [
             ("--fix=", ""),
-            ("--fix=imm", "imm"),
+            ("--fix=alias", "alias"),
             ("--fix=end,", ""),
             ("--fix=End", "End"),
         ] {
@@ -428,13 +428,13 @@ mod tests {
             );
             assert_eq!(error.exit_status(), 255);
         }
-        let error = parse(["--mode=oxide", "--fix=imm"]).unwrap_err();
+        let error = parse(["--mode=oxide", "--fix=alias"]).unwrap_err();
         assert_eq!(error.exit_status(), 2);
         assert!(
             error
                 .diagnostic
                 .text(vcl::Mode::Oxide)
-                .contains("unknown fix 'imm'")
+                .contains("unknown fix 'alias'")
         );
     }
 

@@ -2780,6 +2780,9 @@ impl Emitter<'_> {
             replacements.push(replacements[1].clone());
             sources.push(sources[1].clone());
         }
+        if program.fixes.contains(Fix::Imm) {
+            immediate_fields::legalize(&mut instruction, located.line)?;
+        }
 
         let printed = crate::emit::instruction(
             &instruction,

@@ -59,23 +59,31 @@ impl Options {
 /// name with `--fix=NAME`. Without it the port reproduces the defect.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Fix {
+    /// Numeric immediates that do not fit their encoding field are
+    /// legalized, rejected or warned about, and displacement repair never
+    /// pushes a memory offset out of its field (`imm`).
+    Imm,
     /// CLIPW without `in_hw_clip` is accepted when nothing observes the
     /// undeclared clip history (`clip`).
     Clip,
     /// Every exit and `--cont` keeps a row with the E bit and its delay
     /// slot, which vcl 1.4beta7's final compression can delete (`end`).
     End,
+    /// A warning for a program larger than VU1 micro memory (`size`).
+    Size,
 }
 
 impl Fix {
     /// Every fix, in the order the help lists them.
-    pub const ALL: [Fix; 2] = [Fix::Clip, Fix::End];
+    pub const ALL: [Fix; 4] = [Fix::Imm, Fix::Clip, Fix::End, Fix::Size];
 
     /// The fix's name on the command line.
     pub const fn name(self) -> &'static str {
         match self {
+            Fix::Imm => "imm",
             Fix::Clip => "clip",
             Fix::End => "end",
+            Fix::Size => "size",
         }
     }
 

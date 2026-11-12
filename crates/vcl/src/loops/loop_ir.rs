@@ -318,6 +318,9 @@ fn annotate_consumers(
         let Some(index) = immediate::consumer_operand(consumer.instruction.metadata.index) else {
             continue;
         };
+        if consumer.instruction.fixed_offset {
+            continue;
+        }
         let operand = usize::from(index);
         let address = required_operand_flow(bindings, consumer.id, operand)?;
         if address.register != output.register {
@@ -930,6 +933,7 @@ fn unconditional_branch(target: &str) -> Instruction {
         loop_id: 1,
         optional: false,
         generated_copy: None,
+        fixed_offset: false,
     }
 }
 

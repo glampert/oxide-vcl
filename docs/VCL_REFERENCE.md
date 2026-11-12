@@ -814,8 +814,10 @@ name with `--fix=`; `--mode=oxide` enables all of them.
 
 | Fix | Repairs |
 | --- | --- |
+| `imm` | Numeric immediates that do not fit their field, which the assembler truncates without a word. IADDIU and ISUBIU steps are rewritten exactly (`iaddiu …,0xffff` is `isubiu …,1`; adding 0x8000 in one step is an error). Memory offsets outside -1024 to 1023 and FCEQ, FCSET, FSEQ or FSSET values outside their field are errors. FCAND, FCOR, FSAND and FSOR masks with bits past the flag are warnings, as are symbolic IADDI steps and memory offsets. vcl's own rewrite of an offset when it moves a load or store across its pointer's update never leaves the field. |
 | `clip` | A program that runs CLIPW without declaring `in_hw_clip`, which vcl rejects ("register CLIPa is used before set") even when nothing reads the earlier judgments. With the fix it compiles as if `--enter` declared `in_hw_clip CLIP`, as long as every FCAND, FCOR, FCEQ, FCGET and `out_hw_clip` sees only judgments its own CLIPWs made on every path; otherwise it is still rejected. |
 | `end` | An exit or `--cont` whose E bit or delay slot vcl's final compression deleted, so that the VU ran on past it. The fix puts the E bit on the table's last row and adds an empty delay row after it. It does the same when the delay slot holds an instruction the hardware forbids there (a branch, a load or store, XGKICK, XTOP or XITOP). With `-e` it does nothing. |
+| `size` | A warning for a program larger than the 2048 instructions of VU1 micro memory. A branch farther than its 11-bit offset reaches is not warned about: the assembler truncates the offset, and the program counter wraps around micro memory to the target. |
 
 ```sh
 oxide-vcl --fix=end -oskin.vsm skin.vcl       # vcl's output, with the E bit fix

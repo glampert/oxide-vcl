@@ -614,6 +614,54 @@ fn compile(message: &CompileMessage) -> Wording {
         ))
         .subject(token.clone())
         .help("write a decimal or 0x hexadecimal number of qwords"),
+        ImmediateOutOfField {
+            instruction,
+            value,
+            low,
+            high,
+        } => {
+            let help = if matches!(instruction.as_str(), "lq" | "sq" | "ilw" | "isw") {
+                "a memory offset reaches -1024 to 1023 qwords from its base register: move the \
+                 base closer, for example with an IADDIU before the access"
+                    .to_string()
+            } else if matches!(instruction.as_str(), "iaddiu" | "isubiu") {
+                "neither IADDIU nor ISUBIU can add 0x8000 to a VI register in one step: add it \
+                 in two, for example iaddiu …,0x7fff then iaddiu …,1"
+                    .to_string()
+            } else {
+                format!("use a value from {low} to {high}")
+            };
+            Wording::new(format!(
+                "{value} does not fit {instruction}'s immediate field ({low} to {high}); the \
+                 assembler would keep only its low bits"
+            ))
+            .subject(value.clone())
+            .help(help)
+        }
+        FlagMaskTruncated {
+            instruction,
+            value,
+            bits,
+        } => Wording::new(format!(
+            "{instruction}'s mask {value} has bits past the flag's {bits} bits, which do not exist"
+        ))
+        .subject(value.clone())
+        .help(format!(
+            "the test is the same without them; keep the mask within its low {bits} bits"
+        )),
+        ImmediateUnchecked {
+            instruction,
+            value,
+            bits,
+        } => Wording::new(format!(
+            "'{value}' is not a number, so its fit in {instruction}'s {bits}-bit field is not checked"
+        ))
+        .subject(value.clone())
+        .help("the assembler keeps only the field's bits of the value it resolves"),
+        ProgramTooLarge { rows } => Wording::new(format!(
+            "the program is {rows} instructions, more than the 2048 of VU1 micro memory"
+        ))
+        .help("split it into programs that are loaded separately"),
         Internal(detail) => internal(detail),
     }
 }

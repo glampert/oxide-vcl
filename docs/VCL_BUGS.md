@@ -6,7 +6,7 @@ guards a VCL build against six kinds of silent failure:
 - `crossloop`, `regalloc` and `loopvar`: liveness.
 - `immediates`: field widths.
 - `latency`: unpadded flag, Q and branch-condition reads.
-- `branches`: wrapped branch offsets.
+- `branches`: wrapped branch offsets (benign: they land by wraparound).
 
 Its author found them with OpenVCL. A second set of minimal repros from
 the same work sits in the public corpus as `repro__*` and
@@ -19,9 +19,9 @@ original" below) with synthetic probes. The results fall into three groups:
 - OpenVCL-only defects, which the original does not have;
 - problems outside VCL.
 
-The shared defects get opt-in fixes, one per defect. `clip` (F3) and `end`
-(F4) are implemented; `imm` (F1) and `alias` (F2) are designed below and not
-yet implemented.
+The shared defects get opt-in fixes, one per defect, plus a warning for
+program size: `imm` (F1), `clip` (F3), `end` (F4) and `size` (F5) are
+implemented; `alias` (F2) is designed below and not yet implemented.
 
 Ground rules:
 
@@ -84,7 +84,7 @@ Field widths and latencies come from the VU User's Manual 6.0 at
 | `latency`: clip, MAC, status, Q, branch condition across joins, back edges and calls | No | `checker-lat-*`, `openvcl__repros_mac_join`, `openvcl__repros_ilw_branch_label` | — |
 | `openvcl__repros_masked_write_branch`, `openvcl__repros_seed_store_order` | No | corpus outputs are correct | — |
 | `-c` schedules differently | No | identical pairs with and without `-c`: 3 corpus programs on the original, 49 on the port | — |
-| `branches`: wrapped offsets | Outside VCL | VCL emits labels; dvp-as encodes | optional warning (F5) |
+| `branches`: wrapped offsets | No: the program counter wraps, so they land | VCL emits labels; dvp-as encodes | program-size warning only (F5) |
 
 ## 3. Defects the original shares
 
@@ -135,49 +135,58 @@ on VU1, 256 on VU0), an offset truncated modulo 2048 would hit the same
 qword. Nothing we have establishes that, so the plan treats a truncated
 offset as a defect.
 
-**Fix (`--fix=imm`).**
+**Fix (`--fix=imm`).** `crates/vcl/src/compiler/immediate_fields.rs`. The
+field widths come from the manual and are in the instruction table:
+IADDI 5 bits signed, IADDIU/ISUBIU 15 bits unsigned, LQ/SQ/ILW/ISW 11 bits
+signed, FC* 24 bits, FS* 12 bits.
 
-1. *Field check at emission.* Every numeric immediate is checked against
-   its encoding field. The widths come from the manual: IADDI 5 bits
-   signed, IADDIU/ISUBIU 15 bits unsigned, LQ/SQ/ILW/ISW 11 bits signed,
-   FC* 24 bits, FS* 12 bits. They are kept in one table next to the
-   instruction descriptors. A value that cannot be legalized (steps 2–4)
-   is a `USER:` error that names the source line, as the original's
-   decode errors do.
-2. *Exact legalization of VI arithmetic.*
+1. *Exact VI steps.*
    - VI registers are 16 bits (manual §3.2), so IADDIU/ISUBIU arithmetic
      is modulo 65536.
-   - Reduce the signed immediate modulo 65536. Emit IADDIU if the result is
-     at most 32767; otherwise emit the opposite opcode with
-     `65536 - value`.
-   - Every 16-bit constant then has an exact encoding. The original
-     already does the same for IADDI:
+   - A step outside the field is reduced modulo 65536 as it is emitted:
+     IADDIU if the result is at most 32767, ISUBIU with `65536 - value`
+     if that is.
+   - Steps inside the field are left as written. The original already
+     does the same for IADDI. For example:
      - `iaddiu …,0xffff` → `isubiu …,1`
      - `isubiu …,-1` → `iaddiu …,1`
      - `iaddiu …,40000` → `isubiu …,25536`
      - `isubiu …,70000` → `isubiu …,4464`
-3. *Flag masks.*
+   - Adding 0x8000 has no encoding: neither `iaddiu …,32768` nor
+     `isubiu …,32768` fits 15 bits. That is an error, whose help suggests
+     two steps (`0x7fff`, then `1`), as `quake2-ps2` programs write it.
+   - `openvcl__test_repro_quad_adc_bug_fjtrujy` writes
+     `iaddiu vi05,vi00,0xffff`. The assembler makes that 0x7fff; the fix
+     emits `isubiu …,1`, which is 0xffff, as written. A program tuned to the
+     truncated value would behave differently with the fix.
+2. *Flag masks.*
    - FCAND/FCOR/FSAND/FSOR: the bits past the flag's width do not exist,
-     so the hardware result equals the truncated mask's. Give a warning,
-     not an error.
+     so the hardware result equals the truncated mask's. It is a warning,
+     and the listing carries the mask's existing bits, as the assembler
+     would.
    - FCEQ/FSEQ/FCSET/FSSET: the value means something else after
-     truncation. Error.
-4. *Memory offsets in source.* These are errors. Legalizing one needs a
-   second base register, and allocation runs before emission; this is not
-   worth an allocator interaction.
-5. *Affine repair.*
-   - Check the repaired offset where it is computed. If it leaves the
-     field, the loop candidate fails.
-   - Then the existing transactional retry runs again with that consumer's
-     affine annotation removed. The memory operation keeps its ordinary
-     dependency on the update and cannot cross it, so its offset is never
-     repaired.
-   - If the retry also fails, the loop falls back to linear code, as any
-     failed candidate does now.
-   - The retry order must be deterministic. `checker-imm-repair-*` then
-     emits offsets 1022 and -1023.
-6. *Symbolic immediates in narrow fields* (IADDI, memory offsets): give a
-   warning, since only the assembler can check them.
+     truncation. It is an error.
+3. *Memory offsets in source* are errors. Legalizing one needs a second
+   base register, and allocation runs before emission; this is not worth an
+   allocator interaction.
+4. *Displacement repair.* The source's offsets are checked first, so an
+   offset outside its field at emission comes from the repair. Each
+   consumer's repaired offset is fixed in advance (its offset plus or minus
+   the stride, by its phase and the update's direction), but whether the
+   scheduler moves it is known only after scheduling. So:
+   - At emission, such an offset fails the compile.
+   - The instruction on that line is marked to keep its offset
+     (`Instruction::fixed_offset`): neither the linear tables nor the loop
+     builder annotate it as an affine consumer. It keeps its ordinary
+     dependency on the update and cannot cross it.
+   - The program is compiled again. Output changes only where a repaired
+     offset left its field.
+   - `checker-imm-repair-*` then emit offsets 1022 and -1023, and their
+     loops stay pipelined.
+5. *Symbolic immediates in narrow fields* (IADDI, memory offsets) are
+   warnings, since only the assembler can check them.
+
+Errors and warnings name the source line, in vcl's layout or oxide's.
 
 ### F2. Memory order through different base registers
 
@@ -347,16 +356,24 @@ one row longer than the original's output. The added rows are counted in the tab
 the fix does nothing. Filling the E row and its delay slot with useful work
 belongs to O9 in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
 
-### F5. Program size (optional)
+### F5. Program size
 
-VU branch offsets are 11-bit signed: ±1023 instructions. VU1 micro memory
-holds 2048 instructions, and the PC wraps modulo 2048, so a wrapped
-offset lands correctly. That depends on the program's load address and
-on what else shares micro memory, and VCL knows neither.
+A VU branch's target is an 11-bit signed offset, in instructions, from the
+instruction in its delay slot: -1024 to 1023. The original emits labels
+and leaves the encoding to the assembler, which keeps the low 11 bits of
+a farther offset (dvp-as warns "operand out of range"). VU1 micro memory
+holds 2048 instructions and the program counter wraps around it, so the
+truncated offset still lands on the target, wherever the program is
+loaded, as long as the program fits. A public build of `quake2-ps2`
+assembles three such branches, from OpenVCL's output, and vu-checker's
+`branches` pass finds them landing by wraparound; the program works. Two
+programs in set A have such branches, 1025 to 1249 instructions away, in
+the original's output. Far branches are therefore not a defect; a program
+larger than micro memory is.
 
-Under `--fix`, a warning when one program exceeds 1024 rows (some branch
-may need the wrap) or 2048 rows (it cannot fit) costs nothing. The real
-check stays in vu-checker's object-level `branches` pass.
+**Fix (`--fix=size`).** `crates/vcl/src/compiler/program_size.rs` warns
+about a program of more than 2048 instructions. Far branches get no
+warning, and the output is unchanged.
 
 ## 4. OpenVCL-only defects (absent from the original)
 
@@ -477,11 +494,17 @@ defect they repair, so each defect stays pinned in both modes. Default-mode
 suites (oracle pipeline, public corpus, local corpus) must stay unchanged.
 Per fix:
 
-- F1: `checker-imm-*-source` and `openvcl__repros_immediates_out_of_range`
-  under `--fix=imm` leave no out-of-field immediate (`out_of_field` in
-  `crates/oxide-vcl/tests/vcl_bugs.rs`), and the legalized values execute equal
-  in the VU model. `checker-imm-repair-*` keep offsets 1022 and -1023, and the
-  repaired loop still executes correctly.
+- F1: under `--fix=imm`, `--fix=all` and `--mode=oxide`,
+  `checker-imm-iaddiu-source` leaves no out-of-field immediate (`out_of_field`
+  in `crates/oxide-vcl/tests/vcl_bugs.rs`) and executes to the source's 16-bit
+  results in the VU model; out-of-field offsets and flag values (inline, and
+  `openvcl__repros_immediates_out_of_range`) are rejected with their line;
+  masks and symbolic immediates give warnings; `checker-imm-repair-*` keep
+  offsets 1022 and -1023 in a pipelined loop that executes to the source's
+  sum.
+- F5: `the_size_fix_warns_only_about_programs_too_large` builds raw
+  programs with a branch past its offset's reach (no warning) and one
+  larger than micro memory (a warning).
 - F3: `the_clip_fix_compiles_the_repros_as_their_declared_versions`
   compares the repros with the original's `-declared` outputs.
   `the_clip_fix_declares_history_that_nothing_observes` checks inline

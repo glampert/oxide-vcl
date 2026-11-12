@@ -931,6 +931,7 @@ impl<'a> LpgenRewrite<'a> {
             loop_id: 0,
             optional: false,
             generated_copy: Some(kind),
+            fixed_offset: false,
         })
     }
 

@@ -25,6 +25,8 @@ mod clip_history;
 mod external_assignment;
 mod flow_graph;
 mod generated_rows;
+mod immediate_fields;
+mod program_size;
 mod raw_reduction;
 mod region;
 mod rows;
@@ -66,6 +68,10 @@ enum CompileErrorKind {
     /// the `clip` fix declares before compiling it again. Its message is
     /// vcl 1.4beta7's "used before set" error.
     UndeclaredClipHistory,
+    /// A displacement repair pushed a memory offset out of its field, which
+    /// the `imm` fix undoes by keeping that instruction's offset and
+    /// compiling again.
+    RepairedOffset,
 }
 
 impl CompileError {
@@ -1401,47 +1407,66 @@ impl From<CompileError> for Box<Failure> {
     }
 }
 
-/// Compiles a parsed program with the source rewrites its fixes need: with
-/// the `clip` fix, each region whose undeclared clip history nothing
-/// observes gets `in_hw_clip CLIP`, and the program is compiled again.
+/// Compiles a parsed program with what its fixes need:
+///
+/// - `imm` checks the source's immediates first, and where a displacement
+///   repair pushed a memory offset out of its field, keeps that
+///   instruction's offset and compiles again;
+/// - `clip` declares `in_hw_clip CLIP` in each region whose undeclared clip
+///   history nothing observes, and compiles again;
+/// - `size` checks the finished listing's size.
 fn compile_fixed(
     mut parsed: parser::Program,
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
-    // Each round declares the history in one more region, so there are at
-    // most as many rounds as regions.
-    let regions = parsed
-        .statements
-        .iter()
-        .filter(|statement| {
-            matches!(&statement.kind, StatementKind::Instruction(instruction)
-                if instruction.synthetic() == Some(Synthetic::Enter))
-        })
-        .count();
-    for _ in 0..regions {
+    let notes = if options.fixes(Fix::Imm) {
+        immediate_fields::check_source(&parsed)?
+    } else {
+        Vec::new()
+    };
+    // Each round declares the history of one more region or fixes the
+    // offsets of one more line, so there are at most as many rounds as
+    // statements.
+    for _ in 0..=parsed.statements.len() {
         let failure = match compile_parsed(parsed.clone(), filename, options) {
-            Err(failure) if failure.error.kind == CompileErrorKind::UndeclaredClipHistory => {
-                failure
+            Ok(mut output) => {
+                output.warnings.extend(notes);
+                if options.fixes(Fix::Size) {
+                    output.warnings.extend(program_size::check(&output));
+                }
+                return Ok(output);
             }
-            result => return result,
+            Err(failure) => failure,
         };
-        let declared = failure
-            .lines
-            .as_ref()
-            .and_then(|lines| clip_history::declare_history(&parsed, lines));
-        match declared {
-            Some(declared) => parsed = declared,
+        let rewritten = match failure.error.kind {
+            CompileErrorKind::UndeclaredClipHistory => failure
+                .lines
+                .as_ref()
+                .and_then(|lines| clip_history::declare_history(&parsed, lines)),
+            CompileErrorKind::RepairedOffset => {
+                immediate_fields::fix_offsets(&parsed, failure.error.line)
+            }
+            _ => return Err(failure),
+        };
+        match rewritten {
+            Some(rewritten) => parsed = rewritten,
             None => return Err(failure.into_general()),
         }
     }
-    compile_parsed(parsed, filename, options).map_err(|failure| failure.into_general())
+    Err(Box::<Failure>::from(internal(
+        0,
+        "the fixes' rewrites did not converge",
+    )))
 }
 
 impl Failure {
     /// The failure with its error reported as it is, not retried.
     fn into_general(mut self: Box<Self>) -> Box<Self> {
-        if self.error.kind == CompileErrorKind::UndeclaredClipHistory {
+        if matches!(
+            self.error.kind,
+            CompileErrorKind::UndeclaredClipHistory | CompileErrorKind::RepairedOffset
+        ) {
             self.error.kind = CompileErrorKind::General;
         }
         self
