@@ -232,7 +232,7 @@ messages say "work".
 | `.init_vf list` / `.init_vi list` | Make the listed physical registers allocable. |
 | `.rem_vf list` / `.rem_vi list` | Make them unallocable again. |
 | `.init_vf_all` / `.init_vi_all` | Make every register except VF00/VI00 allocable. |
-| `.vu_work_area device,address,size` | Request work memory; always fails (below). |
+| `.vu_work_area device,address,size` | Request work memory; fails in vcl mode, takes spills in oxide mode (below). |
 | `.name name` | Set the program's external name. |
 | `.syntax new\|old` | Change operand syntax and instruction lookup. |
 | `.align ...` | Accepted and skipped. |
@@ -254,7 +254,9 @@ VCL's allocation units; `core` is recognized and fails as unimplemented.
 Address must be nonnegative, size positive and address+size within capacity,
 parsed as base-10 `strtol` (`0x20` reads as 0). Every valid request then fails
 because vcl 1.4beta7 never installs the memory pool; see
-[MEMORY.md](MEMORY.md).
+[MEMORY.md](MEMORY.md). Oxide mode reads the numbers as decimal or `0x`
+hexadecimal and spills registers that do not fit into the area
+([MEMORY.md](MEMORY.md#spilling-to-a-work-area-in-oxide-mode)).
 
 Opening a raw block inside a raw loop is rejected; opening one while already
 raw warns and reapplies the mode. A raw loop restores the code mode it saved

@@ -215,7 +215,7 @@ pub(super) fn assign(
             &tables,
             &initial,
         )
-        .map_err(|failure| internal(0, failure))?;
+        .map_err(|failure| external_failure(program, family, failure))?;
         for (register, base) in assignments {
             if !initial.contains_key(&register) {
                 result.forced.insert(register, base);
@@ -223,6 +223,32 @@ pub(super) fn assign(
         }
     }
     Ok(result)
+}
+
+/// The error for a failed external assignment. In oxide mode a value that
+/// fits no register is reported like a local allocation failure, so a work
+/// area can take a spill; vcl mode keeps the port's internal description.
+fn external_failure(
+    program: &Source,
+    family: Family,
+    failure: external_allocation::ExternalAllocationError,
+) -> CompileError {
+    let external_allocation::ExternalAllocationError::NoFit { register } = failure else {
+        return internal(0, failure);
+    };
+    if program.mode != crate::Mode::Oxide {
+        return internal(0, failure);
+    }
+
+    let mut result = error(
+        0,
+        CompileMessage::AllocationPoolFull {
+            vector: family == Family::Vector,
+            register: program.registers.named(register).name.clone(),
+        },
+    );
+    result.kind = CompileErrorKind::ExternalAllocation;
+    result
 }
 
 // ----------------------------------------------

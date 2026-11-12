@@ -1,0 +1,102 @@
+INFO: OS_Init(Linux)
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF03
+INFO:  LOCAL :        tc__0__0.XYZW - VF02
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF04
+INFO:  LOCAL :        tf__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      sum1__0__0.XYZW - VF03
+INFO:  LOCAL :      sum2__0__0.XYZW - VF02
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF03
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF02
+INFO:  LOCAL :        tc__0__0.XYZW - VF04
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF03
+INFO:  LOCAL :        tf__0__0.XYZW - VF01
+INFO:  LOCAL :      sum1__0__0.XYZW - VF02
+INFO:  LOCAL :      sum2__0__0.XYZW - VF04
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF02
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF03
+INFO:  LOCAL :        tc__0__0.XYZW - VF02
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF04
+INFO:  LOCAL :        tf__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      sum1__0__0.XYZW - VF03
+INFO:  LOCAL :      sum2__0__0.XYZW - VF02
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF03
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF03
+INFO:  LOCAL :        tc__0__0.XYZW - VF02
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF04
+INFO:  LOCAL :        tf__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      sum1__0__0.XYZW - VF03
+INFO:  LOCAL :      sum2__0__0.XYZW - VF02
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF03
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF02
+INFO:  LOCAL :        tc__0__0.XYZW - VF04
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF03
+INFO:  LOCAL :        tf__0__0.XYZW - VF01
+INFO:  LOCAL :      sum1__0__0.XYZW - VF02
+INFO:  LOCAL :      sum2__0__0.XYZW - VF04
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF02
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF03
+INFO:  LOCAL :        tc__0__0.XYZW - VF02
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF04
+INFO:  LOCAL :        tf__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      sum1__0__0.XYZW - VF03
+INFO:  LOCAL :      sum2__0__0.XYZW - VF02
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF03
+INFO: VU User integer
+INFO: VU User floating point
+INFO:  EXTERNAL:            VF10.XYZW - VF10 
+INFO:  EXTERNAL:            VF11.XYZW - VF11 
+INFO:  LOCAL :        ta__0__0.XYZW - VF01
+INFO:  LOCAL :        tb__0__0.XYZW - VF03
+INFO:  LOCAL :        tc__0__0.XYZW - VF02
+INFO:  LOCAL :        td__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :        te__0__0.XYZW - VF04
+INFO:  LOCAL :        tf__0__0.XYZW - UNALLOCATED
+INFO:  LOCAL :      sum1__0__0.XYZW - VF03
+INFO:  LOCAL :      sum2__0__0.XYZW - VF02
+INFO:  LOCAL :      sum3__0__0.XYZW - VF01
+INFO:  LOCAL :      sum4__0__0.XYZW - VF03
+ERROR: no opt table.. something failed making table .. for __v_DEMO_4!
+ERROR: failed to convert all uta linear->raw
+INFO: OS_End(Linux)

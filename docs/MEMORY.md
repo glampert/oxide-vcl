@@ -8,10 +8,12 @@ pool is not installed by the shipped CPU profile. All otherwise valid
 ERROR: init work area - failed to get vu mem pool
 ```
 
-This is observed behaviour of vcl 1.4beta7, and the port reproduces it. Code
-for a dormant pool exists in vcl 1.4beta7 (inferred), but the port does not
-invent source syntax, automatic spills, allocation, or lifetime behaviour that
-the shipped configuration does not expose.
+This is observed behaviour of vcl 1.4beta7, and the port reproduces it in vcl
+mode (`spill-vf-area`, `spill-vi-area`). Code for a dormant pool exists in vcl
+1.4beta7 (inferred), but vcl mode does not invent source syntax, automatic
+spills, allocation, or lifetime behaviour that the shipped configuration does
+not expose. Oxide mode spills registers into the area its own way
+([below](#spilling-to-a-work-area-in-oxide-mode)).
 
 ## The installed CPU profile
 
@@ -210,3 +212,49 @@ tags into virtual-resource operands and clears the instruction's raw tag
 pointer before the rebuild, and the helper returns false if either pointer is
 null. No retained observation shows the comparator reached with two populated
 pointers.
+
+## Spilling to a work area in oxide mode
+
+vcl 1.4beta7 rejects a program whose registers do not fit (`spill-vf-none`:
+`no opt table.. something failed making table`, status 255), and the port's
+vcl mode reports the allocation failure. With `--mode=oxide`, each
+`.vu_work_area` is data memory the program gives the compiler, and values
+that do not fit are spilled there (`crates/vcl/src/compiler/spill.rs`).
+
+The address and size are read as decimal or `0x` hexadecimal qwords, with
+nothing after the number, and checked against the device again: `vu0,0x100,1`
+passes vcl's decimal-prefix check (as address 0) and is outside VU0 in oxide
+mode. Several areas give their qwords in source order.
+
+When a region fails allocation (locally, or in the cross-stream assignment
+of values live between blocks), the compiler spills one symbolic name and
+compiles the whole program again:
+
+1. The name is a VF or VI name of the failing family, mentioned in the
+   failing region, with the longest stretch of statements between its first
+   and last mention there (the earliest on a tie).
+2. Names it cannot rewrite are never chosen: interface and directive
+   operands, raw code, names inside visibility scopes, implicit operands
+   (the register LQI or SQD steps), `(vi++)` and `(--vi)` addresses, branch
+   link registers, and names used as both VF and VI.
+3. Each spilled name gets the next qword of the areas. On the parsed
+   statements, every write of it is followed by `sq.<fields written>` (VI:
+   `isw.x`) to `<qword>(vi00)`, and every read is preceded by `lq.xyzw` (VI:
+   `ilw.x`) into a fresh name, which the read then uses. Pruning narrows the
+   load to the fields used.
+4. A block with a `--LoopCS` hint that gains spill code gets a safe count of
+   0, since a spill store from an extra iteration would overwrite a value
+   still to be read.
+
+Loads and stores to the same qword stay in order because they share base
+(VI00) and offset; other memory accesses are assumed not to touch the area.
+The spills are found with the loop optimizer off, which fails fast, and the
+program is then compiled with the real options, spilling more if a pipelined
+loop needs it; a loop whose pipelined schedule still does not fit is
+compiled as a plain loop, as any such loop is. When the areas are full, the
+error says so (`WorkAreaFull`); when nothing left can be spilled, the
+allocation error stands. Each spill is a note naming the value and its qword.
+
+`crates/oxide-vcl/tests/work_area.rs` checks both modes and runs the spilled
+listings on the test VU model, comparing the results with the same programs
+built with every register allowed.

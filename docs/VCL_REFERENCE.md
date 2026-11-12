@@ -703,11 +703,49 @@ which keeps two expansions of one macro apart. Further rules:
 
 ### Work memory
 
-**`.vu_work_area device, address, size`**: Reserves VU data memory for VCL's
-own use, with `device` `vu0` (capacity 256) or `vu1` (capacity 1024). In vcl
-1.4beta7 every such request fails (`init work area - failed to get vu mem
-pool`), because that version never set up the memory pool; `oxide-vcl` does the
-same. Do not use it.
+**`.vu_work_area device, address, size`**: Gives the compiler `size` qwords
+of data memory from qword `address`, for values that do not fit in the
+allowed registers. `device` is `vu0` (256 qwords) or `vu1` (1024 qwords).
+
+In vcl 1.4beta7 every such request fails (`init work area - failed to get vu
+mem pool`): that version never set up the memory it needs. `oxide-vcl` does
+the same by default.
+
+With `--mode=oxide`, a program whose VF or VI registers do not fit spills
+values into the work area instead of failing. A spilled value is stored to
+its own qword after each write and loaded back before each read, so it only
+holds a register briefly. Each spill is reported as a note:
+
+```text
+.init_vf vf01-vf04
+.vu_work_area vu1, 1000, 8
+--enter
+in_vf   src(vf10)
+--endenter
+        add     ta, src, src
+        mul     tb, src, src
+        ...
+```
+
+```text
+prog.vcl(6): note: 'ta' does not fit in the VF registers: it is kept in vu1 data memory at qword 1000, the work area
+```
+
+- The area must be memory the program does not use itself: the compiler
+  assumes nothing else reads or writes it while the program runs.
+- Addresses and sizes are in qwords, decimal or `0x` hexadecimal (vcl reads
+  only a decimal prefix, so `0x3e8` would be 0 there). Several work areas
+  are used one after another.
+- Values are spilled one at a time, preferring the one live over the longest
+  stretch of code, until the program fits. When the area is full, the error
+  says so; make it larger or allow more registers.
+- Interface values (`in_vf`, `out_vi`, ...), raw code, names inside
+  `.hide`/`.show` scopes, the registers of `(vi++)`/`(--vi)` addresses and
+  branch link registers are never spilled.
+- In a loop that spills, the `safe` count of `--LoopCS` is treated as 0:
+  a spill store from an extra iteration would overwrite a value still in
+  use. A loop whose pipelined schedule still does not fit is compiled as a
+  plain loop.
 
 ## Command line
 

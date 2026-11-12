@@ -56,10 +56,14 @@ pub enum Directive {
         reorder: bool,
     },
     EndRawLoop,
+    /// `.vu_work_area device,address,size`, with the address and size read
+    /// as vcl reads them (a decimal prefix) and as written.
     WorkArea {
         device: String,
         address: i32,
         size: u32,
+        address_text: String,
+        size_text: String,
     },
     Align(Vec<String>),
     NoAligns,
@@ -557,8 +561,10 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Par
                 }
                 _ => return Err(ParseMessage::WorkAreaDevice),
             };
-            let address = decimal_prefix(&argument(tokens, 2, &name)?);
-            let size = decimal_prefix(&argument(tokens, 3, &name)?);
+            let address_text = argument(tokens, 2, &name)?;
+            let size_text = argument(tokens, 3, &name)?;
+            let address = decimal_prefix(&address_text);
+            let size = decimal_prefix(&size_text);
             if size <= 0 || address < 0 || i64::from(address) + i64::from(size) > capacity {
                 return Err(ParseMessage::WorkAreaOutsideMemory);
             }
@@ -566,6 +572,8 @@ fn parse_directive(tokens: &[Token], state: &mut State) -> Result<Directive, Par
                 device,
                 address,
                 size: size as u32,
+                address_text,
+                size_text,
             }
         }
         ".align" => Directive::Align(args),
@@ -606,7 +614,7 @@ fn decimal_prefix(value: &str) -> i32 {
     }
 }
 
-fn physical_register(value: &str, vector: bool) -> Option<u8> {
+pub(crate) fn physical_register(value: &str, vector: bool) -> Option<u8> {
     let value = value.to_ascii_lowercase();
     let digits = value.strip_prefix(if vector { "vf" } else { "vi" })?;
     if digits.is_empty() || digits.len() > 2 || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -2089,7 +2097,9 @@ mod tests {
             StatementKind::Directive(Directive::WorkArea {
                 device: "vu0".into(),
                 address: 0,
-                size: 1
+                size: 1,
+                address_text: "0x20".into(),
+                size_text: "1".into(),
             })
         );
         rejected(".vu_work_area vu0,255,2", "outside");

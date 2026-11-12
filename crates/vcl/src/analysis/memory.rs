@@ -1,10 +1,11 @@
 //! Work-area and memory-dependency facts recovered from the supplied ELF.
 //!
 //! The shipped Marigold CPU profile does **not** install the memory register
-//! pool. Every valid `.vu_work_area` request therefore fails.
+//! pool. Every valid `.vu_work_area` request therefore fails in vcl mode.
 //! The dormant constructor is modeled separately for analysis;
 //! its allocation methods simply return success without doing work.
-//! See `docs/MEMORY.md`; this module intentionally invents no spill allocator.
+//! See `docs/MEMORY.md`. This module models vcl only; oxide mode's spilling
+//! is `compiler/spill.rs`.
 
 use std::fmt;
 

@@ -29,6 +29,7 @@ mod region;
 mod rows;
 mod software_loops;
 mod source_passes;
+mod spill;
 mod table_planning;
 mod table_timing;
 mod wrangle_tables;
@@ -56,6 +57,9 @@ pub struct CompileError {
 enum CompileErrorKind {
     General,
     Allocation,
+    /// No register fits a value live across streams (oxide mode only):
+    /// spilling can help, scheduling strategies cannot.
+    ExternalAllocation,
     ZeroCopyDestination,
 }
 
@@ -341,6 +345,8 @@ struct Source {
     /// mapped IN/OUT operand replaces it; an unmapped one takes it. It
     /// survives regions.
     bindings: BTreeMap<usize, usize>,
+    /// Oxide mode's `.vu_work_area` requests, in source order.
+    work_areas: Vec<spill::WorkArea>,
 }
 
 /// The original's global flow UIDs, one per source statement
@@ -490,6 +496,7 @@ impl Source {
             warnings: Vec::new(),
             field_letter_names: BTreeSet::new(),
             bindings: BTreeMap::new(),
+            work_areas: Vec::new(),
         }
     }
 
@@ -801,7 +808,18 @@ impl Source {
                 device,
                 address,
                 size,
+                address_text,
+                size_text,
             } => {
+                // vcl never installs the memory pool a work area needs
+                // (observed from vcl 1.4beta7, `spill-vf-area`); oxide mode
+                // spills registers that do not fit into it.
+                if self.mode == crate::Mode::Oxide {
+                    let area = spill::WorkArea::parse(&device, &address_text, &size_text)
+                        .map_err(|message| error(line, message))?;
+                    self.work_areas.push(area);
+                    return Ok(());
+                }
                 let request =
                     crate::analysis::memory::WorkAreaRequest::from_parsed(&device, address, size)
                         .map_err(|e| internal(line, e))?;
@@ -1319,8 +1337,70 @@ pub fn compile(
             .map(|e| error(e.line, e.message))
             .collect::<Vec<_>>()
     })?;
+
+    if options.mode != crate::Mode::Oxide {
+        return compile_parsed(parsed, filename, options).map_err(|failure| vec![failure.error]);
+    }
+
+    // Oxide mode spills a value to the work area each time a region's
+    // registers do not fit, and compiles the rewritten program again.
+    let mut spills = spill::Spills::default();
+    let failure = match compile_parsed(parsed.clone(), filename, options) {
+        Ok(output) => return Ok(output),
+        Err(failure) => failure,
+    };
+    spills.add(&parsed, *failure).map_err(|e| vec![e])?;
+
+    // A loop that does not fit fails only after the loop optimizer has
+    // searched every period, so the spills are first found with it off. A
+    // pipelined loop can need more, which the second pass adds.
+    let linear = Options {
+        disable_loops: true,
+        ..options.clone()
+    };
+    while let Err(failure) = compile_parsed(spills.apply(&parsed), filename, &linear) {
+        if spills.add(&parsed, *failure).is_err() {
+            break;
+        }
+    }
+
+    loop {
+        match compile_parsed(spills.apply(&parsed), filename, options) {
+            Ok(mut output) => {
+                output.warnings.extend(spills.notes());
+                return Ok(output);
+            }
+            Err(failure) => spills.add(&parsed, *failure).map_err(|e| vec![e])?,
+        }
+    }
+}
+
+/// Why compiling a parsed program failed, with what spilling needs to know.
+struct Failure {
+    error: CompileError,
+    /// The source lines of the region that failed, when a region did.
+    lines: Option<std::ops::RangeInclusive<usize>>,
+    work_areas: Vec<spill::WorkArea>,
+}
+
+impl From<CompileError> for Box<Failure> {
+    fn from(error: CompileError) -> Self {
+        Box::new(Failure {
+            error,
+            lines: None,
+            work_areas: Vec::new(),
+        })
+    }
+}
+
+/// Compiles a parsed program.
+fn compile_parsed(
+    parsed: parser::Program,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Box<Failure>> {
     let mut program = Source::new(options);
-    program.parse_program(parsed).map_err(|e| vec![e])?;
+    program.parse_program(parsed)?;
 
     let mut output = Compiled::default();
     output.warnings.append(&mut program.warnings);
@@ -1345,7 +1425,14 @@ pub fn compile(
     }
 
     for region in &program.regions {
-        compile_region(&program, region, &unique, options, &mut output).map_err(|e| vec![e])?;
+        if let Err(error) = compile_region(&program, region, &unique, options, &mut output) {
+            let lines = region.instructions.iter().map(|located| located.line);
+            return Err(Box::new(Failure {
+                error,
+                lines: lines.clone().min().zip(lines.max()).map(|(a, b)| a..=b),
+                work_areas: program.work_areas.clone(),
+            }));
+        }
     }
     write_epilogue(&program, options, &mut output);
     Ok(output)

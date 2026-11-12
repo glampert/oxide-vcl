@@ -564,10 +564,44 @@ fn compile(message: &CompileMessage) -> Wording {
             ))
             .subject(register.clone())
             .help(format!(
-                "allow more registers with .init_{lower}_all or a wider .init_{lower} range, or \
+                "allow more registers with .init_{lower}_all or a wider .init_{lower} range, \
+                 keep fewer values live at once, or give values room to spill to in data \
+                 memory: .vu_work_area vu1,<address>,<qwords>"
+            ))
+        }
+        RegisterSpilled {
+            name,
+            vector,
+            device,
+            address,
+        } => Wording::new(format!(
+            "'{name}' does not fit in the {} registers: it is kept in {device} data memory at \
+             qword {address}, the work area",
+            family(*vector)
+        ))
+        .subject(name.clone()),
+        WorkAreaFull {
+            vector,
+            register,
+            size,
+        } => {
+            let family = family(*vector);
+            let lower = family.to_ascii_lowercase();
+            Wording::new(format!(
+                "out of {family} registers for '{register}', and all {size} qwords of the work \
+                 area already hold spilled values"
+            ))
+            .subject(register.clone())
+            .help(format!(
+                "make the .vu_work_area larger, allow more registers with .init_{lower}_all, or \
                  keep fewer values live at once"
             ))
         }
+        WorkAreaNumber { token } => Wording::new(format!(
+            "the work area's address or size '{token}' is not a number"
+        ))
+        .subject(token.clone())
+        .help("write a decimal or 0x hexadecimal number of qwords"),
         Internal(detail) => internal(detail),
     }
 }

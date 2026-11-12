@@ -644,6 +644,25 @@ pub enum CompileMessage {
         vector: bool,
         register: String,
     },
+    // Spilling to a work area (oxide mode only; vcl has no counterpart).
+    /// A value did not fit in the registers and lives in the work area.
+    RegisterSpilled {
+        name: String,
+        vector: bool,
+        device: String,
+        address: u32,
+    },
+    /// Registers still do not fit, and every qword of the work areas holds a
+    /// spilled value.
+    WorkAreaFull {
+        vector: bool,
+        register: String,
+        size: u32,
+    },
+    /// A work area's address or size is not a number.
+    WorkAreaNumber {
+        token: String,
+    },
     /// A failure inside one of the port's own phases, with that phase's
     /// description. vcl has no counterpart message.
     Internal(String),
@@ -731,6 +750,21 @@ impl CompileMessage {
                     register_kind(*vector)
                 )
             }
+            RegisterSpilled {
+                name,
+                device,
+                address,
+                ..
+            } => format!("spilled {name} to {device} memory at {address}"),
+            WorkAreaFull {
+                vector,
+                register,
+                size,
+            } => format!(
+                "failed to allocate a register of type {} for '{register}': the {size} work area slots are full",
+                register_kind(*vector)
+            ),
+            WorkAreaNumber { token } => format!("work area value {token} is not a number"),
             Internal(detail) => detail.clone(),
         }
     }
