@@ -268,6 +268,7 @@ fn immediate(source: &str, selector: ImmediateKind, memory: bool) -> Result<Stri
         source,
         ExpressionOptions {
             hex_is_float: value_type == Some(ImmediateType::Float),
+            ..ExpressionOptions::default()
         },
     )
     .map_err(|error| EmitError(error.to_string()))?;

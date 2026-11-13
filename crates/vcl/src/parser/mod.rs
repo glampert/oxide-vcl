@@ -185,6 +185,10 @@ pub struct ParserOptions {
     /// allows (`ilw.x t,0(p)`), as long as their shape is right: the
     /// `operands` fix.
     pub short_memory_operands: bool,
+    /// Keep commas and spaces inside parentheses in their token, so that a
+    /// call such as `pow(2, 10)` stays one operand (`--mode=oxide`, for
+    /// the math functions of `loi` expressions).
+    pub grouped_parentheses: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -242,7 +246,7 @@ pub fn parse_with_options(
             });
             continue;
         }
-        let tokens = match tokenize(&text) {
+        let tokens = match tokenize(&text, options.grouped_parentheses) {
             Ok(tokens) => tokens,
             Err(message) => {
                 errors.push(ParseError { line, message });
@@ -423,10 +427,26 @@ fn logical_lines(source: &str, errors: &mut Vec<ParseError>) -> Vec<(usize, Stri
     lines
 }
 
-fn tokenize(source: &str) -> Result<Vec<Token>, ParseMessage> {
+/// With `grouped`, commas and spaces inside parentheses do not split a
+/// token: the commas stay in it and the spaces are dropped.
+fn tokenize(source: &str, grouped: bool) -> Result<Vec<Token>, ParseMessage> {
     let mut result: Vec<Token> = Vec::new();
     let mut token = String::new();
+    let mut depth = 0_usize;
     for c in source.chars() {
+        if grouped {
+            match c {
+                '(' => depth += 1,
+                ')' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+            if depth > 0 && (c.is_ascii_whitespace() || c == ',') {
+                if c == ',' {
+                    token.push(c);
+                }
+                continue;
+            }
+        }
         if c.is_ascii_whitespace() || c == ',' {
             if !token.is_empty() {
                 result.push(Token {

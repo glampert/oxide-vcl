@@ -693,6 +693,12 @@ pub enum CompileMessage {
     ProgramTooLarge {
         rows: usize,
     },
+    /// A `loi` expression whose function call cannot be evaluated (oxide
+    /// mode): `detail` says why.
+    LoiFunction {
+        expression: String,
+        detail: String,
+    },
     /// A failure inside one of the port's own phases, with that phase's
     /// description. vcl has no counterpart message.
     Internal(String),
@@ -817,6 +823,9 @@ impl CompileMessage {
             ),
             ProgramTooLarge { rows } => {
                 format!("program is {rows} instructions; VU1 micro memory holds 2048")
+            }
+            LoiFunction { expression, detail } => {
+                format!("failed to evaluate '{expression}': {detail}")
             }
             Internal(detail) => detail.clone(),
         }

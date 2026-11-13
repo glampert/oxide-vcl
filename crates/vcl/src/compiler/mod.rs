@@ -26,6 +26,7 @@ mod external_assignment;
 mod flow_graph;
 mod generated_rows;
 mod immediate_fields;
+mod loi_functions;
 mod memory_alias;
 mod program_size;
 mod raw_reduction;
@@ -1345,6 +1346,7 @@ pub fn compile(
             },
             allow_incomplete: false,
             short_memory_operands: options.fixes(Fix::Operands),
+            grouped_parentheses: options.mode == crate::Mode::Oxide,
         },
     )
     .map_err(|errors| {
@@ -1353,6 +1355,10 @@ pub fn compile(
             .map(|e| error(e.line, e.message))
             .collect::<Vec<_>>()
     })?;
+    let mut parsed = parsed;
+    if options.mode == crate::Mode::Oxide {
+        loi_functions::fold(&mut parsed).map_err(|e| vec![e])?;
+    }
 
     if options.mode != crate::Mode::Oxide {
         return compile_fixed(parsed, filename, options).map_err(|failure| vec![failure.error]);

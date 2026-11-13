@@ -293,6 +293,46 @@ out_vi  c(vi04)
 --endexit
 ```
 
+#### Math functions in `loi` (`--mode=oxide`)
+
+With `--mode=oxide`, a `loi` expression may call the math functions of
+openvcl's expression solver. vcl 1.4beta7 has no function calls: it rejects
+`loi sin(1)` ("failed to parse immediate"), and vcl mode still does, so a
+program that uses them compiles only in oxide mode (and with openvcl).
+
+| Function | Result |
+| --- | --- |
+| `abs(x)` | absolute value |
+| `exp(x)` | exponential |
+| `sin(x)`, `cos(x)`, `tan(x)` | trigonometry, in radians |
+| `sinh(x)`, `cosh(x)`, `tanh(x)` | hyperbolic trigonometry |
+| `asin(x)`, `acos(x)`, `atan(x)` | inverse trigonometry |
+| `atan2(y, x)` | the angle of the point (x, y), as C's `atan2`: `atan2(1, 2)` is `atan(1/2)` |
+| `pow(x, y)` | `x` raised to `y` |
+| `log(x)`, `log10(x)` | natural and base-10 logarithms |
+| `sqrt(x)` | square root |
+| `pi()` | pi |
+
+The functions work in double precision and `loi` loads the result rounded to
+a float, the bits openvcl emits for the same expression. Names are lowercase.
+Arguments are expressions, and spaces after the commas are allowed. Inside
+an expression that calls a function, an exponent needs no sign (`1.8e2`).
+An unknown function, a wrong number of arguments, or an argument that is a
+symbol rather than a number is an error. openvcl lists `tanh` but emits it
+unevaluated; here it is evaluated.
+
+```text
+.init_vf_all
+--enter
+in_vf   v(vf01)
+--endenter
+        loi     sin(45 * (pi()/1.8e2))      ; loi 0x3f3504f3 (0.7071068)
+        muli    scaled, v, i
+--exit
+out_vf  scaled(vf02)
+--endexit
+```
+
 ### Instruction prefixes and flags
 
 | Syntax | Meaning |
@@ -798,7 +838,7 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-h`, `--help` | Print the help screen. |
 | `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
 | `--mode=vcl` | Behave and report exactly as vcl 1.4beta7. The default. |
-| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its own diagnostics and exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), and future optimizations. |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its own diagnostics and exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and future optimizations. |
 | `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 

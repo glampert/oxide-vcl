@@ -118,6 +118,9 @@ pub struct ExpressionOptions {
     /// LOI's immediate selector (0x40) interprets 0x literals as float bits.
     /// Ordinary integer immediates keep the default unsigned interpretation.
     pub hex_is_float: bool,
+    /// Function calls (`sin(x)`, `pow(x, y)`, `pi()`): the math functions of
+    /// openvcl's `loi` expressions, which vcl 1.4beta7 does not have.
+    pub functions: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,6 +154,11 @@ pub enum Binary {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expr {
     Literal(String),
+    /// A function call, with `ExpressionOptions::functions`.
+    Call {
+        name: String,
+        arguments: Vec<Expr>,
+    },
     Unary {
         operation: Unary,
         operand: Box<Expr>,
@@ -195,11 +203,22 @@ enum Token {
     Operator(String),
     Open,
     Close,
+    /// An argument separator, with `ExpressionOptions::functions`.
+    Comma,
 }
 
 /// Parse the executable's precedence table. Equal-precedence binary operators
 /// associate to the left, including the recognized but unevaluable power op.
 pub fn parse(source: &str) -> Result<Expression, ExpressionError> {
+    parse_with(source, false)
+}
+
+/// `parse`, also reading function calls (`ExpressionOptions::functions`).
+pub fn parse_with_functions(source: &str) -> Result<Expression, ExpressionError> {
+    parse_with(source, true)
+}
+
+fn parse_with(source: &str, functions: bool) -> Result<Expression, ExpressionError> {
     if !source.is_ascii() {
         return Err(failure(0, "non-ASCII expression"));
     }
@@ -207,12 +226,12 @@ pub fn parse(source: &str) -> Result<Expression, ExpressionError> {
         .chars()
         .filter(|character| !character.is_ascii_whitespace())
         .collect();
-    let tokens = lex(&source);
+    let tokens = lex(&source, functions);
     if tokens.is_empty() {
         return Err(failure(0, "empty expression"));
     }
     let mut cursor = 0;
-    let tree = parse_binary(&tokens, &mut cursor, 0, 0)?;
+    let tree = parse_binary(&tokens, &mut cursor, 0, 0, functions)?;
     if cursor != tokens.len() {
         return Err(failure(
             cursor,
@@ -230,7 +249,7 @@ pub fn evaluate_with_options(
     source: &str,
     options: ExpressionOptions,
 ) -> Result<Evaluation, ExpressionError> {
-    parse(source)?.evaluate(options)
+    parse_with(source, options.functions)?.evaluate(options)
 }
 
 impl Expression {
@@ -245,9 +264,22 @@ impl Expression {
         }
         numeric(&self.tree, options).map(Evaluation::Number)
     }
+
+    /// Whether the expression calls a function.
+    pub fn has_call(&self) -> bool {
+        fn calls(tree: &Expr) -> bool {
+            match tree {
+                Expr::Literal(_) => false,
+                Expr::Call { .. } => true,
+                Expr::Unary { operand, .. } => calls(operand),
+                Expr::Binary { left, right, .. } => calls(left) || calls(right),
+            }
+        }
+        calls(&self.tree)
+    }
 }
 
-fn lex(source: &str) -> Vec<Token> {
+fn lex(source: &str, functions: bool) -> Vec<Token> {
     let mut tokens = Vec::new();
     let mut position = 0;
     while position < source.len() {
@@ -262,6 +294,11 @@ fn lex(source: &str) -> Vec<Token> {
             position += 1;
             continue;
         }
+        if functions && tail.starts_with(',') {
+            tokens.push(Token::Comma);
+            position += 1;
+            continue;
+        }
         if let Some(operator) = operator_at(tail) {
             tokens.push(Token::Operator(operator.into()));
             position += operator.len();
@@ -271,7 +308,7 @@ fn lex(source: &str) -> Vec<Token> {
         position += 1;
         while position < source.len() {
             let byte = source.as_bytes()[position];
-            if matches!(byte, b'(' | b')') {
+            if matches!(byte, b'(' | b')') || (functions && byte == b',') {
                 break;
             }
             let exponent_sign = matches!(byte, b'+' | b'-')
@@ -322,6 +359,7 @@ fn parse_binary(
     cursor: &mut usize,
     minimum: u8,
     depth: u16,
+    functions: bool,
 ) -> Result<Expr, ExpressionError> {
     if depth >= 255 {
         return Err(failure(
@@ -330,13 +368,40 @@ fn parse_binary(
         ));
     }
     let mut left = match tokens.get(*cursor) {
+        Some(Token::Literal(name))
+            if functions
+                && tokens.get(*cursor + 1) == Some(&Token::Open)
+                && is_function_name(name) =>
+        {
+            *cursor += 2;
+            let mut arguments = Vec::new();
+            if tokens.get(*cursor) == Some(&Token::Close) {
+                *cursor += 1;
+            } else {
+                loop {
+                    arguments.push(parse_binary(tokens, cursor, 0, depth + 1, functions)?);
+                    match tokens.get(*cursor) {
+                        Some(Token::Comma) => *cursor += 1,
+                        Some(Token::Close) => {
+                            *cursor += 1;
+                            break;
+                        }
+                        _ => return Err(failure(*cursor, "missing closing parenthesis")),
+                    }
+                }
+            }
+            Expr::Call {
+                name: name.clone(),
+                arguments,
+            }
+        }
         Some(Token::Literal(literal)) => {
             *cursor += 1;
             Expr::Literal(literal.clone())
         }
         Some(Token::Open) => {
             *cursor += 1;
-            let expression = parse_binary(tokens, cursor, 0, depth + 1)?;
+            let expression = parse_binary(tokens, cursor, 0, depth + 1, functions)?;
             if tokens.get(*cursor) != Some(&Token::Close) {
                 return Err(failure(*cursor, "missing closing parenthesis"));
             }
@@ -355,7 +420,7 @@ fn parse_binary(
             *cursor += 1;
             Expr::Unary {
                 operation,
-                operand: Box::new(parse_binary(tokens, cursor, 30, depth + 1)?),
+                operand: Box::new(parse_binary(tokens, cursor, 30, depth + 1, functions)?),
             }
         }
         _ => return Err(failure(*cursor, "expected an expression operand")),
@@ -368,7 +433,7 @@ fn parse_binary(
             break;
         }
         *cursor += 1;
-        let right = parse_binary(tokens, cursor, precedence + 1, depth + 1)?;
+        let right = parse_binary(tokens, cursor, precedence + 1, depth + 1, functions)?;
         left = Expr::Binary {
             operation,
             left: Box::new(left),
@@ -376,6 +441,63 @@ fn parse_binary(
         };
     }
     Ok(left)
+}
+
+/// A name a call can have: a letter or `_`, then letters, digits and `_`.
+fn is_function_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+/// The functions of openvcl's `loi` expressions: name, argument count and
+/// the function, in double precision. `atan2(y, x)` takes its arguments in
+/// C's order (observed from openvcl: `atan2(1, 2)` is `atan(1 / 2)`).
+/// A function's name, argument count and definition.
+type Function = (&'static str, usize, fn(&[f64]) -> f64);
+
+const FUNCTIONS: [Function; 17] = [
+    ("abs", 1, |x| x[0].abs()),
+    ("exp", 1, |x| x[0].exp()),
+    ("sin", 1, |x| x[0].sin()),
+    ("cos", 1, |x| x[0].cos()),
+    ("tan", 1, |x| x[0].tan()),
+    ("sinh", 1, |x| x[0].sinh()),
+    ("cosh", 1, |x| x[0].cosh()),
+    ("tanh", 1, |x| x[0].tanh()),
+    ("asin", 1, |x| x[0].asin()),
+    ("acos", 1, |x| x[0].acos()),
+    ("atan", 1, |x| x[0].atan()),
+    ("atan2", 2, |x| x[0].atan2(x[1])),
+    ("pow", 2, |x| x[0].powf(x[1])),
+    ("log", 1, |x| x[0].ln()),
+    ("log10", 1, |x| x[0].log10()),
+    ("sqrt", 1, |x| x[0].sqrt()),
+    ("pi", 0, |_| std::f64::consts::PI),
+];
+
+/// The names of the functions, for messages.
+pub fn function_names() -> impl Iterator<Item = &'static str> {
+    FUNCTIONS.iter().map(|(name, ..)| *name)
+}
+
+fn call(name: &str, arguments: &[Number]) -> Result<Number, ExpressionError> {
+    let Some((_, count, function)) = FUNCTIONS.iter().find(|(known, ..)| *known == name) else {
+        return Err(failure(0, format!("unknown function '{name}'")));
+    };
+    if arguments.len() != *count {
+        let plural = if *count == 1 { "" } else { "s" };
+        return Err(failure(
+            0,
+            format!(
+                "{name} takes {count} argument{plural}, not {}",
+                arguments.len()
+            ),
+        ));
+    }
+    let values: Vec<f64> = arguments.iter().map(|argument| argument.to_f64()).collect();
+    Ok(Number::Float(function(&values) as f32))
 }
 
 fn literal(source: &str, options: ExpressionOptions) -> Option<Number> {
@@ -428,6 +550,17 @@ fn literal(source: &str, options: ExpressionOptions) -> Option<Number> {
                 exponent = true;
                 position += 1;
             }
+            // openvcl's `loi` expressions also take `1.8e2`; vcl 1.4beta7
+            // reads it as a symbol.
+            b'e' if !exponent
+                && options.functions
+                && clean
+                    .as_bytes()
+                    .get(position + 1)
+                    .is_some_and(u8::is_ascii_digit) =>
+            {
+                exponent = true;
+            }
             byte if byte.is_ascii_digit() => {}
             _ => return None,
         }
@@ -473,6 +606,11 @@ fn unknowns(tree: &Expr, options: ExpressionOptions, symbols: &mut BTreeSet<Stri
             unknowns(left, options, symbols);
             unknowns(right, options, symbols);
         }
+        Expr::Call { arguments, .. } => {
+            for argument in arguments {
+                unknowns(argument, options, symbols);
+            }
+        }
     }
 }
 
@@ -481,6 +619,13 @@ fn numeric(tree: &Expr, options: ExpressionOptions) -> Result<Number, Expression
         Expr::Literal(source) => literal(source, options)
             .ok_or_else(|| failure(0, "unresolved literal reached numeric evaluation")),
         Expr::Unary { operation, operand } => unary(*operation, numeric(operand, options)?),
+        Expr::Call { name, arguments } => {
+            let values = arguments
+                .iter()
+                .map(|argument| numeric(argument, options))
+                .collect::<Result<Vec<_>, _>>()?;
+            call(name, &values)
+        }
         Expr::Binary {
             operation,
             left,
@@ -657,7 +802,14 @@ mod tests {
         assert_eq!(number("0z3f800000"), Number::Float(1.0));
         assert_eq!(number("0x3f800000"), Number::Unsigned(0x3f80_0000));
         assert_eq!(
-            evaluate_with_options("0x3f800000", ExpressionOptions { hex_is_float: true }).unwrap(),
+            evaluate_with_options(
+                "0x3f800000",
+                ExpressionOptions {
+                    hex_is_float: true,
+                    ..ExpressionOptions::default()
+                }
+            )
+            .unwrap(),
             Evaluation::Number(Number::Float(1.0))
         );
         assert_eq!(number("1.0&0x7fffffff").bits(), 0x3f80_0000);
@@ -741,5 +893,89 @@ mod tests {
         }
         let nested = format!("{}1{}", "(".repeat(260), ")".repeat(260));
         assert!(parse(&nested).is_err());
+    }
+
+    fn loi_bits(source: &str) -> Result<u32, ExpressionError> {
+        let options = ExpressionOptions {
+            hex_is_float: true,
+            functions: true,
+        };
+        Ok(evaluate_with_options(source, options)?
+            .number()
+            .expect("a number")
+            .to_f32()
+            .to_bits())
+    }
+
+    #[test]
+    fn functions_give_openvcls_values() {
+        // Observed from openvcl: the float bits each `loi` line emits.
+        for (source, bits) in [
+            ("sin(45*(pi()/1.8e2))", 0x3f35_04f3),
+            ("pi()", 0x4049_0fdb),
+            ("abs(-2.5)", 0x4020_0000),
+            ("abs(-2)", 0x4000_0000),
+            ("exp(1)", 0x402d_f854),
+            ("cos(0)", 0x3f80_0000),
+            ("tan(1)", 0x3fc7_5923),
+            ("sinh(1)", 0x3f96_6cfe),
+            ("cosh(1)", 0x3fc5_83ab),
+            ("asin(1)", 0x3fc9_0fdb),
+            ("acos(0)", 0x3fc9_0fdb),
+            ("atan(1)", 0x3f49_0fdb),
+            ("atan2(1,2)", 0x3eed_6338),
+            ("atan2(2,1)", 0x3f8d_b70d),
+            ("pow(2,10)", 0x4480_0000),
+            ("log(10)", 0x4013_5d8e),
+            ("log10(1000)", 0x4040_0000),
+            ("sqrt(2)", 0x3fb5_04f3),
+            ("sqrt(pow(3,2)+pow(4,2))", 0x40a0_0000),
+            ("sqrt(16)", 0x4080_0000),
+            ("sin (1)", 0x3f57_6aa4),
+        ] {
+            assert_eq!(loi_bits(source).unwrap(), bits, "{source}");
+        }
+        // openvcl lists tanh but leaves it unevaluated; here it is tanh.
+        assert_eq!(
+            loi_bits("tanh(1)").unwrap(),
+            (1.0_f64.tanh() as f32).to_bits()
+        );
+        // LOI reads 0x literals as float bits, in arguments too.
+        assert_eq!(loi_bits("sqrt(0x40800000)").unwrap(), 2.0_f32.to_bits());
+    }
+
+    #[test]
+    fn function_calls_need_the_option_and_a_known_name() {
+        // Without the option a call is what it was: no expression.
+        assert!(evaluate("sin(1)").is_err());
+        assert!(evaluate("pi()").is_err());
+        for (source, message) in [
+            ("foo(1)", "unknown function 'foo'"),
+            ("SIN(1)", "unknown function 'SIN'"),
+            ("sin(1,2)", "sin takes 1 argument, not 2"),
+            ("sin()", "sin takes 1 argument, not 0"),
+            ("pi(1)", "pi takes 0 arguments, not 1"),
+            ("pow(2)", "pow takes 2 arguments, not 1"),
+        ] {
+            assert_eq!(loi_bits(source).unwrap_err().message, message, "{source}");
+        }
+        assert!(loi_bits("sin(1").is_err());
+        // A symbolic argument leaves the expression unresolved.
+        let options = ExpressionOptions {
+            hex_is_float: true,
+            functions: true,
+        };
+        assert!(matches!(
+            evaluate_with_options("sin(angle)", options).unwrap(),
+            Evaluation::Unresolved { symbols, .. } if symbols == ["angle"]
+        ));
+        // Without the option, `1.8e2` is a symbol, as in vcl 1.4beta7.
+        assert!(matches!(
+            evaluate("1.8e2").unwrap(),
+            Evaluation::Unresolved { .. }
+        ));
+        assert_eq!(loi_bits("1.8e2").unwrap(), 180.0_f32.to_bits());
+        assert!(parse_with_functions("2*sin(1)").unwrap().has_call());
+        assert!(!parse_with_functions("2*(1)").unwrap().has_call());
     }
 }

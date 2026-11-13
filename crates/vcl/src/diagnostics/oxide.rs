@@ -662,6 +662,17 @@ fn compile(message: &CompileMessage) -> Wording {
             "the program is {rows} instructions, more than the 2048 of VU1 micro memory"
         ))
         .help("split it into programs that are loaded separately"),
+        LoiFunction { expression, detail } => Wording::new(format!(
+            "cannot evaluate '{expression}': {detail}"
+        ))
+        .subject(expression.clone())
+        .help(format!(
+            "loi expressions can call {}, with numbers as arguments",
+            crate::parser::expression::function_names()
+                .map(|name| format!("{name}()"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
         Internal(detail) => internal(detail),
     }
 }

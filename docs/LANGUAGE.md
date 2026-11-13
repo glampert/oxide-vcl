@@ -326,6 +326,18 @@ integer, and unsigned conversion takes the low 32 bits of the signed 64-bit
 result. The port computes float intermediates in `f64` where the original uses
 x87 extended precision, so exceptional rounding cases may differ.
 
+With `--mode=oxide`, a float immediate (`loi`'s) may also call openvcl's
+math functions (`sin(x)`, `pow(x, y)`, `pi()` and the others in
+[VCL_REFERENCE.md](VCL_REFERENCE.md#math-functions-in-loi---modeoxide)).
+`ExpressionOptions::functions` adds the call to the grammar: a name
+followed by `(`, arguments separated by commas, evaluated in `f64` and
+rounded to a float. It also takes an unsigned exponent (`1.8e2`). The
+parser keeps a parenthesized group in one token in oxide mode
+(`ParserOptions::grouped_parentheses`), so `pow(2, 10)` is one operand, and
+`crates/vcl/src/compiler/loi_functions.rs` replaces each such immediate by
+its float bits before compiling. Without the option a call is not an
+expression, as in vcl 1.4beta7.
+
 If any leaf is symbolic the whole expression is kept as written: `LABEL+2*3`
 is emitted as `LABEL+2*3`, and a symbolic expression containing `||` is kept
 although numeric `||` fails.
