@@ -32,8 +32,8 @@ fn seeded_state(seed: u64) -> State {
     for qword in &mut state.memory {
         *qword = std::array::from_fn(|_| (((next() % 16 + 1) as f32) / 4.0).to_bits());
     }
-    for register in 1..16 {
-        state.vi[register] = (next() % 24 + 2) as u16;
+    for register in &mut state.vi[1..16] {
+        *register = (next() % 24 + 2) as u16;
     }
     // The retained loop fixtures have positive incoming VI01 trip counts;
     // memory fixtures use it as a base. Keep both within the modeled region.
@@ -99,8 +99,8 @@ fn compare(case: &str, escapes: Escapes<'_>) {
         }
         if case.starts_with("boundary-ilw-") {
             let address = usize::from(initial.vi[1]);
-            for lane in 0..4 {
-                initial.memory[address][lane] = (seed % 16 + 32 + lane as u64) as u32;
+            for (lane, value) in initial.memory[address].iter_mut().enumerate() {
+                *value = (seed % 16 + 32 + lane as u64) as u32;
             }
         }
         if case == "raw-boundary-old-read" {
