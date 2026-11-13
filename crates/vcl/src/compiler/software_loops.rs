@@ -536,6 +536,7 @@ fn order_same_locations(
     let groups = memory_alias::loop_groups(
         &context.program,
         source,
+        &context.graph,
         &context.analysis,
         &block.operations,
         live,

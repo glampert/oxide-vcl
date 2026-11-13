@@ -178,6 +178,8 @@ struct TableBuilder<'a> {
     operand_lists: Vec<OperandList>,
     /// Operand indices after dropping pool-zero operands.
     mapped_index: Vec<Vec<Option<usize>>>,
+    /// The region's flow graph, built when the `alias` fix first needs it.
+    graph: std::cell::OnceCell<Option<flow::Graph>>,
 }
 
 /// As `build_wrangle_table`, for a merged table: it enters with the live
@@ -203,6 +205,7 @@ pub(super) fn build_wrangle_table_span(
         reads_by: BTreeMap::new(),
         operand_lists: Vec::new(),
         mapped_index: Vec::new(),
+        graph: std::cell::OnceCell::new(),
     };
     let mut map = RegisterMap {
         keys: BTreeMap::new(),
@@ -965,9 +968,16 @@ impl<'a> TableBuilder<'a> {
         if !self.program.fixes.contains(Fix::Alias) {
             return false;
         }
-        let at = |index: usize| {
-            memory_alias::location(self.program, self.region, &self.reads_by, self.live[index])
+        let graph = self
+            .graph
+            .get_or_init(|| build_flow_graph(self.program, self.region).ok());
+        let resolver = memory_alias::Resolver {
+            program: self.program,
+            region: self.region,
+            reads: &self.reads_by,
+            graph: graph.as_ref(),
         };
+        let at = |index: usize| resolver.location(self.live[index]);
         at(i).is_some_and(|location| at(j) == Some(location))
     }
 

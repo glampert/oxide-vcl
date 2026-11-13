@@ -11,13 +11,14 @@
 //! software-pipelined loop keeps only the order of tagged accesses: one qword
 //! is stored and loaded out of order even through one base register, with
 //! or without `-M` (`mem-loop-same-base`, `mem-loop-same-base-timid`,
-//! `mem-loop-accumulator`, `mem-loop-store-store`).
+//! `mem-loop-copied-base`, `mem-loop-accumulator`, `mem-loop-store-store`).
 //!
 //! With the fix, each address is also written as a root plus a constant,
 //! following the base register back through the steps that set it:
 //! IADDIU, ISUBIU and IADDI by a number, IADD and ISUB with VI00, VI moves,
 //! and the steps of LQI, SQI, LQD and SQD. The root is VI00 (an absolute
-//! address) or a register at its reaching definitions, where the steps stop.
+//! address), a loop's induction register (`Resolver::induction`), or a
+//! register at its reaching definitions, where the steps stop.
 //! Two accesses with the same root and constant are the same location and
 //! keep their order. In a pipelined loop whose schedule breaks that order
 //! (`breaks_order`), the locations become resources of the loop table
@@ -37,6 +38,13 @@ enum Root {
     Absolute,
     /// A register's value at the definitions reaching a read of it.
     Value(usize, BTreeSet<Definition>),
+    /// An induction register of the self-loop `block`: `init` plus `stride`
+    /// for each pass through the block since it was entered.
+    Induction {
+        init: Box<Root>,
+        stride: i64,
+        block: usize,
+    },
 }
 
 /// An address: a root plus a constant, in qwords, modulo the 16 bits of a
@@ -59,40 +67,13 @@ impl Location {
 /// The reads of the region by (operation, register, component).
 pub(super) type Reads<'a> = BTreeMap<(usize, usize, u8), &'a Read>;
 
-/// The location a memory instruction addresses, or `None` when its offset
-/// is not a number.
-pub(super) fn location(
-    program: &Source,
-    region: &Region,
-    reads: &Reads,
-    id: usize,
-) -> Option<Location> {
-    let located = &region.instructions[id];
-    let index = located
-        .instruction
-        .operands
-        .iter()
-        .position(|operand| class::is_address(operand.class))?;
-    let operand = &located.instruction.operands[index];
-    let offset = match operand.immediate.as_deref() {
-        Some(text) => number(text)?,
-        None => 0,
-    };
-    // `(--vi)` addresses the decremented value; `(vi++)` the value before.
-    let step = if operand.class == class::ADDRESS_DECREMENT {
-        -1
-    } else {
-        0
-    };
-    let base = located.operands[index];
-    let at = match base {
-        Some(register) => value(program, region, reads, register, id, &mut Vec::new())?,
-        None => Location {
-            root: Root::Absolute,
-            offset: 0,
-        },
-    };
-    Some(at.plus(offset + step))
+/// Follows addresses back through the region's data flow. With the
+/// region's flow graph it also recognizes induction registers.
+pub(super) struct Resolver<'a> {
+    pub(super) program: &'a Source,
+    pub(super) region: &'a Region,
+    pub(super) reads: &'a Reads<'a>,
+    pub(super) graph: Option<&'a flow::Graph>,
 }
 
 fn number(text: &str) -> Option<i64> {
@@ -102,107 +83,265 @@ fn number(text: &str) -> Option<i64> {
         .map(|value| i64::from(value.to_i32()))
 }
 
-/// The value of VI `register` as `operation` reads it, or `None` when the
-/// read is not known.
-fn value(
-    program: &Source,
-    region: &Region,
-    reads: &Reads,
-    register: usize,
-    operation: usize,
-    path: &mut Vec<usize>,
-) -> Option<Location> {
-    let named = program.registers.named(register);
-    if named
-        .physical
-        .or_else(|| region.forced.get(&register).copied())
-        == Some(0)
-    {
-        return Some(Location {
-            root: Root::Absolute,
-            offset: 0,
-        });
-    }
-    let read = reads.get(&(operation, register, 0))?;
-    let opaque = Location {
-        root: Root::Value(register, read.definitions.clone()),
-        offset: 0,
-    };
-    if path.len() >= DEPTH {
-        return Some(opaque);
-    }
-    // Every reaching definition must give the same location.
-    let mut agreed: Option<Location> = None;
-    for definition in &read.definitions {
-        let Definition::Operation(setter) = *definition else {
-            return Some(opaque);
+impl Resolver<'_> {
+    /// The location a memory instruction addresses, or `None` when its
+    /// offset is not a number.
+    pub(super) fn location(&self, id: usize) -> Option<Location> {
+        let located = &self.region.instructions[id];
+        let index = located
+            .instruction
+            .operands
+            .iter()
+            .position(|operand| class::is_address(operand.class))?;
+        let operand = &located.instruction.operands[index];
+        let offset = match operand.immediate.as_deref() {
+            Some(text) => number(text)?,
+            None => 0,
         };
-        if path.contains(&setter) {
+        // `(--vi)` addresses the decremented value; `(vi++)` the value before.
+        let step = if operand.class == class::ADDRESS_DECREMENT {
+            -1
+        } else {
+            0
+        };
+        let at = match located.operands[index] {
+            Some(register) => self.value(register, id, &mut Vec::new())?,
+            None => Location {
+                root: Root::Absolute,
+                offset: 0,
+            },
+        };
+        Some(at.plus(offset + step))
+    }
+
+    fn is_zero(&self, register: usize) -> bool {
+        self.program
+            .registers
+            .named(register)
+            .physical
+            .or_else(|| self.region.forced.get(&register).copied())
+            == Some(0)
+    }
+
+    /// The value of VI `register` as `operation` reads it, or `None` when
+    /// the read is not known.
+    fn value(&self, register: usize, operation: usize, path: &mut Vec<usize>) -> Option<Location> {
+        if self.is_zero(register) {
+            return Some(Location {
+                root: Root::Absolute,
+                offset: 0,
+            });
+        }
+        let read = self.reads.get(&(operation, register, 0))?;
+        let opaque = Location {
+            root: Root::Value(register, read.definitions.clone()),
+            offset: 0,
+        };
+        if path.len() >= DEPTH {
             return Some(opaque);
+        }
+        if let Some(induction) = self.induction(register, operation, read, path) {
+            return Some(induction);
+        }
+        // Every reaching definition must give the same location.
+        let mut agreed: Option<Location> = None;
+        for definition in &read.definitions {
+            let Definition::Operation(setter) = *definition else {
+                return Some(opaque);
+            };
+            match (self.written_once(register, setter, path), &agreed) {
+                (None, _) => return Some(opaque),
+                (Some(location), Some(previous)) if location != *previous => return Some(opaque),
+                (Some(location), _) => agreed = Some(location),
+            }
+        }
+        Some(agreed.unwrap_or(opaque))
+    }
+
+    /// `written`, unless `setter` is already being followed.
+    fn written_once(
+        &self,
+        register: usize,
+        setter: usize,
+        path: &mut Vec<usize>,
+    ) -> Option<Location> {
+        if path.contains(&setter) {
+            return None;
         }
         path.push(setter);
-        let set = written(program, region, reads, register, setter, path);
+        let set = self.written(register, setter, path);
         path.pop();
-        match (set, &agreed) {
-            (None, _) => return Some(opaque),
-            (Some(location), Some(previous)) if location != *previous => return Some(opaque),
-            (Some(location), _) => agreed = Some(location),
+        set
+    }
+
+    /// The value `setter` writes to VI `register`, when it is a step from
+    /// another value.
+    fn written(&self, register: usize, setter: usize, path: &mut Vec<usize>) -> Option<Location> {
+        let located = &self.region.instructions[setter];
+        let operand = |index: usize| located.operands.get(index).copied().flatten();
+        let zero = |index: usize| operand(index).is_some_and(|r| self.is_zero(r));
+        let mut from = |source: usize| self.value(source, setter, path);
+        match located.instruction.metadata.index {
+            id::IADDIU | id::ISUBIU | id::IADDI if operand(0) == Some(register) => {
+                let step = self.step(setter)?;
+                Some(from(operand(1)?)?.plus(step))
+            }
+            id::IADD | id::ISUB if operand(0) == Some(register) && zero(2) => from(operand(1)?),
+            id::IADD if operand(0) == Some(register) && zero(1) => from(operand(2)?),
+            id::IMOVE | id::LIMOVE if operand(0) == Some(register) => from(operand(1)?),
+            id::LQI | id::SQI | id::LQD | id::SQD
+                if self.address_register(setter) == Some(register) =>
+            {
+                Some(from(register)?.plus(self.step(setter)?))
+            }
+            _ => None,
         }
     }
-    Some(agreed.unwrap_or(opaque))
-}
 
-/// The value `setter` writes to VI `register`, when it is a step from
-/// another value.
-fn written(
-    program: &Source,
-    region: &Region,
-    reads: &Reads,
-    register: usize,
-    setter: usize,
-    path: &mut Vec<usize>,
-) -> Option<Location> {
-    let located = &region.instructions[setter];
-    let operand = |index: usize| located.operands.get(index).copied().flatten();
-    let is_zero = |index: usize| {
-        operand(index).is_some_and(|r| {
-            program
-                .registers
-                .named(r)
-                .physical
-                .or_else(|| region.forced.get(&r).copied())
-                == Some(0)
+    fn address_register(&self, operation: usize) -> Option<usize> {
+        let located = &self.region.instructions[operation];
+        let index = located
+            .instruction
+            .operands
+            .iter()
+            .position(|operand| class::is_address(operand.class))?;
+        located.operands[index]
+    }
+
+    /// What a step adds: the immediate of IADDIU, ISUBIU (negated) or
+    /// IADDI, or one for LQI and SQI and minus one for LQD and SQD.
+    fn step(&self, setter: usize) -> Option<i64> {
+        let instruction = &self.region.instructions[setter].instruction;
+        match instruction.metadata.index {
+            id::IADDIU | id::IADDI => number(instruction.operands[2].immediate.as_deref()?),
+            id::ISUBIU => number(instruction.operands[2].immediate.as_deref()?).map(|step| -step),
+            id::LQI | id::SQI => Some(1),
+            id::LQD | id::SQD => Some(-1),
+            _ => None,
+        }
+    }
+
+    /// The value of VI `register` at `operation` as an induction: the
+    /// operation is in a block that branches to itself, the one definition
+    /// from that block steps the register by itself (`iaddiu r, r, s` or a
+    /// LQI, SQI, LQD or SQD on it) at or after the operation, and the other
+    /// definitions, from outside the block, give the same value. That step
+    /// must reach the block's top only through its own back edge, so that
+    /// each entry into the block starts from that value.
+    fn induction(
+        &self,
+        register: usize,
+        operation: usize,
+        read: &Read,
+        path: &mut Vec<usize>,
+    ) -> Option<Location> {
+        let graph = self.graph?;
+        let block = self
+            .region
+            .blocks
+            .iter()
+            .position(|block| block.operations.contains(&operation))?;
+        let operations = &self.region.blocks[block].operations;
+        let position = |id: usize| operations.iter().position(|&other| other == id);
+        let here = position(operation)?;
+        let mut step = None;
+        let mut entries = Vec::new();
+        for &definition in &read.definitions {
+            match definition {
+                Definition::Operation(setter) if position(setter).is_some() => {
+                    if position(setter)? < here || step.replace(setter).is_some() {
+                        return None;
+                    }
+                }
+                Definition::Uninitialized => return None,
+                other => entries.push(other),
+            }
+        }
+        let step = step?;
+        if entries.is_empty() || !graph.blocks.get(block)?.successors.contains(&block) {
+            return None;
+        }
+        let self_step = match self.region.instructions[step].instruction.metadata.index {
+            id::IADDIU | id::ISUBIU | id::IADDI => {
+                let operands = &self.region.instructions[step].operands;
+                operands.first().copied().flatten() == Some(register)
+                    && operands.get(1).copied().flatten() == Some(register)
+            }
+            id::LQI | id::SQI | id::LQD | id::SQD => self.address_register(step) == Some(register),
+            _ => false,
+        };
+        if !self_step || self.reads.get(&(step, register, 0))?.definitions != read.definitions {
+            return None;
+        }
+        if self.reenters(graph, block, register) {
+            return None;
+        }
+        let stride = self.step(step)?.rem_euclid(0x1_0000);
+        let mut init: Option<Location> = None;
+        for entry in entries {
+            let location = match entry {
+                Definition::Input => Location {
+                    root: Root::Value(register, BTreeSet::from([Definition::Input])),
+                    offset: 0,
+                },
+                Definition::Operation(setter) => self.written_once(register, setter, path)?,
+                Definition::Uninitialized => return None,
+            };
+            if init.as_ref().is_some_and(|previous| *previous != location) {
+                return None;
+            }
+            init = Some(location);
+        }
+        let init = init?;
+        if stride == 0 {
+            return Some(init);
+        }
+        Some(Location {
+            root: Root::Induction {
+                init: Box::new(init.root),
+                stride,
+                block,
+            },
+            offset: init.offset,
         })
-    };
-    let mut from = |source: usize| value(program, region, reads, source, setter, path);
-    match located.instruction.metadata.index {
-        id::IADDIU | id::ISUBIU | id::IADDI if operand(0) == Some(register) => {
-            let step = number(located.instruction.operands[2].immediate.as_deref()?)?;
-            let step = if located.instruction.metadata.index == id::ISUBIU {
-                -step
-            } else {
-                step
+    }
+
+    /// Whether a value of `register` that leaves `block` can come back to
+    /// its top other than through its own back edge: a path from the block
+    /// to a predecessor of it, through blocks that do not write the
+    /// register.
+    fn reenters(&self, graph: &flow::Graph, block: usize, register: usize) -> bool {
+        let writes = |id: usize| {
+            self.region.blocks.get(id).is_some_and(|other| {
+                other.operations.iter().any(|&operation| {
+                    self.region.instructions[operation]
+                        .effects
+                        .writes
+                        .iter()
+                        .any(|write| write.register == register)
+                })
+            })
+        };
+        let mut seen = BTreeSet::new();
+        let mut queue: Vec<usize> = graph.blocks[block]
+            .successors
+            .iter()
+            .copied()
+            .filter(|&next| next != block)
+            .collect();
+        while let Some(id) = queue.pop() {
+            if !seen.insert(id) || writes(id) {
+                continue;
+            }
+            let Some(other) = graph.blocks.get(id) else {
+                continue;
             };
-            Some(from(operand(1)?)?.plus(step))
+            if other.successors.contains(&block) {
+                return true;
+            }
+            queue.extend(other.successors.iter().copied());
         }
-        id::IADD | id::ISUB if operand(0) == Some(register) && is_zero(2) => from(operand(1)?),
-        id::IADD if operand(0) == Some(register) && is_zero(1) => from(operand(2)?),
-        id::IMOVE | id::LIMOVE if operand(0) == Some(register) => from(operand(1)?),
-        id::LQI | id::SQI | id::LQD | id::SQD => {
-            let index = located
-                .instruction
-                .operands
-                .iter()
-                .position(|operand| class::is_address(operand.class))?;
-            (operand(index) == Some(register)).then_some(())?;
-            let step = if matches!(located.instruction.metadata.index, id::LQI | id::SQI) {
-                1
-            } else {
-                -1
-            };
-            Some(from(register)?.plus(step))
-        }
-        _ => None,
+        false
     }
 }
 
@@ -239,6 +378,7 @@ pub(super) fn fields(located: &Located) -> u8 {
 pub(super) fn loop_groups(
     program: &Source,
     region: &Region,
+    graph: &flow::Graph,
     analysis: &flow::Analysis,
     body: &[usize],
     live: &[usize],
@@ -248,12 +388,18 @@ pub(super) fn loop_groups(
         .iter()
         .map(|read| ((read.operation, read.register, read.component), read))
         .collect();
+    let resolver = Resolver {
+        program,
+        region,
+        reads: &reads,
+        graph: Some(graph),
+    };
     let mut groups: Vec<(Location, LoopGroup)> = Vec::new();
     for (index, &id) in live.iter().enumerate() {
         if !region.instructions[id].instruction.metadata.is_memory() {
             continue;
         }
-        let Some(location) = location(program, region, &reads, id) else {
+        let Some(location) = resolver.location(id) else {
             continue;
         };
         if let Some((_, group)) = groups.iter_mut().find(|(at, _)| *at == location) {
@@ -265,6 +411,7 @@ pub(super) fn loop_groups(
             Root::Value(_, definitions) => definitions.iter().all(|definition| {
                 !matches!(definition, Definition::Operation(setter) if body.contains(setter))
             }),
+            Root::Induction { .. } => false,
         };
         groups.push((
             location,

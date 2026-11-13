@@ -78,7 +78,7 @@ Field widths and latencies come from the VU User's Manual 6.0 at
 | `immediates`: introduced by affine repair | **Yes** | `checker-imm-repair-add`, `checker-imm-repair-subtract` | F1 |
 | `immediates`: IADDI | No: normalized to IADDIU/ISUBIU | `checker-imm-iaddi-normal`, `checker-imm-iaddi-raw` | — |
 | Store/load and store/store through different bases | **Yes** | `openvcl__repros_store_load_alias`, `openvcl__repros_store_store_alias`, `checker-mem-copied-base` | F2 |
-| Accesses to one qword in a pipelined loop | **Yes**, even through one base and under `-M` | `mem-loop-same-base`, `-same-base-timid`, `-accumulator`, `-store-store` | F2 (not `mem-loop-copied-base`) |
+| Accesses to one qword in a pipelined loop | **Yes**, even through one base and under `-M` | `mem-loop-same-base`, `-same-base-timid`, `-copied-base`, `-accumulator`, `-store-store` | F2 |
 | Clip programs without `in_hw_clip` | **Yes**, valid programs are rejected | `openvcl__repros_clip_join`, `openvcl__repros_clip_loop_entry`, `openvcl__repros_clipw_implicit_w`, both `quad_adc_bug` | F3 |
 | Exit rows losing the E bit | **Yes** (already known) | `external-vf-two`; one `--cont` stream in the local corpus | F4 |
 | `crossloop`, `regalloc`, `loopvar` | No | `checker-live-*`, `openvcl__repros_crossloop_4regs`, `openvcl__repros_loop_pointer` | — |
@@ -248,9 +248,19 @@ memory access a symbolic address, `root + c`:
   IADDIU, ISUBIU and IADDI by a number, IADD and ISUB with VI00, VI moves,
   and the steps of LQI, SQI (+1), LQD and SQD (-1). vcl's displacement
   repair (`iaddiu VI01,VI00,0` with offset 901) is one of these steps.
-- The root is VI00 (an absolute address), or the register at its reaching
-  definitions where the steps stop: an input, a load, or a join whose
-  incoming values differ. A loop's induction register is such a root.
+- The root is VI00 (an absolute address), an induction register, or the
+  register at its reaching definitions where the steps stop: an input, a
+  load, or a join whose incoming values differ.
+- An induction register is read in a block that branches to itself, and
+  its one definition from that block steps it by itself (`iaddiu r, r, s`,
+  or a LQI, SQI, LQD or SQD on it) at or after the read. Its other
+  definitions come from outside the block and must give one value, `init`.
+  Its root is then `init` plus `s` per pass since the block was entered,
+  so two registers with the same `init` and `s` in the same loop are
+  equal (a pointer and its copy). The step must reach the block's top only
+  through its own back edge: if a path through an outer loop brings the
+  register back without writing it, an entry into the block would not
+  start from `init`, and the register is not an induction.
 - `c` is the sum of the steps and the offset, modulo 65536. A symbolic
   offset gives no address.
 
@@ -269,20 +279,18 @@ resource of the loop table, as a tag does: every access reads it, every
 store writes it, and only the last store's value reaches the next
 iteration. The loop is searched again; if that fails or still breaks the
 order, it stays unpipelined, where the linear rule applies. A loop that
-vcl schedules in order keeps vcl's schedule. All four broken probes then
+vcl schedules in order keeps vcl's schedule. All five broken probes then
 stay pipelined and execute to the sequential result.
-`mem-loop-same-base`, `-same-base-timid` and `-store-store` keep vcl's
-period (7, 7 and 6). `mem-loop-accumulator` goes from 6 to 9: its sum now
+`mem-loop-same-base`, `-same-base-timid`, `-copied-base` and `-store-store`
+keep vcl's period (7, 7, 8 and 6). `mem-loop-accumulator` goes from 6 to 9: its sum now
 waits for the previous iteration's load, add and store, the recurrence
 vcl's period ignores.
 
 Every other pair keeps vcl's no-alias assumption: different constants
 never alias, and pairs that do not resolve stay unordered, as without the
-fix. That includes two induction registers that step alike: in
-`mem-loop-copied-base` the base and its copy start equal and both step by
-1, but each is its own root. A next-iteration access at another offset
-from an induction register (`c1 − c2 = k·s` for stride `s`) is not
-resolved either.
+fix. That includes induction registers with different strides, and an
+access in a later iteration at another offset of the same induction
+(`c1 − c2 = k·s` for stride `s`), which is not resolved.
 
 #### 3.1 The cost of `-M`
 
@@ -556,8 +564,11 @@ Per fix:
   memory. `the_alias_fix_orders_same_locations_in_pipelined_loops` and
   `the_alias_fix_orders_each_kind_of_pair_in_pipelined_loops` run the
   fixed loops for 6, 7 and 9 iterations: they stay pipelined and execute
-  to the sequential result, `mem-loop-load-store` keeps vcl's listing, and
-  `mem-loop-copied-base` compiles as without the fix.
+  to the sequential result, and `mem-loop-load-store` keeps vcl's listing.
+  `the_alias_fix_relates_induction_registers_only_when_they_step_alike`
+  checks that the copy is related when it steps alike, and compiles as
+  without the fix with stride 2, or in an outer loop that resets the copy
+  but brings the base back unwritten.
 - F4: `final_compression_can_delete_the_end_row` executes `external-vf-two`
   and `end-cont-lost` in the VU model, which runs past the end of the first
   and through the `--cont` of the second;

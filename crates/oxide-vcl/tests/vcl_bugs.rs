@@ -742,7 +742,11 @@ fn pipelined_loops_reorder_accesses_to_the_same_location() {
 
 #[test]
 fn the_alias_fix_orders_same_locations_in_pipelined_loops() {
-    for case in ["mem-loop-same-base", "mem-loop-same-base-timid"] {
+    for case in [
+        "mem-loop-same-base",
+        "mem-loop-same-base-timid",
+        "mem-loop-copied-base",
+    ] {
         for flags in ALIAS_FLAGS {
             let fixed = compile_probe(case, flags);
             assert!(
@@ -760,15 +764,60 @@ fn the_alias_fix_orders_same_locations_in_pipelined_loops() {
             }
         }
     }
-    // A copy of the base is another induction register: the fix does not
-    // relate the two, and the loop compiles as without it.
-    let original =
-        std::fs::read_to_string(probe_directory("mem-loop-copied-base").join("stdout.bin"))
-            .unwrap();
-    assert_eq!(
-        normalized(&compile_probe("mem-loop-copied-base", &["--fix=alias"])),
-        normalized(&original)
+}
+
+/// `mem-loop-copied-base` with the copy stepped by `copy_step`, and with
+/// `outer` before and after the loop.
+fn induction_program(copy_step: u16, outer: Option<(&str, &str)>) -> String {
+    let (before, after) = outer.unwrap_or(("", ""));
+    region_program(
+        "in_vi base(vi01)\nin_vi count(vi02)\nin_vi rounds(vi03)",
+        &format!(
+            "lq fB, 2(vi00)\n\
+             iaddiu iStart, base, 0\n\
+             iaddiu iCopy, base, 0\n\
+             {before}\n\
+             top:\n\
+             --LoopCS 6, 1\n\
+             lq fA, 0(base)\n\
+             mul fC, fA, fB\n\
+             sq fC, 100(base)\n\
+             lq fD, 100(iCopy)\n\
+             add fE, fD, fD\n\
+             sq fE, 200(base)\n\
+             iaddiu base, base, 1\n\
+             iaddiu iCopy, iCopy, {copy_step}\n\
+             isubiu count, count, 1\n\
+             ibne count, vi00, top\n\
+             {after}"
+        ),
+        "",
+    )
+}
+
+#[test]
+fn the_alias_fix_relates_induction_registers_only_when_they_step_alike() {
+    let compare = |source: &str| {
+        (
+            normalized(&compiled(source, &["--fix=alias"]).unwrap().assembly),
+            normalized(&compiled(source, &[]).unwrap().assembly),
+        )
+    };
+    // The base and its copy step alike: the store and the load are ordered.
+    let (fixed, unfixed) = compare(&induction_program(1, None));
+    assert_ne!(fixed, unfixed);
+    // Strides 1 and 2: the copy runs ahead, and the two are not related.
+    let (fixed, unfixed) = compare(&induction_program(2, None));
+    assert_eq!(fixed, unfixed);
+    // An outer loop resets the copy to the first base but not the base, so
+    // on the second round they differ. The base comes back to the loop's
+    // top without passing a write of it, so it is not an induction.
+    let outer = (
+        "again:\niaddiu count, vi00, 6",
+        "iaddiu iCopy, iStart, 0\nisubiu rounds, rounds, 1\nibne rounds, vi00, again",
     );
+    let (fixed, unfixed) = compare(&induction_program(1, Some(outer)));
+    assert_eq!(fixed, unfixed);
 }
 
 #[test]
