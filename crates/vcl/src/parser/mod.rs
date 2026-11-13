@@ -200,6 +200,7 @@ struct Token {
 struct State {
     syntax: Syntax,
     short_memory_operands: bool,
+    grouped_parentheses: bool,
     mode: ParseMode,
     reorder: bool,
     raw_loop: bool,
@@ -212,6 +213,7 @@ impl State {
         Self {
             syntax,
             short_memory_operands: false,
+            grouped_parentheses: false,
             mode: ParseMode::Vcl,
             reorder: false,
             raw_loop: false,
@@ -237,6 +239,7 @@ pub fn parse_with_options(
     let lines = logical_lines(source, &mut errors);
     let mut state = State::new(options.syntax);
     state.short_memory_operands = options.short_memory_operands;
+    state.grouped_parentheses = options.grouped_parentheses;
     let mut program = Program::default();
     for (line, text, passthrough) in lines {
         if passthrough {
@@ -786,6 +789,9 @@ fn parse_instruction(
         state.syntax,
         state.short_memory_operands,
     )?;
+    for operand in &operands {
+        check_immediate(metadata, operand, state.grouped_parentheses)?;
+    }
     if metadata.index < id::GENERALIZED_END
         && operands.iter().take(2).any(|operand| {
             operand.class == class::GENERALIZED && bracket_field(&operand.text).is_some()
@@ -1193,6 +1199,55 @@ fn memory_operand(
             .strip_prefix("--")
             .map(|register| (0, register, last))
             .ok_or(ParseMessage::PredecrementRequired),
+    }
+}
+
+/// Checks an immediate (or a memory operand's displacement) as vcl 1.4beta7
+/// decodes it: it must parse, and a numeric one must evaluate to its type
+/// ("failed to parse immediate", "failed to evaluate tree for ... to type
+/// EXP_DATATYPE_UINT", observed from vcl 1.4beta7, `expr-power`). Symbolic
+/// expressions are left to the assembler. With `functions` (oxide mode) a
+/// float immediate that calls a function is left to the `loi` function
+/// folding, which reports its own errors.
+fn check_immediate(
+    metadata: &InstructionDef,
+    operand: &Operand,
+    functions: bool,
+) -> Result<(), ParseMessage> {
+    use instruction::ImmediateType;
+    let (Some(value_type), Some(text)) = (
+        operand.immediate_kind.value_type(),
+        operand.immediate.as_deref(),
+    ) else {
+        return Ok(());
+    };
+    let type_name = match value_type {
+        ImmediateType::Unsigned => "EXP_DATATYPE_UINT",
+        ImmediateType::Signed => "EXP_DATATYPE_SINT",
+        ImmediateType::Float => "EXP_DATATYPE_FLOAT",
+        ImmediateType::Literal => return Ok(()),
+    };
+    let float = value_type == ImmediateType::Float;
+    if functions
+        && float
+        && expression::parse_with_functions(text).is_ok_and(|parsed| parsed.has_call())
+    {
+        return Ok(());
+    }
+    let options = expression::ExpressionOptions {
+        hex_is_float: float,
+        ..Default::default()
+    };
+    match expression::evaluate_with_options(text, options) {
+        Ok(_) => Ok(()),
+        Err(failure) => Err(ParseMessage::BadImmediate {
+            instruction: metadata.name.to_string(),
+            expression: text.to_string(),
+            detail: failure.message,
+            type_name: (failure.kind == expression::ExpressionErrorKind::Evaluation)
+                .then(|| type_name.to_string()),
+            offset: class::is_address(operand.class),
+        }),
     }
 }
 

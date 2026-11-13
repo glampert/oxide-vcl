@@ -347,6 +347,33 @@ fn parse(message: &ParseMessage) -> Wording {
                 .subject(operand.clone())
                 .help("write an offset and an integer register in parentheses: 16(vi01)")
         }
+        BadImmediate {
+            instruction,
+            expression,
+            detail,
+            type_name,
+            offset,
+        } => {
+            let what = if *offset { "offset" } else { "immediate" };
+            let wording = match type_name {
+                None => Wording::new(format!(
+                    "'{expression}' is not a valid {what} for {instruction}: {detail}"
+                )),
+                Some(_) => Wording::new(format!(
+                    "{instruction}'s {what} '{expression}' cannot be computed: {detail}"
+                )),
+            };
+            let functions = if instruction == "loi" {
+                ", and loi may call math functions such as sin(x) and pow(x, y)"
+            } else {
+                ""
+            };
+            wording.subject(expression.clone()).help(format!(
+                "an immediate is a number, a name, or an expression of them with + - * / % \
+                 << >> & ^ | && and unary - + ~ ! # (absolute value), grouped by parentheses; \
+                 an expression with a name is left to the assembler{functions}"
+            ))
+        }
         PostincrementRequired => Wording::new("this instruction needs a post-incremented address")
             .help("write the register as (vi01++)"),
         PredecrementRequired => Wording::new("this instruction needs a pre-decremented address")

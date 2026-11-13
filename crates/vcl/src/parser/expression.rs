@@ -180,6 +180,14 @@ pub struct Expression {
 pub struct ExpressionError {
     pub offset: usize,
     pub message: String,
+    pub kind: ExpressionErrorKind,
+}
+
+/// Whether an expression failed to parse or parsed but has no value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExpressionErrorKind {
+    Syntax,
+    Evaluation,
 }
 
 impl fmt::Display for ExpressionError {
@@ -194,6 +202,17 @@ fn failure(offset: usize, message: impl Into<String>) -> ExpressionError {
     ExpressionError {
         offset,
         message: message.into(),
+        kind: ExpressionErrorKind::Syntax,
+    }
+}
+
+/// The text of a token, for messages.
+fn token_text(token: &Token) -> &str {
+    match token {
+        Token::Literal(text) | Token::Operator(text) => text,
+        Token::Open => "(",
+        Token::Close => ")",
+        Token::Comma => ",",
     }
 }
 
@@ -228,15 +247,20 @@ fn parse_with(source: &str, functions: bool) -> Result<Expression, ExpressionErr
         .collect();
     let tokens = lex(&source, functions);
     if tokens.is_empty() {
-        return Err(failure(0, "empty expression"));
+        return Err(failure(0, "the expression is empty"));
     }
     let mut cursor = 0;
     let tree = parse_binary(&tokens, &mut cursor, 0, 0, functions)?;
     if cursor != tokens.len() {
-        return Err(failure(
-            cursor,
-            "unexpected token or unbalanced parentheses",
-        ));
+        let message = match &tokens[cursor] {
+            Token::Close => "a ')' has no '(' to close".to_string(),
+            Token::Open => format!(
+                "a '(' follows '{}', but a VCL expression has no function calls",
+                token_text(&tokens[cursor - 1])
+            ),
+            other => format!("unexpected '{}' after the expression", token_text(other)),
+        };
+        return Err(failure(cursor, message));
     }
     Ok(Expression { source, tree })
 }
@@ -262,7 +286,12 @@ impl Expression {
                 symbols: symbols.into_iter().collect(),
             });
         }
-        numeric(&self.tree, options).map(Evaluation::Number)
+        numeric(&self.tree, options)
+            .map(Evaluation::Number)
+            .map_err(|error| ExpressionError {
+                kind: ExpressionErrorKind::Evaluation,
+                ..error
+            })
     }
 
     /// Whether the expression calls a function.
@@ -364,7 +393,7 @@ fn parse_binary(
     if depth >= 255 {
         return Err(failure(
             *cursor,
-            "expression nesting exceeds original byte counter",
+            "the expression nests more than 255 levels",
         ));
     }
     let mut left = match tokens.get(*cursor) {
@@ -386,7 +415,7 @@ fn parse_binary(
                             *cursor += 1;
                             break;
                         }
-                        _ => return Err(failure(*cursor, "missing closing parenthesis")),
+                        _ => return Err(failure(*cursor, "a '(' is never closed")),
                     }
                 }
             }
@@ -403,7 +432,7 @@ fn parse_binary(
             *cursor += 1;
             let expression = parse_binary(tokens, cursor, 0, depth + 1, functions)?;
             if tokens.get(*cursor) != Some(&Token::Close) {
-                return Err(failure(*cursor, "missing closing parenthesis"));
+                return Err(failure(*cursor, "a '(' is never closed"));
             }
             *cursor += 1;
             expression
@@ -415,7 +444,12 @@ fn parse_binary(
                 "~" => Unary::Complement,
                 "!" => Unary::LogicalNot,
                 "#" => Unary::Absolute,
-                _ => return Err(failure(*cursor, "binary operator has no left operand")),
+                _ => {
+                    return Err(failure(
+                        *cursor,
+                        format!("'{operator}' has no value on its left"),
+                    ));
+                }
             };
             *cursor += 1;
             Expr::Unary {
@@ -423,7 +457,22 @@ fn parse_binary(
                 operand: Box::new(parse_binary(tokens, cursor, 30, depth + 1, functions)?),
             }
         }
-        _ => return Err(failure(*cursor, "expected an expression operand")),
+        Some(token) => {
+            return Err(failure(
+                *cursor,
+                format!("a value is missing before '{}'", token_text(token)),
+            ));
+        }
+        None if *cursor == 0 => return Err(failure(0, "the expression is empty")),
+        None => {
+            return Err(failure(
+                *cursor,
+                format!(
+                    "the expression ends after '{}', which needs a value after it",
+                    token_text(&tokens[*cursor - 1])
+                ),
+            ));
+        }
     };
     while let Some(Token::Operator(operator)) = tokens.get(*cursor) {
         let Some((operation, precedence)) = binary(operator) else {
@@ -656,7 +705,7 @@ fn unary(operation: Unary, operand: Number) -> Result<Number, ExpressionError> {
             Number::Float(value) => Number::Float(if value < 0.0 { -value } else { value }),
         },
         Unary::Complement | Unary::LogicalNot if matches!(operand, Number::Float(_)) => {
-            return Err(failure(0, "unary integer operation applied to a float"));
+            return Err(failure(0, "'~' and '!' apply to integers, not to a float"));
         }
         Unary::Complement => Number::from_bits(operand.type_id(), !operand.bits()),
         Unary::LogicalNot => Number::from_bits(operand.type_id(), u32::from(operand.bits() == 0)),
@@ -666,9 +715,17 @@ fn unary(operation: Unary, operand: Number) -> Result<Number, ExpressionError> {
 fn binary_value(operation: Binary, left: Number, right: Number) -> Result<Number, ExpressionError> {
     let kind = left.type_id().max(right.type_id());
     if matches!(operation, Binary::Power | Binary::LogicalOr) {
+        let operator = if operation == Binary::Power {
+            "**"
+        } else {
+            "||"
+        };
         return Err(failure(
             0,
-            "operator is tokenized but has no binary evaluator in the original executable",
+            format!(
+                "'{operator}' is read but never computed in VCL expressions, so it works only \
+                 in an expression the assembler resolves"
+            ),
         ));
     }
     if matches!(operation, Binary::BitAnd | Binary::BitOr | Binary::BitXor) {
@@ -689,7 +746,7 @@ fn binary_value(operation: Binary, left: Number, right: Number) -> Result<Number
             _ => {
                 return Err(failure(
                     0,
-                    "integer-only binary operation applied to a float",
+                    "'%', '<<', '>>' and '&&' apply to integers, not to a float",
                 ));
             }
         };
@@ -703,10 +760,7 @@ fn binary_value(operation: Binary, left: Number, right: Number) -> Result<Number
         Binary::Multiply => lhs.wrapping_mul(rhs),
         Binary::Divide | Binary::Remainder => {
             if rhs == 0 {
-                return Err(failure(
-                    0,
-                    "integer division by zero would trap in the original executable",
-                ));
+                return Err(failure(0, "integer division by zero"));
             }
             if kind == 2 {
                 let lhs = lhs as i32;
@@ -714,7 +768,7 @@ fn binary_value(operation: Binary, left: Number, right: Number) -> Result<Number
                 if lhs == i32::MIN && rhs == -1 {
                     return Err(failure(
                         0,
-                        "signed division overflow would trap in the original executable",
+                        "the signed division overflows (-2147483648 / -1)",
                     ));
                 }
                 if operation == Binary::Divide {

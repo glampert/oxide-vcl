@@ -276,6 +276,14 @@ reinterprets hexadecimal bits as a float, and numbers with a fraction or
 exponent are floats. `loi` reads `0x...` as float bits, so `loi 0x3f800000`
 loads 1.0. `**` and `||` are recognised but fail when both sides are numbers.
 
+An immediate that does not parse, or parses into numbers that cannot be
+computed (`2**3`, `~1.5`, `1/0`), is an error on its line. vcl prints
+`failed to parse immediate '...'` or `failed to evaluate tree for '...' to
+type EXP_DATATYPE_UINT` (`SINT`, `FLOAT`), then `failed to decode an
+immediate`; `--mode=oxide` says what is wrong, for example `'3*' is not a
+valid immediate for iaddiu: the expression ends after '*', which needs a
+value after it`.
+
 An expression that names a symbol is kept as written for the assembler:
 
 ```text

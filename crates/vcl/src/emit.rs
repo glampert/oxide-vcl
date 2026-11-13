@@ -572,8 +572,22 @@ mod tests {
 
     #[test]
     fn original_unsupported_numeric_operators_fail_without_losing_symbolic_literals() {
-        assert!(instruction(&parsed("iaddiu vi2,vi1,2**3"), &[], 0).is_err());
-        assert!(instruction(&parsed("iaddiu vi2,vi1,1||0"), &[], 0).is_err());
+        // The parser rejects them (`ParseMessage::BadImmediate`); emission
+        // still refuses one that reaches it.
+        for expression in ["2**3", "1||0"] {
+            let source = format!("iaddiu vi2,vi1,{expression}");
+            let options = ParserOptions {
+                allow_incomplete: true,
+                ..ParserOptions::default()
+            };
+            assert!(matches!(
+                parse_with_options(&source, options).unwrap_err()[0].message,
+                crate::diagnostics::ParseMessage::BadImmediate { .. }
+            ));
+            let mut inst = parsed("iaddiu vi2,vi1,1");
+            inst.operands[2].immediate = Some(expression.into());
+            assert!(instruction(&inst, &[], 0).is_err());
+        }
         assert_eq!(
             instruction(&parsed("iaddiu vi2,vi1,SYMBOL||0"), &[], 0).unwrap(),
             "iaddiu        VI02,VI01,SYMBOL||0"

@@ -401,8 +401,12 @@ pub enum ParseMessage {
     MultipleSynthetics,
     MultipleInstructions,
     RawPairRequired,
-    MissingDirectiveArgument { directive: String },
-    BadRawOption { value: String },
+    MissingDirectiveArgument {
+        directive: String,
+    },
+    BadRawOption {
+        value: String,
+    },
     BadSyntax,
     RawInRawLoop,
     EndRawOutsideRaw,
@@ -413,27 +417,58 @@ pub enum ParseMessage {
     WorkAreaDevice,
     WorkAreaOutsideMemory,
     UniqueTooLong,
-    UnknownDirective { name: String },
-    RegisterRangeDashes { range: String },
-    NotAllocablePhysical { register: String },
-    RegisterNotAllocable { register: String },
-    UnknownInstruction { opcode: String },
+    UnknownDirective {
+        name: String,
+    },
+    RegisterRangeDashes {
+        range: String,
+    },
+    NotAllocablePhysical {
+        register: String,
+    },
+    RegisterNotAllocable {
+        register: String,
+    },
+    UnknownInstruction {
+        opcode: String,
+    },
     InvalidInstructionMask,
     LoopIdTooLarge,
     InstructionBits,
-    RawOnlyInstruction { name: String },
-    MaskNotAccepted { name: String },
+    RawOnlyInstruction {
+        name: String,
+    },
+    MaskNotAccepted {
+        name: String,
+    },
     XyzMaskRequired,
     EmptyMask,
     OperandTooLong,
-    MissingOperand { position: usize, name: String },
+    MissingOperand {
+        position: usize,
+        name: String,
+    },
     ScalarNotThird,
     VectorMasksDiffer,
-    CannotDerive { name: String },
+    CannotDerive {
+        name: String,
+    },
     SingleComponentRequired,
     MultipleTaggedOperands,
     AccNotFirst,
-    MalformedMemoryOperand { operand: String },
+    MalformedMemoryOperand {
+        operand: String,
+    },
+    /// An immediate that does not parse, or (with `type_name`, vcl's name
+    /// for the target type) parses but cannot be evaluated; `detail` says why.
+    BadImmediate {
+        instruction: String,
+        expression: String,
+        detail: String,
+        type_name: Option<String>,
+        /// A memory operand's displacement rather than an immediate operand.
+        offset: bool,
+    },
     PostincrementRequired,
     PredecrementRequired,
     InvalidMemoryMask,
@@ -444,13 +479,26 @@ pub enum ParseMessage {
     InvalidOperandMask,
     ScalarComponentRequired,
     FieldSelectionsDiffer,
-    OperandMustBe { expected: String },
-    ForcedRegisterNotPhysical { register: String },
+    OperandMustBe {
+        expected: String,
+    },
+    ForcedRegisterNotPhysical {
+        register: String,
+    },
     EmptyRegisterName,
-    RegisterNameTooLong { name: String },
-    InvalidRegisterCharacter { character: char, name: String },
-    ReservedRegisterName { name: String },
-    DuplicateLabel { name: String },
+    RegisterNameTooLong {
+        name: String,
+    },
+    InvalidRegisterCharacter {
+        character: char,
+        name: String,
+    },
+    ReservedRegisterName {
+        name: String,
+    },
+    DuplicateLabel {
+        name: String,
+    },
     VisibilityMismatch,
     SyntheticContext,
     LoopSizeInRaw,
@@ -518,6 +566,22 @@ impl ParseMessage {
             MalformedMemoryOperand { operand } => {
                 format!("failed to decode memory operand '{operand}'")
             }
+            // vcl 1.4beta7 adds a line naming the instruction and its
+            // expected format; the port prints the first two.
+            BadImmediate {
+                expression,
+                type_name,
+                ..
+            } => match type_name {
+                Some(type_name) => format!(
+                    "failed to evaluate tree for '{expression}' to type {type_name}\n\
+                     ERROR: failed to decode an immediate"
+                ),
+                None => format!(
+                    "failed to parse immediate '{expression}'\n\
+                     ERROR: failed to decode an immediate"
+                ),
+            },
             PostincrementRequired => "postincrement operand requires (register++)".into(),
             PredecrementRequired => "predecrement operand requires (--register)".into(),
             InvalidMemoryMask => "invalid memory component mask".into(),
