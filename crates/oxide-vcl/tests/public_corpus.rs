@@ -54,13 +54,16 @@ fn every_program_matches_the_original() {
 fn the_fixes_change_only_programs_with_their_defects() {
     use vcl::diagnostics::CompileMessage::*;
     // In name order.
-    const CHANGED: [&str; 6] = [
+    const CHANGED: [&str; 8] = [
         // `clip`: accepted, as their declared versions.
         "openvcl__repros_clip_join",
         "openvcl__repros_clip_loop_entry",
         "openvcl__repros_clipw_implicit_w",
         // `imm`: `isw.x iVal, 2000(vi00)` is rejected.
         "openvcl__repros_immediates_out_of_range",
+        // `alias`: the load and the second store stay after the store to 901.
+        "openvcl__repros_store_load_alias",
+        "openvcl__repros_store_store_alias",
         // `clip`.
         "openvcl__test_repro_quad_adc_bug",
         // `clip`, and `imm` rewrites `iaddiu vi05,vi00,0xffff`.

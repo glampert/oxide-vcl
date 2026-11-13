@@ -175,6 +175,10 @@ matching register identity, external-input state, and setter location before
 comparing immediate values; comparing only register names or numeric offsets
 would omit those data-flow conditions.
 
+With `--fix=alias`, a pair whose addresses are provably equal through
+different base registers is ordered too, in linear tables
+([VCL_BUGS.md](VCL_BUGS.md), F2).
+
 This does not make a complete standalone memory-alias solver: the caller must
 integrate address-register reaching definitions and barrier semantics. The
 compiler's conservative source ordering is tracked in

@@ -63,6 +63,10 @@ pub enum Fix {
     /// legalized, rejected or warned about, and displacement repair never
     /// pushes a memory offset out of its field (`imm`).
     Imm,
+    /// A load or store is kept in order with an earlier one when both
+    /// addresses are provably the same location, even through different
+    /// base registers (`alias`).
+    Alias,
     /// CLIPW without `in_hw_clip` is accepted when nothing observes the
     /// undeclared clip history (`clip`).
     Clip,
@@ -75,12 +79,13 @@ pub enum Fix {
 
 impl Fix {
     /// Every fix, in the order the help lists them.
-    pub const ALL: [Fix; 4] = [Fix::Imm, Fix::Clip, Fix::End, Fix::Size];
+    pub const ALL: [Fix; 5] = [Fix::Imm, Fix::Alias, Fix::Clip, Fix::End, Fix::Size];
 
     /// The fix's name on the command line.
     pub const fn name(self) -> &'static str {
         match self {
             Fix::Imm => "imm",
+            Fix::Alias => "alias",
             Fix::Clip => "clip",
             Fix::End => "end",
             Fix::Size => "size",

@@ -26,6 +26,7 @@ mod external_assignment;
 mod flow_graph;
 mod generated_rows;
 mod immediate_fields;
+mod memory_alias;
 mod program_size;
 mod raw_reduction;
 mod region;

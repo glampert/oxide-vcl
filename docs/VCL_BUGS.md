@@ -20,8 +20,8 @@ original" below) with synthetic probes. The results fall into three groups:
 - problems outside VCL.
 
 The shared defects get opt-in fixes, one per defect, plus a warning for
-program size: `imm` (F1), `clip` (F3), `end` (F4) and `size` (F5) are
-implemented; `alias` (F2) is designed below and not yet implemented.
+program size: `imm` (F1), `alias` (F2), `clip` (F3), `end` (F4) and
+`size` (F5).
 
 Ground rules:
 
@@ -78,6 +78,7 @@ Field widths and latencies come from the VU User's Manual 6.0 at
 | `immediates`: introduced by affine repair | **Yes** | `checker-imm-repair-add`, `checker-imm-repair-subtract` | F1 |
 | `immediates`: IADDI | No: normalized to IADDIU/ISUBIU | `checker-imm-iaddi-normal`, `checker-imm-iaddi-raw` | — |
 | Store/load and store/store through different bases | **Yes** | `openvcl__repros_store_load_alias`, `openvcl__repros_store_store_alias`, `checker-mem-copied-base` | F2 |
+| Store and load of one qword in a pipelined loop | **Yes**, even through one base | `mem-loop-same-base`, `mem-loop-copied-base` | not fixed (F2) |
 | Clip programs without `in_hw_clip` | **Yes**, valid programs are rejected | `openvcl__repros_clip_join`, `openvcl__repros_clip_loop_entry`, `openvcl__repros_clipw_implicit_w`, both `quad_adc_bug` | F3 |
 | Exit rows losing the E bit | **Yes** (already known) | `external-vf-two`; one `--cont` stream in the local corpus | F4 |
 | `crossloop`, `regalloc`, `loopvar` | No | `checker-live-*`, `openvcl__repros_crossloop_4regs`, `openvcl__repros_loop_pointer` | — |
@@ -222,34 +223,42 @@ This is the original's documented optimistic model: VCL expects tags or
 `-M` where pointers alias. It is a defect only where the compiler can see
 that two addresses are equal. That is the case in all three probes.
 
-**Fix (`--fix=alias`).**
+*Pipelined loops.* A software-pipelined loop runs on a copy of its table
+without the memory-order lists, so only shared tags order its accesses
+there (see [MEMORY.md](MEMORY.md#ordinary-memory-operations-and-alias-tags)).
+A store and a load of the same qword in one iteration can swap even
+through one base register (observed from vcl 1.4beta7):
 
-1. *A symbolic address for each memory access.* Write it as `root + c`.
-   - `root` is one of: a VI value at a specific reaching definition, an
-     entry input, or `VI00` (absolute).
-   - Propagate through IADDIU/ISUBIU/IADDI, IADD/ISUB with `VI00`, the
-     coalescer's zero-immediate copies, and LQI/SQI/LQD/SQD steps.
-   - Merge at joins only when every incoming value agrees.
-   - The flow analysis already provides the reaching definitions.
-2. *An additional ordering predicate.* It sits beside the original's three
-   cases.
-   - Same root: order if the constants are equal, with fields
-     intersecting. Different constants never alias.
-   - Both absolute: order if the constants are equal.
-   - Otherwise: keep the original's no-alias assumption. Treating unknown
-     pairs as aliasing is what `-M` already does (section 3.1 measures
-     it), and VCL's model is built for renderers that read one buffer and
-     write another.
-3. *Loop-carried pairs.* For a root that is a loop induction with stride
-   `s`, offsets `c1` and `c2` alias across iterations when
-   `c1 − c2 = k·s`. The modulo scheduler needs those edges at distance `k`.
-   The original's cross-iteration memory dependencies are not yet
-   observed. A probe pair (same buffer, read at `+s` and written at `0`)
-   must establish them before this step is designed. Until then the fix
-   is intra-iteration only.
-4. *Optional warning.* `--fix=alias` could also warn for pairs it cannot
-   resolve and the original leaves unordered. That would be noisy on real
-   renderers, so make it a separate opt-in, `--fix=alias-warn`.
+- `mem-loop-same-base` stores `100(base)` and loads `100(base)`. The
+  pipelined loop loads each iteration's qword before its store, so it reads
+  stale memory.
+- `mem-loop-copied-base` does the same through a copy of the base.
+
+**Fix (`--fix=alias`).** `crates/vcl/src/compiler/memory_alias.rs` gives each
+memory access in a linear table a symbolic address, `root + c`:
+
+- The base register is followed back through its reaching definitions:
+  IADDIU, ISUBIU and IADDI by a number, IADD and ISUB with VI00, VI moves,
+  and the steps of LQI, SQI (+1), LQD and SQD (-1). vcl's displacement
+  repair (`iaddiu VI01,VI00,0` with offset 901) is one of these steps.
+- The root is VI00 (an absolute address), or the register at its reaching
+  definitions where the steps stop: an input, a load, or a join whose
+  incoming values differ. A loop's induction register is such a root.
+- `c` is the sum of the steps and the offset, modulo 65536. A symbolic
+  offset gives no address.
+
+Two accesses with intersecting fields, the same root and the same `c` keep
+their order, beside vcl's three cases. Every other pair keeps vcl's
+no-alias assumption: different constants never alias, and pairs that do
+not resolve stay unordered, as without the fix. `-M` remains the switch for
+full safety.
+
+The fix covers linear tables only. In a pipelined loop, ordering the pairs
+it resolves means turning them into tag-like resources of the loop table,
+which also constrains the next iteration; that is not implemented, so
+`mem-loop-*` compile as without the fix. Loop-carried pairs (a root that
+is an induction register with stride `s`, offsets `c1` and `c2` with
+`c1 − c2 = k·s`) are not resolved either.
 
 #### 3.1 The cost of `-M`
 
@@ -511,9 +520,15 @@ Per fix:
   programs under `--fix=clip`, `--fix=all` and `--mode=oxide`: those whose
   reads see only defined judgments compile as their declared versions, and
   those that read an undefined judgment (on some path) stay rejected.
-- F2: the three alias programs execute to the sequential result;
-  `checker-mem-same-base` and the corpus are unchanged where no pair
-  resolves. Loop-carried pairs need new `checker-mem-loop-*` probes first.
+- F2: `the_alias_fix_orders_accesses_to_the_same_location` executes the
+  three alias programs to the sequential result under `--fix=alias`,
+  `--fix=all` and `--mode=oxide`, and leaves `checker-mem-same-base`
+  unchanged. `the_alias_fix_follows_steps_copies_and_increments` checks
+  inline programs for each kind of step: each reads stale memory without
+  the fix and the stored value with it, and pairs at different constants or
+  unrelated roots compile as without the fix.
+  `pipelined_loops_reorder_accesses_to_the_same_location` pins the
+  `mem-loop-*` probes, which the fix does not change.
 - F4: `final_compression_can_delete_the_end_row` executes `external-vf-two`
   and `end-cont-lost` in the VU model, which runs past the end of the first
   and through the `--cont` of the second;

@@ -1,0 +1,77 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[7](limit: number of lower instructions) - 'dumb2' flow top
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 3 critical at -1 recoverable at 1 minSafe=1..so abort
+INFO: sidefx : loop@ 4 critical at -1 recoverable at 1 minSafe=1..so abort
+WARN: time out..
+INFO: lpgen[7](limit: number of lower instructions) - 'normal2' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'vuta1' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'another' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'normal' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'dUp' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'vuta' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'hDown' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'normal1' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'ldumb' flow top
+INFO: lpgen[7](limit: number of lower instructions) - 'dumb' flow top
+WARN: time out..
+INFO: Opt::Loop              top  7/7
+INFO: Opt::Linear        __v_FIX_4  1/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

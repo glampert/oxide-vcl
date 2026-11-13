@@ -556,6 +556,173 @@ fn the_end_fix_respects_disabled_end_bits() {
 }
 
 // ----------------------------------------------
+// F2: memory order through different bases (`--fix=alias`)
+// ----------------------------------------------
+
+/// Compiles a public corpus program or a probe with its recorded flags
+/// followed by `extra`.
+fn compile_public(case: &str, extra: &[&str]) -> String {
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let corpus = root.join("tests/corpus").join(case);
+    if !corpus.is_dir() {
+        return compile_probe(case, extra);
+    }
+    let input = std::fs::read_to_string(corpus.join("input.vcl")).unwrap();
+    let options = cli::parse(["-t1", "-uCORPUS"].iter().chain(extra).copied())
+        .unwrap()
+        .compile;
+    vcl::compile(
+        corpus::without_header(&input),
+        &format!("/work/{case}.vcl"),
+        &options,
+    )
+    .unwrap()
+    .assembly
+}
+
+const ALIAS_FLAGS: [&[&str]; 3] = [&["--fix=alias"], &["--fix=all"], &["--mode=oxide"]];
+
+#[test]
+fn the_alias_fix_orders_accesses_to_the_same_location() {
+    let first = [float(1.5), float(2.0), float(-0.5), float(4.0)];
+    for flags in ALIAS_FLAGS {
+        // Through VI00 and a pointer set to 900 (offset 901 after vcl's
+        // displacement repair): the load reads the product.
+        let state = run(
+            &compile_public("openvcl__repros_store_load_alias", flags),
+            0,
+        );
+        assert_eq!(state.memory[5], product(), "{flags:?}");
+        // The second store to qword 901 lands last.
+        let state = run(
+            &compile_public("openvcl__repros_store_store_alias", flags),
+            0,
+        );
+        assert_eq!(state.memory[901], first, "{flags:?}");
+        // Through a base and its copy.
+        let state = run(&compile_public("checker-mem-copied-base", flags), 10);
+        assert_eq!(state.memory[5], product(), "{flags:?}");
+        // vcl already orders accesses through the same base.
+        assert_eq!(
+            corpus::normalized(&compile_public("checker-mem-same-base", flags)),
+            corpus::normalized(&compile_public("checker-mem-same-base", &[])),
+            "{flags:?}"
+        );
+    }
+}
+
+/// A store of the product of qwords 1 and 2 through `store`, a load
+/// through `load` to qword 5, after `setup`; VI01 is the input `base`.
+fn alias_program(setup: &str, store: &str, load: &str) -> String {
+    region_program(
+        "in_vi base(vi01)",
+        &format!(
+            "{setup}\n\
+             lq fA, 1(vi00)\n\
+             lq fB, 2(vi00)\n\
+             mul fC, fA, fB\n\
+             {store}\n\
+             {load}\n\
+             sq fD, 5(vi00)"
+        ),
+        "",
+    )
+}
+
+#[test]
+fn the_alias_fix_follows_steps_copies_and_increments() {
+    // Each store and load address the same qword, base + 7 = 17.
+    let same = [
+        ("iaddiu iCopy, base, 3", "sq fC, 7(base)", "lq fD, 4(iCopy)"),
+        ("isubiu iCopy, base, 2", "sq fC, 9(iCopy)", "lq fD, 7(base)"),
+        (
+            "iadd iCopy, base, vi00",
+            "sq fC, 7(base)",
+            "lq fD, 7(iCopy)",
+        ),
+        // The second store's address is the first one's step.
+        (
+            "iaddiu iWalk, base, 6",
+            "sqi fA, (iWalk++)\nsqi fC, (iWalk++)",
+            "lq fD, 7(base)",
+        ),
+        (
+            "iaddiu iWalk, base, 9",
+            "sqd fA, (--iWalk)\nsqd fC, (--iWalk)",
+            "lq fD, 7(base)",
+        ),
+        ("iaddiu iA, vi00, 10", "sq fC, 7(iA)", "lq fD, 17(vi00)"),
+    ];
+    for (setup, store, load) in same {
+        let source = alias_program(setup, store, load);
+        let unfixed = run(&compiled(&source, &[]).unwrap().assembly, 10);
+        assert_ne!(unfixed.memory[5], product(), "{setup}: vcl hoists the load");
+        for flags in ALIAS_FLAGS {
+            let fixed = compiled(&source, flags).unwrap().assembly;
+            let state = run(&fixed, 10);
+            assert_eq!(state.memory[5], product(), "{setup} {flags:?}\n{fixed}");
+            assert_eq!(state.memory[17], product(), "{setup} {flags:?}");
+        }
+    }
+
+    // Different constants from one root, and roots the fix cannot relate,
+    // keep vcl's no-alias assumption: the listing does not change.
+    let apart = [
+        ("iaddiu iCopy, base, 3", "sq fC, 7(base)", "lq fD, 5(iCopy)"),
+        (
+            "iaddiu iCopy, vi00, 17",
+            "sq fC, 7(base)",
+            "lq fD, 0(iCopy)",
+        ),
+    ];
+    for (setup, store, load) in apart {
+        let source = alias_program(setup, store, load);
+        let unfixed = compiled(&source, &[]).unwrap().assembly;
+        for flags in ALIAS_FLAGS {
+            assert_eq!(
+                corpus::normalized(&compiled(&source, flags).unwrap().assembly),
+                corpus::normalized(&unfixed),
+                "{setup}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pipelined_loops_reorder_accesses_to_the_same_location() {
+    // Each iteration stores qword base+100 and loads it back. The original
+    // pipelines the loop with the load above the store, even through one
+    // base register: the loop table carries no memory order but tags.
+    let run_loop = |listing: &str| {
+        let mut state = State::default();
+        for (index, qword) in state.memory.iter_mut().enumerate() {
+            *qword = [float(index as f32); 4];
+        }
+        state.memory[2] = [float(2.0); 4];
+        state.vi[1] = 10;
+        state.vi[2] = 3;
+        Program::parse(listing)
+            .unwrap()
+            .execute(state, 256)
+            .unwrap()
+            .state
+    };
+    for case in ["mem-loop-same-base", "mem-loop-copied-base"] {
+        let original = std::fs::read_to_string(probe_directory(case).join("stdout.bin")).unwrap();
+        let state = run_loop(&original);
+        // Sequentially qword 210 is twice the product, 2 * (10 * 2).
+        assert_eq!(state.memory[210], [float(220.0); 4], "{case}: stale load");
+        assert_eq!(state, run_loop(&compile_probe(case, &[])));
+        // The fix orders accesses within a linear table only.
+        assert_eq!(
+            normalized(&compile_probe(case, &["--fix=alias"])),
+            normalized(&original),
+            "{case}"
+        );
+    }
+}
+
+// ----------------------------------------------
 // F3: clip history counted as read (`--fix=clip`)
 // ----------------------------------------------
 

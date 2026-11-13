@@ -955,7 +955,20 @@ impl<'a> TableBuilder<'a> {
             || (self.ram_bits(live[i]) & self.ram_bits(live[j]) != 0
                 && (self.timid
                     || (self.shares_tag(live[i], live[j]) && !(kind == STORE && other == STORE))
-                    || self.same_address(i, j, ea)))
+                    || self.same_address(i, j, ea)
+                    || self.same_location(i, j)))
+    }
+
+    /// With the `alias` fix, whether `i` and `j` provably address the same
+    /// location (`memory_alias`).
+    fn same_location(&self, i: usize, j: usize) -> bool {
+        if !self.program.fixes.contains(Fix::Alias) {
+            return false;
+        }
+        let at = |index: usize| {
+            memory_alias::location(self.program, self.region, &self.reads_by, self.live[index])
+        };
+        at(i).is_some_and(|location| at(j) == Some(location))
     }
 
     /// Whether the instructions `i` and `j` address the same location: same
