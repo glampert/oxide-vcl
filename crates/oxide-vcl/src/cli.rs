@@ -395,11 +395,11 @@ mod tests {
         for flags in [
             vec!["--fix=all"],
             vec!["--fix=end,all"],
-            vec!["--fix=imm,alias,clip,end,size"],
+            vec!["--fix=imm,alias,clip,end,size,operands"],
             vec![
                 "--fix=end",
                 "--fix=clip,size",
-                "--fix=imm,alias",
+                "--fix=imm,alias,operands",
                 "--fix=end",
             ],
         ] {

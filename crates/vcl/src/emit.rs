@@ -586,6 +586,7 @@ mod tests {
             ParserOptions {
                 syntax: Syntax::New,
                 allow_incomplete: true,
+                ..Default::default()
             },
         )
         .unwrap();

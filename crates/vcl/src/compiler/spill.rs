@@ -336,6 +336,7 @@ fn memory_access(spill: &Spilled, register: &str, stored: Option<Mask>, line: us
         ParserOptions {
             syntax: Syntax::Old,
             allow_incomplete: true,
+            ..Default::default()
         },
     )
     .expect("spill loads and stores are valid VCL");

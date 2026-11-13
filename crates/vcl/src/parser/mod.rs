@@ -181,6 +181,10 @@ impl std::error::Error for ParseError {}
 pub struct ParserOptions {
     pub syntax: Syntax,
     pub allow_incomplete: bool,
+    /// Accept memory operands shorter than vcl 1.4beta7's token decoder
+    /// allows (`ilw.x t,0(p)`), as long as their shape is right: the
+    /// `operands` fix.
+    pub short_memory_operands: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -191,6 +195,7 @@ struct Token {
 
 struct State {
     syntax: Syntax,
+    short_memory_operands: bool,
     mode: ParseMode,
     reorder: bool,
     raw_loop: bool,
@@ -202,6 +207,7 @@ impl State {
     fn new(syntax: Syntax) -> Self {
         Self {
             syntax,
+            short_memory_operands: false,
             mode: ParseMode::Vcl,
             reorder: false,
             raw_loop: false,
@@ -226,6 +232,7 @@ pub fn parse_with_options(
     let mut errors = Vec::new();
     let lines = logical_lines(source, &mut errors);
     let mut state = State::new(options.syntax);
+    state.short_memory_operands = options.short_memory_operands;
     let mut program = Program::default();
     for (line, text, passthrough) in lines {
         if passthrough {
@@ -757,6 +764,7 @@ fn parse_instruction(
         mask,
         specified_mask.is_some(),
         state.syntax,
+        state.short_memory_operands,
     )?;
     if metadata.index < id::GENERALIZED_END
         && operands.iter().take(2).any(|operand| {
@@ -1038,6 +1046,7 @@ fn parse_operands(
     mask: Mask,
     forced_mask: bool,
     syntax: Syntax,
+    short_memory_operands: bool,
 ) -> Result<Vec<Operand>, ParseMessage> {
     let mut result = Vec::new();
     let mut explicit = 0;
@@ -1075,6 +1084,7 @@ fn parse_operands(
                 mask,
                 forced_mask,
                 syntax,
+                short_memory_operands,
             )?);
             explicit += 1;
         }
@@ -1098,12 +1108,21 @@ fn parse_operands(
 /// The length floors count the mask. So `ilw.x t,0(p)` and `ilwr.x t,(p)`
 /// fail while `0(p)x`, `10(p)` and `(p)x` decode, whatever the register is
 /// named.
-fn memory_operand(body: &str, operand_class: u8) -> Result<(usize, &str, usize), ParseMessage> {
+///
+/// With `short` (the `operands` fix) every form but the increments needs
+/// only the 3 bytes of `(r)`, and the increments the 5 of `(r++)`: the
+/// floors then reject only what the shape checks below would.
+fn memory_operand(
+    body: &str,
+    operand_class: u8,
+    short: bool,
+) -> Result<(usize, &str, usize), ParseMessage> {
     use class::*;
     let bytes = body.as_bytes();
     let length = bytes.len();
     let minimum = match operand_class {
         ADDRESS | ADDRESS_OFFSET => 3,
+        ADDRESS_REGISTER | ADDRESS_REGISTER_OFFSET if short => 3,
         ADDRESS_REGISTER => 4,
         _ => 5,
     };
@@ -1170,6 +1189,7 @@ fn parse_operand(
     instruction_mask: Mask,
     forced_mask: bool,
     syntax: Syntax,
+    short_memory_operands: bool,
 ) -> Result<Operand, ParseMessage> {
     let (body, tag_string) = text
         .split_once(':')
@@ -1205,6 +1225,7 @@ fn parse_operand(
                 spec.class,
                 instruction_mask,
                 forced_mask,
+                short_memory_operands,
             )?;
             return Ok(operand);
         }
@@ -1249,9 +1270,10 @@ fn parse_memory_operand(
     operand_class: u8,
     instruction_mask: Mask,
     forced_mask: bool,
+    short_memory_operands: bool,
 ) -> Result<(), ParseMessage> {
     use class::*;
-    let (open, register, close) = memory_operand(body, operand_class)?;
+    let (open, register, close) = memory_operand(body, operand_class, short_memory_operands)?;
     if matches!(operand_class, ADDRESS_OFFSET | ADDRESS_REGISTER_OFFSET) {
         operand.immediate = Some(if open == 0 { "0" } else { &body[..open] }.into());
     }

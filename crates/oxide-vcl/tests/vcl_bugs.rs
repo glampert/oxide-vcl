@@ -410,6 +410,51 @@ fn memory_operand_shapes_match_the_original() {
     assert_eq!(count, 16);
 }
 
+/// With `--fix=operands`, the operands vcl rejects only for their length
+/// compile as their longer spellings do in vcl, and the operands with a
+/// wrong shape stay rejected.
+#[test]
+fn the_operands_fix_accepts_short_memory_operands() {
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join("tests/probes");
+    let compile = |case: &str, flags: &[&str]| {
+        let directory = root.join(format!("checker-parse-{case}"));
+        let input = std::fs::read_to_string(directory.join("input.vcl")).unwrap();
+        let options = cli::parse(["-t1", "-uFIX"].iter().chain(flags).copied())
+            .unwrap()
+            .compile;
+        vcl::compile(&input, "/work/parse.vcl", &options).map(|compiled| compiled.assembly)
+    };
+    let recorded = |case: &str| {
+        std::fs::read_to_string(root.join(format!("checker-parse-{case}/stdout.bin"))).unwrap()
+    };
+    // (rejected for its length, the spelling vcl accepts)
+    let short = [
+        ("ilw-base-p", "ilw-base-p-mask"),         // 0(p)    and 0(p)x
+        ("ilw-base-q", "ilw-base-ptr"),            // 0(q)    and 0(ptr)
+        ("ilw-base-a", "ilw-base-ptr"),            // 0(a)    and 0(ptr)
+        ("ilw-base-p-tag", "ilw-base-p-mask"),     // 0(p):a and 0(p)x
+        ("ilw-base-pq-bare", "ilw-base-pqr-bare"), // (pq) and (pqr)
+        ("ilwr-base-p", "ilwr-base-pq"),           // (p)     and (pq)
+    ];
+    for (case, long) in short {
+        assert!(compile(case, &[]).is_err(), "{case}: vcl rejects it");
+        for flags in [&["--fix=operands"][..], &["--fix=all"], &["--mode=oxide"]] {
+            let fixed = compile(case, flags).unwrap();
+            assert_eq!(
+                normalized(&fixed),
+                normalized(&recorded(long)),
+                "{case} {flags:?}"
+            );
+        }
+    }
+    assert!(compile("isw-base-p", &["--fix=operands"]).is_ok());
+    // A mask in capitals, a mask after an LQ operand, and text before an
+    // increment are not short spellings.
+    for case in ["ilw-base-p-upper-mask", "lq-trailing-mask", "lqi-prefix"] {
+        assert!(compile(case, &["--fix=operands"]).is_err(), "{case}");
+    }
+}
+
 // ----------------------------------------------
 // F4: exit rows without an E bit (`--fix=end`)
 // ----------------------------------------------

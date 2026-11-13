@@ -120,9 +120,12 @@ Because names are case-insensitive, a symbolic name may not be spelled like a
 hardware register or resource: `acc`, `i`, `q`, `p`, `r`, `clip`, `clipa`,
 `mac`, `ext`, `tt_np` and the `stat_*` status names are refused for vector
 registers (`can't use r as a name for one of the VU User floating point`), and
-all but `i`, `q`, `p` and `r` for integer registers. In memory operands `p`
-and `q` fail too: `ilw.w n, 3(p)` gives `failed to decode memory operand
-'3(p)'`. In the classic syntax a vector
+all but `i`, `q`, `p` and `r` for integer registers. An ILW, ISW, ILWR or
+ISWR memory operand must also be long enough: `ilw.w n, 3(p)` gives `failed
+to decode memory operand '3(p)'` whatever the base is named, because
+`off(reg)` needs 5 characters there and `(reg)` 4, counting a field mask
+after the `)` but not a `:tag`. `10(p)`, `3(ptr)` and `3(p)w` work, and so
+does `3(p)` with `--fix=operands` ([Fixes](#fixes)). In the classic syntax a vector
 register name's trailing `x`, `y`, `z` and `w` are read as fields, in
 instructions and in `in_vf`/`out_vf` alike: `sticky` is register `stick` with
 field y, and `copy` is `cop`. vcl compiles this silently and `oxide-vcl`
@@ -824,6 +827,7 @@ name with `--fix=`; `--mode=oxide` enables all of them.
 | `clip` | A program that runs CLIPW without declaring `in_hw_clip`, which vcl rejects ("register CLIPa is used before set") even when nothing reads the earlier judgments. With the fix it compiles as if `--enter` declared `in_hw_clip CLIP`, as long as every FCAND, FCOR, FCEQ, FCGET and `out_hw_clip` sees only judgments its own CLIPWs made on every path; otherwise it is still rejected. |
 | `end` | An exit or `--cont` whose E bit or delay slot vcl's final compression deleted, so that the VU ran on past it. The fix puts the E bit on the table's last row and adds an empty delay row after it. It does the same when the delay slot holds an instruction the hardware forbids there (a branch, a load or store, XGKICK, XTOP or XITOP). With `-e` it does nothing. |
 | `size` | A warning for a program larger than the 2048 instructions of VU1 micro memory. A branch farther than its 11-bit offset reaches is not warned about: the assembler truncates the offset, and the program counter wraps around micro memory to the target. |
+| `operands` | An ILW, ISW, ILWR or ISWR memory operand that vcl rejects only for its length (`ilw.x t,0(p)`, `ilwr.x t,(p)`, `0(p):tag`). With the fix it compiles as its longer spellings (`0(p)x`, `0(ptr)`) do. Operands with a wrong shape are still rejected: a capital field mask, a field mask after an LQ or SQ operand, or text before `(p++)`. |
 
 ```sh
 oxide-vcl --fix=end -oskin.vsm skin.vcl       # vcl's output, with the E bit fix

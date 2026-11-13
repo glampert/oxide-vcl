@@ -20,8 +20,8 @@ original" below) with synthetic probes. The results fall into three groups:
 - problems outside VCL.
 
 The shared defects get opt-in fixes, one per defect, plus a warning for
-program size: `imm` (F1), `alias` (F2), `clip` (F3), `end` (F4) and
-`size` (F5).
+program size: `imm` (F1), `alias` (F2), `clip` (F3), `end` (F4),
+`size` (F5) and `operands` (F6).
 
 Ground rules:
 
@@ -86,6 +86,7 @@ Field widths and latencies come from the VU User's Manual 6.0 at
 | `openvcl__repros_masked_write_branch`, `openvcl__repros_seed_store_order` | No | corpus outputs are correct | — |
 | `-c` schedules differently | No | identical pairs with and without `-c`: 3 corpus programs on the original, 49 on the port | — |
 | `branches`: wrapped offsets | No: the program counter wraps, so they land | VCL emits labels; dvp-as encodes | program-size warning only (F5) |
+| Short ILW, ISW, ILWR, ISWR operands | **Yes**, valid programs are rejected | `checker-parse-*` | F6 |
 
 ## 3. Defects the original shares
 
@@ -428,6 +429,28 @@ larger than micro memory is.
 about a program of more than 2048 instructions. Far branches get no
 warning, and the output is unchanged.
 
+### F6. Short memory operands
+
+vcl 1.4beta7 rejects a memory operand shorter than a floor for its form,
+with "failed to decode operand" (section 5, item 1). For LQ and SQ the
+floor, 3 bytes, is what the shape `(r)` needs anyway. For ILW and ISW
+(`off(reg)mask`, 5 bytes) and ILWR and ISWR (`(reg)mask`, 4 bytes) it
+counts a field mask that the operand need not carry. So `ilw.x t,0(p)`,
+`ilw.x t,0(a)`, `ilw.x t,0(p):a`, `ilw.x t,(pq)`, `isw.x t,0(p)` and
+`ilwr.x t,(p)` are rejected, while `0(p)x`, `10(p)`, `0(ptr)`, `(pqr)` and
+`ilwr.x t,(pq)` compile (observed from vcl 1.4beta7, `checker-parse-*`).
+The program is not miscompiled, but a valid one fails with a misleading
+message.
+
+**Fix (`--fix=operands`).** The parser (`memory_operand` in
+`crates/vcl/src/parser/mod.rs`, through `ParserOptions::short_memory_operands`)
+lowers the ILW, ISW, ILWR and ISWR floors to the 3 bytes of `(r)`; the
+increment forms keep 5, the size of `(r++)`. The shape checks are
+unchanged: only lowercase `x`, `y`, `z` and `w` may follow the `)`, nothing
+may follow an LQ or SQ operand, and the increment forms must start with
+`(`. Each operand the fix accepts compiles to the listing vcl gives for its
+longer spelling.
+
 ## 4. OpenVCL-only defects (absent from the original)
 
 | Probe | Shape | Original behaviour |
@@ -478,7 +501,8 @@ binding behaviours. They are default-mode behaviour, not opt-in fixes.
      fails). Nothing may follow an LQ/SQ operand (`0(p)x` fails). The
      increment forms must start with `(` (`x(p++)` fails).
    - The port applies the same rules (`memory_operand` in
-     `crates/vcl/src/parser/mod.rs`). `memory_operand_shapes_match_the_original` checks
+     `crates/vcl/src/parser/mod.rs`); `--fix=operands` lowers the floors
+     (F6). `memory_operand_shapes_match_the_original` checks
      the 16 `checker-parse-*` probes: the port accepts exactly the cases
      the original accepts, with equal output.
 2. **Generated stream labels.**
@@ -555,15 +579,6 @@ Per fix:
   masks and symbolic immediates give warnings; `checker-imm-repair-*` keep
   offsets 1022 and -1023 in a pipelined loop that executes to the source's
   sum.
-- F5: `the_size_fix_warns_only_about_programs_too_large` builds raw
-  programs with a branch past its offset's reach (no warning) and one
-  larger than micro memory (a warning).
-- F3: `the_clip_fix_compiles_the_repros_as_their_declared_versions`
-  compares the repros with the original's `-declared` outputs.
-  `the_clip_fix_declares_history_that_nothing_observes` checks inline
-  programs under `--fix=clip`, `--fix=all` and `--mode=oxide`: those whose
-  reads see only defined judgments compile as their declared versions, and
-  those that read an undefined judgment (on some path) stay rejected.
 - F2: `the_alias_fix_orders_accesses_to_the_same_location` executes the
   three alias programs to the sequential result under `--fix=alias`,
   `--fix=all` and `--mode=oxide`, and leaves `checker-mem-same-base`
@@ -582,9 +597,24 @@ Per fix:
   checks that the copy is related when it steps alike, and compiles as
   without the fix with stride 2, or in an outer loop that resets the copy
   but brings the base back unwritten.
+- F3: `the_clip_fix_compiles_the_repros_as_their_declared_versions`
+  compares the repros with the original's `-declared` outputs.
+  `the_clip_fix_declares_history_that_nothing_observes` checks inline
+  programs under `--fix=clip`, `--fix=all` and `--mode=oxide`: those whose
+  reads see only defined judgments compile as their declared versions, and
+  those that read an undefined judgment (on some path) stay rejected.
 - F4: `final_compression_can_delete_the_end_row` executes `external-vf-two`
   and `end-cont-lost` in the VU model, which runs past the end of the first
   and through the `--cont` of the second;
   `the_end_fix_keeps_an_end_row_and_its_delay_slot` checks that under
   `--fix=end`, `--fix=all` and `--mode=oxide` both stop at their E rows with
   the right results.
+- F5: `the_size_fix_warns_only_about_programs_too_large` builds raw
+  programs with a branch past its offset's reach (no warning) and one
+  larger than micro memory (a warning).
+- F6: `the_operands_fix_accepts_short_memory_operands` compiles the six
+  `checker-parse-*` probes that vcl rejects only for their length, and
+  `isw-base-p`, under `--fix=operands`, `--fix=all` and `--mode=oxide`:
+  each listing equals the original's for the longer spelling
+  (`ilw-base-p` and `ilw-base-p-mask`, for example). The three probes with
+  a wrong shape stay rejected.

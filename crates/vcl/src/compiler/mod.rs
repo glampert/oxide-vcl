@@ -1344,6 +1344,7 @@ pub fn compile(
                 Syntax::Old
             },
             allow_incomplete: false,
+            short_memory_operands: options.fixes(Fix::Operands),
         },
     )
     .map_err(|errors| {

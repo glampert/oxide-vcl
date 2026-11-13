@@ -75,11 +75,21 @@ pub enum Fix {
     End,
     /// A warning for a program larger than VU1 micro memory (`size`).
     Size,
+    /// Memory operands shorter than vcl 1.4beta7's token decoder allows,
+    /// such as `ilw.x t,0(p)`, are accepted (`operands`).
+    Operands,
 }
 
 impl Fix {
     /// Every fix, in the order the help lists them.
-    pub const ALL: [Fix; 5] = [Fix::Imm, Fix::Alias, Fix::Clip, Fix::End, Fix::Size];
+    pub const ALL: [Fix; 6] = [
+        Fix::Imm,
+        Fix::Alias,
+        Fix::Clip,
+        Fix::End,
+        Fix::Size,
+        Fix::Operands,
+    ];
 
     /// The fix's name on the command line.
     pub const fn name(self) -> &'static str {
@@ -89,6 +99,7 @@ impl Fix {
             Fix::Clip => "clip",
             Fix::End => "end",
             Fix::Size => "size",
+            Fix::Operands => "operands",
         }
     }
 

@@ -182,6 +182,7 @@ pub(super) fn declare_history(
         parser::ParserOptions {
             syntax: Syntax::Old,
             allow_incomplete: true,
+            ..Default::default()
         },
     )
     .ok()?
@@ -220,6 +221,7 @@ mod tests {
             parser::ParserOptions {
                 syntax: Syntax::Old,
                 allow_incomplete: false,
+                ..Default::default()
             },
         )
         .unwrap();
