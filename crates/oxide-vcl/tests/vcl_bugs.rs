@@ -825,7 +825,7 @@ fn the_alias_fix_orders_each_kind_of_pair_in_pipelined_loops() {
     // (probe, the qwords to check and their sequential values after
     // `count` iterations, whether vcl's loop gets them wrong)
     type Check = fn(u16) -> Vec<(usize, f32)>;
-    let cases: [(&str, Check, bool); 3] = [
+    let cases: [(&str, Check, bool); 5] = [
         (
             // A sum kept at a fixed qword, from one iteration to the next.
             "mem-loop-accumulator",
@@ -858,6 +858,32 @@ fn the_alias_fix_orders_each_kind_of_pair_in_pipelined_loops() {
                         let at = 10 + k as usize;
                         [(100 + at, (10.0 + k) * 2.0), (200 + at, 110.0 + k)]
                     })
+                    .collect()
+            },
+            false,
+        ),
+        (
+            // The load reads what the previous iteration stored, a stride
+            // below this iteration's store.
+            "mem-loop-carried-raw",
+            |count| {
+                (0..count)
+                    .map(|k| {
+                        let product = (10.0 + f32::from(k)) * 2.0;
+                        let previous = if k == 0 { 109.0 } else { product - 2.0 };
+                        (210 + usize::from(k), previous + product)
+                    })
+                    .collect()
+            },
+            true,
+        ),
+        (
+            // The load reads a qword before the next iteration stores
+            // there: vcl's schedule keeps that order.
+            "mem-loop-carried-war",
+            |count| {
+                (0..count)
+                    .map(|k| (210 + usize::from(k), 2.0 * (111.0 + f32::from(k))))
                     .collect()
             },
             false,

@@ -78,7 +78,7 @@ Field widths and latencies come from the VU User's Manual 6.0 at
 | `immediates`: introduced by affine repair | **Yes** | `checker-imm-repair-add`, `checker-imm-repair-subtract` | F1 |
 | `immediates`: IADDI | No: normalized to IADDIU/ISUBIU | `checker-imm-iaddi-normal`, `checker-imm-iaddi-raw` | — |
 | Store/load and store/store through different bases | **Yes** | `openvcl__repros_store_load_alias`, `openvcl__repros_store_store_alias`, `checker-mem-copied-base` | F2 |
-| Accesses to one qword in a pipelined loop | **Yes**, even through one base and under `-M` | `mem-loop-same-base`, `-same-base-timid`, `-copied-base`, `-accumulator`, `-store-store` | F2 |
+| Accesses to one qword in a pipelined loop | **Yes**, even through one base and under `-M` | `mem-loop-same-base`, `-same-base-timid`, `-copied-base`, `-accumulator`, `-store-store`, `-carried-raw` | F2 |
 | Clip programs without `in_hw_clip` | **Yes**, valid programs are rejected | `openvcl__repros_clip_join`, `openvcl__repros_clip_loop_entry`, `openvcl__repros_clipw_implicit_w`, both `quad_adc_bug` | F3 |
 | Exit rows losing the E bit | **Yes** (already known) | `external-vf-two`; one `--cont` stream in the local corpus | F4 |
 | `crossloop`, `regalloc`, `loopvar` | No | `checker-live-*`, `openvcl__repros_crossloop_4regs`, `openvcl__repros_loop_pointer` | — |
@@ -240,6 +240,11 @@ not prevent it (observed from vcl 1.4beta7):
   lands last.
 - `mem-loop-load-store` loads `100(base)` before storing over it; the
   schedule happens to keep that order.
+- `mem-loop-carried-raw` loads `99(base)`, which the previous iteration
+  stored at `100(base)`. The pipelined loop loads it one row before that
+  store, so it reads stale memory.
+- `mem-loop-carried-war` loads `101(base)`, which the next iteration
+  stores over; the schedule happens to keep that order.
 
 **Fix (`--fix=alias`).** `crates/vcl/src/compiler/memory_alias.rs` gives each
 memory access a symbolic address, `root + c`:
@@ -267,30 +272,37 @@ memory access a symbolic address, `root + c`:
 In a linear table, two accesses with intersecting fields, the same root and
 the same `c` keep their order, beside vcl's three cases.
 
-In a pipelined loop, the accesses of the body with one address form a
-group when one of them is a store. A group is invariant when its root is
-VI00 or a register no operation of the body defines: then it is the same
-qword in every iteration. After vcl's loop search, the fix checks the
-schedule: a later access of a group must run after an earlier one (store
-and load, load and store, or two stores, over intersecting fields), and
-for an invariant group the next iteration's first access must run after
-this iteration's last. When the schedule breaks that, each group becomes a
-resource of the loop table, as a tag does: every access reads it, every
-store writes it, and only the last store's value reaches the next
-iteration. The loop is searched again; if that fails or still breaks the
-order, it stays unpipelined, where the linear rule applies. A loop that
-vcl schedules in order keeps vcl's schedule. All five broken probes then
-stay pipelined and execute to the sequential result.
-`mem-loop-same-base`, `-same-base-timid`, `-copied-base` and `-store-store`
-keep vcl's period (7, 7, 8 and 6). `mem-loop-accumulator` goes from 6 to 9: its sum now
-waits for the previous iteration's load, add and store, the recurrence
-vcl's period ignores.
+In a pipelined loop, the accesses of the body that can meet form a group
+when one of them is a store: those with one address, and, from an
+induction register with stride `s`, those whose constants differ by a
+multiple of `s`, `c1 − c2 = m·s`, which meet `m` iterations apart. A group
+is invariant when its root is VI00 or a register no operation of the body
+defines: then it is the same qword in every iteration. After vcl's loop
+search, the fix checks every pair of a group that conflicts (store and
+load, load and store, or two stores, over intersecting fields) against the
+schedule. The access that comes first in sequential order, in the body
+for `m = 0` and in the earlier iteration otherwise, must run first; at an
+invariant location, the next iteration's first access must also run
+after this iteration's last.
+
+Only the pairs that the schedule breaks are ordered. Broken pairs that
+share an access join one resource of the loop table, as a tag does: every
+access reads it, every store writes it, and only the last store's value
+reaches the next iteration. The loop is searched again and checked again,
+adding the pairs the new schedule breaks, for up to four searches; if one
+fails or the last still breaks a pair, the loop stays unpipelined, where
+the linear rule applies. A loop that vcl schedules in order keeps vcl's
+schedule. All six broken probes then stay pipelined and execute to the
+sequential result. `mem-loop-same-base`, `-same-base-timid`,
+`-copied-base`, `-store-store` and `-carried-raw` keep vcl's period (7, 7,
+8, 6 and 7). `mem-loop-accumulator` goes from 6 to 9: its sum now waits
+for the previous iteration's load, add and store, the recurrence vcl's
+period ignores.
 
 Every other pair keeps vcl's no-alias assumption: different constants
-never alias, and pairs that do not resolve stay unordered, as without the
-fix. That includes induction registers with different strides, and an
-access in a later iteration at another offset of the same induction
-(`c1 − c2 = k·s` for stride `s`), which is not resolved.
+from a root that is not an induction never alias, and pairs that do not
+resolve stay unordered, as without the fix. That includes induction
+registers with different strides.
 
 #### 3.1 The cost of `-M`
 
@@ -564,7 +576,8 @@ Per fix:
   memory. `the_alias_fix_orders_same_locations_in_pipelined_loops` and
   `the_alias_fix_orders_each_kind_of_pair_in_pipelined_loops` run the
   fixed loops for 6, 7 and 9 iterations: they stay pipelined and execute
-  to the sequential result, and `mem-loop-load-store` keeps vcl's listing.
+  to the sequential result, and `mem-loop-load-store` and
+  `mem-loop-carried-war` keep vcl's listing.
   `the_alias_fix_relates_induction_registers_only_when_they_step_alike`
   checks that the copy is related when it steps alike, and compiles as
   without the fix with stride 2, or in an outer loop that resets the copy

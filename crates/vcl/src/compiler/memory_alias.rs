@@ -11,7 +11,8 @@
 //! software-pipelined loop keeps only the order of tagged accesses: one qword
 //! is stored and loaded out of order even through one base register, with
 //! or without `-M` (`mem-loop-same-base`, `mem-loop-same-base-timid`,
-//! `mem-loop-copied-base`, `mem-loop-accumulator`, `mem-loop-store-store`).
+//! `mem-loop-copied-base`, `mem-loop-accumulator`, `mem-loop-store-store`,
+//! `mem-loop-carried-raw`).
 //!
 //! With the fix, each address is also written as a root plus a constant,
 //! following the base register back through the steps that set it:
@@ -20,10 +21,11 @@
 //! address), a loop's induction register (`Resolver::induction`), or a
 //! register at its reaching definitions, where the steps stop.
 //! Two accesses with the same root and constant are the same location and
-//! keep their order. In a pipelined loop whose schedule breaks that order
-//! (`breaks_order`), the locations become resources of the loop table
-//! (`add_alias_resources`) and the loop is searched again. Anything else
-//! keeps vcl's assumption, as before.
+//! keep their order. In a pipelined loop, accesses from one induction
+//! register a whole number of strides apart meet in different iterations;
+//! the pairs that the schedule runs out of order (`broken_pairs`) become
+//! resources of the loop table (`add_alias_resources`) and the loop is
+//! searched again. Anything else keeps vcl's assumption, as before.
 
 use super::*;
 use crate::analysis::flow::Read;
@@ -354,12 +356,17 @@ pub(super) const LOOP_RESOURCE: &str = ":(alias)";
 /// move renames them.
 pub(super) const NO_PROGRAM_REGISTER: usize = usize::MAX;
 
-/// The accesses of a loop body at one location, in body order, when one of
-/// them is a store.
+/// The accesses of a loop body that address the same qwords, in body
+/// order, when one of them is a store: at one location, or, from an
+/// induction register, a whole number of strides apart.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct LoopGroup {
     /// Indices into the loop table's operations.
     pub(super) members: Vec<usize>,
+    /// For each member, how many iterations ahead of the group's first
+    /// member it addresses the same qword: member `a` in iteration `i` and
+    /// member `b` in iteration `i + shifts[a] - shifts[b]` meet.
+    pub(super) shifts: Vec<i64>,
     /// The location is the same in every iteration: its root is VI00, or a
     /// register no operation of the loop body defines.
     pub(super) invariant: bool,
@@ -374,7 +381,29 @@ pub(super) fn fields(located: &Located) -> u8 {
     }
 }
 
-/// The same-location groups of a loop body's operations `live`.
+/// A 16-bit difference as a signed number.
+fn signed(value: i64) -> i64 {
+    (value + 0x8000).rem_euclid(0x1_0000) - 0x8000
+}
+
+/// How many strides `location` is ahead of `reference`, when both step
+/// from the same induction register and are a whole number of strides
+/// apart; zero when they are the same location.
+fn strides_apart(location: &Location, reference: &Location) -> Option<i64> {
+    if location == reference {
+        return Some(0);
+    }
+    let Root::Induction { stride, .. } = &reference.root else {
+        return None;
+    };
+    if location.root != reference.root {
+        return None;
+    }
+    let (difference, stride) = (signed(location.offset - reference.offset), signed(*stride));
+    (difference % stride == 0).then(|| difference / stride)
+}
+
+/// The same-qword groups of a loop body's operations `live`.
 pub(super) fn loop_groups(
     program: &Source,
     region: &Region,
@@ -402,8 +431,11 @@ pub(super) fn loop_groups(
         let Some(location) = resolver.location(id) else {
             continue;
         };
-        if let Some((_, group)) = groups.iter_mut().find(|(at, _)| *at == location) {
+        if let Some((group, shift)) = groups.iter_mut().find_map(|(reference, group)| {
+            strides_apart(&location, reference).map(|shift| (group, shift))
+        }) {
             group.members.push(index);
+            group.shifts.push(shift);
             continue;
         }
         let invariant = match &location.root {
@@ -417,6 +449,7 @@ pub(super) fn loop_groups(
             location,
             LoopGroup {
                 members: vec![index],
+                shifts: vec![0],
                 invariant,
             },
         ));
@@ -436,30 +469,73 @@ pub(super) fn loop_groups(
         .collect()
 }
 
-/// Whether a modulo schedule (each operation's absolute line, one
-/// iteration every `period` lines) runs two accesses of a group out of
-/// order: a later one in the body at or before an earlier one, or, at an
-/// invariant location, an earlier one of the next iteration at or before a
-/// later one of this iteration. Two loads never conflict, nor do accesses
-/// to different fields.
-pub(super) fn breaks_order(
+/// The pairs of accesses (indices into the loop table's operations, in
+/// body order) that a modulo schedule runs out of their sequential order:
+/// each operation's absolute line is `lines`, and iteration `i` of it runs
+/// `i * period` lines after its first. Two loads never conflict, nor do
+/// accesses to different fields.
+///
+/// Members `a` before `b` in the body meet with `b` `m = shifts[a] -
+/// shifts[b]` iterations later (`b` a stride behind reads what `a` wrote
+/// before it). With `m = 0`, `a` must run first; with `m > 0`, `a` of
+/// iteration `i` before `b` of `i + m`; with `m < 0`, `b` of `i + m`
+/// before `a` of `i`. At an invariant location every iteration meets
+/// every other: `a` before `b`, and `b` before the next iteration's `a`.
+pub(super) fn broken_pairs(
     groups: &[LoopGroup],
     region: &Region,
     live: &[usize],
     lines: &[i32],
     period: i32,
-) -> bool {
+) -> Vec<(usize, usize)> {
     let located = |index: usize| &region.instructions[live[index]];
-    groups.iter().any(|group| {
-        group.members.iter().enumerate().any(|(at, &first)| {
-            group.members[at + 1..].iter().any(|&later| {
+    let period = i64::from(period);
+    let mut broken = Vec::new();
+    for group in groups {
+        for (at, (&first, &first_shift)) in group.members.iter().zip(&group.shifts).enumerate() {
+            for (&later, &later_shift) in
+                group.members[at + 1..].iter().zip(&group.shifts[at + 1..])
+            {
                 let conflict = (located(first).instruction.metadata.is_store()
                     || located(later).instruction.metadata.is_store())
                     && fields(located(first)) & fields(located(later)) != 0;
-                conflict
-                    && (lines[later] <= lines[first]
-                        || (group.invariant && lines[first] + period <= lines[later]))
-            })
+                let (a, b) = (i64::from(lines[first]), i64::from(lines[later]));
+                let lag = first_shift - later_shift;
+                let out_of_order = if group.invariant {
+                    b <= a || a + period <= b
+                } else if lag >= 0 {
+                    b + lag * period <= a
+                } else {
+                    a - lag * period <= b
+                };
+                if conflict && out_of_order {
+                    broken.push((first, later));
+                }
+            }
+        }
+    }
+    broken
+}
+
+/// The accesses joined by `pairs`, as groups in body order: two pairs that
+/// share an access are one group.
+pub(super) fn joined(pairs: &BTreeSet<(usize, usize)>) -> Vec<LoopGroup> {
+    let mut sets: Vec<BTreeSet<usize>> = Vec::new();
+    for &(first, later) in pairs {
+        let touching: Vec<usize> = (0..sets.len())
+            .filter(|&at| sets[at].contains(&first) || sets[at].contains(&later))
+            .collect();
+        let mut set = BTreeSet::from([first, later]);
+        for &at in touching.iter().rev() {
+            set.extend(sets.remove(at));
+        }
+        sets.push(set);
+    }
+    sets.into_iter()
+        .map(|set| LoopGroup {
+            shifts: vec![0; set.len()],
+            members: set.into_iter().collect(),
+            invariant: false,
         })
-    })
+        .collect()
 }

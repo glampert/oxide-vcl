@@ -521,14 +521,14 @@ pub(super) fn lpgen_schedule(
 }
 
 /// With the `alias` fix: when the loop schedule runs two accesses to the
-/// same location out of order (`memory_alias::breaks_order`), the loop is
-/// searched again with the locations as resources of its table. `None`
+/// same qword out of order (`memory_alias::broken_pairs`), the loop is
+/// searched again with those pairs as resources of its table. `None`
 /// leaves the loop unpipelined, where linear tables keep the order.
 fn order_same_locations(
     context: &LpgenContext,
     block_id: usize,
     live: &[usize],
-    mut table: WrangledTable,
+    table: WrangledTable,
     outcome: crate::scheduler::wrangle::LoopOutcome,
 ) -> Option<(WrangledTable, crate::scheduler::wrangle::LoopOutcome)> {
     let source = &context.region;
@@ -543,14 +543,27 @@ fn order_same_locations(
     );
     let broken = |outcome: &crate::scheduler::wrangle::LoopOutcome| {
         let lines: Vec<i32> = outcome.placements.iter().map(|p| p.line).collect();
-        memory_alias::breaks_order(&groups, source, live, &lines, outcome.period)
+        memory_alias::broken_pairs(&groups, source, live, &lines, outcome.period)
     };
-    if !broken(&outcome) {
-        return Some((table, outcome));
+    // Order only the pairs a schedule breaks, adding those the next search
+    // breaks in turn: ordering every access to the same qwords would
+    // lengthen loops whose other pairs vcl already runs in order.
+    let mut ordered = BTreeSet::new();
+    let mut outcome = outcome;
+    for _ in 0..4 {
+        let pairs = broken(&outcome);
+        if pairs.is_empty() {
+            return Some((table, outcome));
+        }
+        ordered.extend(pairs);
+        let mut constrained = table.clone();
+        add_alias_resources(&mut constrained, source, &memory_alias::joined(&ordered));
+        outcome = lpgen_optimize_loop(&constrained, block, block_id)?;
+        if broken(&outcome).is_empty() {
+            return Some((constrained, outcome));
+        }
     }
-    add_alias_resources(&mut table, source, &groups);
-    let outcome = lpgen_optimize_loop(&table, block, block_id)?;
-    (!broken(&outcome)).then_some((table, outcome))
+    None
 }
 
 /// The wrangle table of the loop block, with the loop's side-effect
