@@ -688,37 +688,160 @@ fn the_alias_fix_follows_steps_copies_and_increments() {
     }
 }
 
+/// Runs a `mem-loop-*` listing for `count` iterations from base 10, with
+/// every qword holding its index and qword 2 holding 2.
+fn run_memory_loop(listing: &str, count: u16) -> State {
+    let mut state = State::default();
+    for (index, qword) in state.memory.iter_mut().enumerate() {
+        *qword = [float(index as f32); 4];
+    }
+    state.memory[2] = [float(2.0); 4];
+    state.vi[1] = 10;
+    state.vi[2] = count;
+    Program::parse(listing)
+        .unwrap()
+        .execute(state, 1024)
+        .unwrap()
+        .state
+}
+
+/// What `mem-loop-*` leave at qword 210 + k: twice what iteration k
+/// stored at 110 + k, with the stored value (`(10 + k) * 2`) or the one
+/// it replaced (`110 + k`).
+fn memory_loop_result(count: u16, stale: bool) -> Vec<[u32; 4]> {
+    (0..count)
+        .map(|k| {
+            let k = f32::from(k);
+            let loaded = if stale { 110.0 + k } else { (10.0 + k) * 2.0 };
+            [float(2.0 * loaded); 4]
+        })
+        .collect()
+}
+
 #[test]
 fn pipelined_loops_reorder_accesses_to_the_same_location() {
     // Each iteration stores qword base+100 and loads it back. The original
     // pipelines the loop with the load above the store, even through one
-    // base register: the loop table carries no memory order but tags.
-    let run_loop = |listing: &str| {
-        let mut state = State::default();
-        for (index, qword) in state.memory.iter_mut().enumerate() {
-            *qword = [float(index as f32); 4];
-        }
-        state.memory[2] = [float(2.0); 4];
-        state.vi[1] = 10;
-        state.vi[2] = 3;
-        Program::parse(listing)
-            .unwrap()
-            .execute(state, 256)
-            .unwrap()
-            .state
-    };
-    for case in ["mem-loop-same-base", "mem-loop-copied-base"] {
+    // base register: the loop table carries no memory order but tags. The
+    // loops promise at least six iterations (`--LoopCS 6, 1`).
+    // Timid memory (-M) does not order them either.
+    for case in [
+        "mem-loop-same-base",
+        "mem-loop-copied-base",
+        "mem-loop-same-base-timid",
+    ] {
         let original = std::fs::read_to_string(probe_directory(case).join("stdout.bin")).unwrap();
-        let state = run_loop(&original);
-        // Sequentially qword 210 is twice the product, 2 * (10 * 2).
-        assert_eq!(state.memory[210], [float(220.0); 4], "{case}: stale load");
-        assert_eq!(state, run_loop(&compile_probe(case, &[])));
-        // The fix orders accesses within a linear table only.
-        assert_eq!(
-            normalized(&compile_probe(case, &["--fix=alias"])),
-            normalized(&original),
-            "{case}"
-        );
+        for count in [6, 7, 9] {
+            let state = run_memory_loop(&original, count);
+            let results = &state.memory[210..210 + usize::from(count)];
+            assert_eq!(results, memory_loop_result(count, true), "{case} {count}");
+            assert_eq!(state, run_memory_loop(&compile_probe(case, &[]), count));
+        }
+    }
+}
+
+#[test]
+fn the_alias_fix_orders_same_locations_in_pipelined_loops() {
+    for case in ["mem-loop-same-base", "mem-loop-same-base-timid"] {
+        for flags in ALIAS_FLAGS {
+            let fixed = compile_probe(case, flags);
+            assert!(
+                fixed.contains("__MAIN_LOOP:"),
+                "{case} {flags:?}: pipelined"
+            );
+            for count in [6, 7, 9] {
+                let state = run_memory_loop(&fixed, count);
+                let results = &state.memory[210..210 + usize::from(count)];
+                assert_eq!(
+                    results,
+                    memory_loop_result(count, false),
+                    "{case} {flags:?} {count}"
+                );
+            }
+        }
+    }
+    // A copy of the base is another induction register: the fix does not
+    // relate the two, and the loop compiles as without it.
+    let original =
+        std::fs::read_to_string(probe_directory("mem-loop-copied-base").join("stdout.bin"))
+            .unwrap();
+    assert_eq!(
+        normalized(&compile_probe("mem-loop-copied-base", &["--fix=alias"])),
+        normalized(&original)
+    );
+}
+
+#[test]
+fn the_alias_fix_orders_each_kind_of_pair_in_pipelined_loops() {
+    // (probe, the qwords to check and their sequential values after
+    // `count` iterations, whether vcl's loop gets them wrong)
+    type Check = fn(u16) -> Vec<(usize, f32)>;
+    let cases: [(&str, Check, bool); 3] = [
+        (
+            // A sum kept at a fixed qword, from one iteration to the next.
+            "mem-loop-accumulator",
+            |count| {
+                vec![(
+                    50,
+                    50.0 + (0..count).map(|k| 10.0 + f32::from(k)).sum::<f32>(),
+                )]
+            },
+            true,
+        ),
+        (
+            // The second store to a qword lands last.
+            "mem-loop-store-store",
+            |count| {
+                (0..count)
+                    .map(|k| (110 + usize::from(k), 10.0 + f32::from(k)))
+                    .collect()
+            },
+            true,
+        ),
+        (
+            // The load reads a qword before the store replaces it: vcl's
+            // schedule happens to keep the order, and the fix leaves it.
+            "mem-loop-load-store",
+            |count| {
+                (0..count)
+                    .flat_map(|k| {
+                        let k = f32::from(k);
+                        let at = 10 + k as usize;
+                        [(100 + at, (10.0 + k) * 2.0), (200 + at, 110.0 + k)]
+                    })
+                    .collect()
+            },
+            false,
+        ),
+    ];
+    let correct = |listing: &str, check: Check, count: u16| {
+        let state = run_memory_loop(listing, count);
+        check(count)
+            .into_iter()
+            .all(|(qword, value)| state.memory[qword] == [float(value); 4])
+    };
+    for (case, check, wrong) in cases {
+        let original = std::fs::read_to_string(probe_directory(case).join("stdout.bin")).unwrap();
+        for count in [6, 7, 9] {
+            assert_eq!(correct(&original, check, count), !wrong, "{case} {count}");
+        }
+        for flags in ALIAS_FLAGS {
+            let fixed = compile_probe(case, flags);
+            assert!(
+                fixed.contains("__MAIN_LOOP:"),
+                "{case} {flags:?}: pipelined"
+            );
+            for count in [6, 7, 9] {
+                assert!(correct(&fixed, check, count), "{case} {flags:?} {count}");
+            }
+        }
+        if !wrong {
+            assert_eq!(
+                normalized(&compile_probe(case, &["--fix=alias"])),
+                normalized(&original),
+                "{case}"
+            );
+        }
     }
 }
 

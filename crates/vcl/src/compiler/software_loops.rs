@@ -481,8 +481,11 @@ pub(super) fn lpgen_schedule(
         return None;
     }
 
-    let table = lpgen_wrangle_table(context, block_id, &live)?;
-    let outcome = lpgen_optimize_loop(&table, block, block_id)?;
+    let mut table = lpgen_wrangle_table(context, block_id, &live)?;
+    let mut outcome = lpgen_optimize_loop(&table, block, block_id)?;
+    if context.program.fixes.contains(Fix::Alias) {
+        (table, outcome) = order_same_locations(context, block_id, &live, table, outcome)?;
+    }
     let period = outcome.period;
     let base = live.len();
     let mut rewrite = LpgenRewrite::new(context, &table, &outcome, base);
@@ -515,6 +518,38 @@ pub(super) fn lpgen_schedule(
         pins,
         outcome.strategy,
     ))
+}
+
+/// With the `alias` fix: when the loop schedule runs two accesses to the
+/// same location out of order (`memory_alias::breaks_order`), the loop is
+/// searched again with the locations as resources of its table. `None`
+/// leaves the loop unpipelined, where linear tables keep the order.
+fn order_same_locations(
+    context: &LpgenContext,
+    block_id: usize,
+    live: &[usize],
+    mut table: WrangledTable,
+    outcome: crate::scheduler::wrangle::LoopOutcome,
+) -> Option<(WrangledTable, crate::scheduler::wrangle::LoopOutcome)> {
+    let source = &context.region;
+    let block = &source.blocks[block_id];
+    let groups = memory_alias::loop_groups(
+        &context.program,
+        source,
+        &context.analysis,
+        &block.operations,
+        live,
+    );
+    let broken = |outcome: &crate::scheduler::wrangle::LoopOutcome| {
+        let lines: Vec<i32> = outcome.placements.iter().map(|p| p.line).collect();
+        memory_alias::breaks_order(&groups, source, live, &lines, outcome.period)
+    };
+    if !broken(&outcome) {
+        return Some((table, outcome));
+    }
+    add_alias_resources(&mut table, source, &groups);
+    let outcome = lpgen_optimize_loop(&table, block, block_id)?;
+    (!broken(&outcome)).then_some((table, outcome))
 }
 
 /// The wrangle table of the loop block, with the loop's side-effect
@@ -663,6 +698,11 @@ impl<'a> LpgenRewrite<'a> {
         for (index, insn) in table.problem.instructions.iter().enumerate() {
             for (o, operand) in insn.operands.iter().enumerate() {
                 let register = table.operand_registers[index][o];
+                // The `alias` fix's resources have no source register, and
+                // no move renames them.
+                if register == memory_alias::NO_PROGRAM_REGISTER {
+                    continue;
+                }
                 spelling
                     .entry(operand.register)
                     .or_insert_with(|| context.program.registers.named(register).name.clone());

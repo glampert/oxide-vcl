@@ -1,0 +1,17 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST:   ---> [***{lq}***] {fB},{2(vi00)} 
+INFO: lpgen[6](limit: number of lower instructions) - 'dumb2' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'normal2' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'vuta1' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'another' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'normal' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'dUp' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'vuta' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'hDown' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'normal1' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'ldumb' flow top
+INFO: lpgen[6](limit: number of lower instructions) - 'dumb' flow top
+INFO: Opt::Loop              top  6/6
+INFO: Opt::Linear        __v_FIX_4  0/0
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

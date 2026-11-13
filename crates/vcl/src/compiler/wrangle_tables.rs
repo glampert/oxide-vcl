@@ -1231,3 +1231,90 @@ pub(super) fn add_memory_tag_resources(
         table.statics = wrangle::statics(&table.problem);
     }
 }
+
+/// With the `alias` fix, the same-location groups of a loop body as
+/// resources of its table, like memory tags (`add_memory_tag_resources`):
+/// one register per group, which each access reads and each store also
+/// writes (latency 1). A load stays after the stores before it and a store
+/// after every access before it, in the body and, through the value the
+/// last store leaves, from one iteration to the next.
+pub(super) fn add_alias_resources(
+    table: &mut WrangledTable,
+    region: &Region,
+    groups: &[memory_alias::LoopGroup],
+) {
+    let program_register = memory_alias::NO_PROGRAM_REGISTER;
+    for (number, group) in groups.iter().enumerate() {
+        table.problem.registers.push(wrangle::Register {
+            parts: 4,
+            ..wrangle::Register::default()
+        });
+        table.keys.push(WrangleKey::Hardware(format!(
+            "{}{number}",
+            memory_alias::LOOP_RESOURCE
+        )));
+        let register = table.problem.registers.len() - 1;
+        // The latest store of each field so far: (instruction, operand).
+        let mut last_store: [Option<(usize, usize)>; 4] = [None; 4];
+        let final_store = group.members.iter().rev().copied().find(|&index| {
+            region.instructions[table.live[index]]
+                .instruction
+                .metadata
+                .is_store()
+        });
+        for &index in &group.members {
+            let located = &region.instructions[table.live[index]];
+            let store = located.instruction.metadata.is_store();
+            let mask = memory_alias::fields(located);
+            let mut sources = [None; 4];
+            for (part, slot) in sources.iter_mut().enumerate() {
+                if mask & (1 << part) != 0 {
+                    *slot = Some(last_store[part].map_or(
+                        WSource::External,
+                        |(instruction, operand)| WSource::Local {
+                            instruction,
+                            operand,
+                        },
+                    ));
+                }
+            }
+            let operands = &mut table.problem.instructions[index].operands;
+            operands.push(wrangle::Operand {
+                register,
+                direction: WDirection::Read,
+                mask,
+                latency: -1,
+                blocking: true,
+                input_offset: 0,
+                sources,
+                escapes: 0,
+                observed: false,
+            });
+            table.operand_registers[index].push(program_register);
+            if store {
+                operands.push(wrangle::Operand {
+                    register,
+                    direction: WDirection::Write,
+                    mask,
+                    latency: 1,
+                    blocking: true,
+                    input_offset: 0,
+                    sources: [None; 4],
+                    // Only the last store's value reaches the next iteration.
+                    escapes: if Some(index) == final_store { mask } else { 0 },
+                    observed: true,
+                });
+                table.operand_registers[index].push(program_register);
+                let operand = operands.len() - 1;
+                for (part, slot) in last_store.iter_mut().enumerate() {
+                    if mask & (1 << part) != 0 {
+                        *slot = Some((index, operand));
+                    }
+                }
+            }
+        }
+    }
+    if !groups.is_empty() {
+        table.statics = wrangle::statics(&table.problem);
+    }
+}

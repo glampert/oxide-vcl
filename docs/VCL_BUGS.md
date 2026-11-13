@@ -78,7 +78,7 @@ Field widths and latencies come from the VU User's Manual 6.0 at
 | `immediates`: introduced by affine repair | **Yes** | `checker-imm-repair-add`, `checker-imm-repair-subtract` | F1 |
 | `immediates`: IADDI | No: normalized to IADDIU/ISUBIU | `checker-imm-iaddi-normal`, `checker-imm-iaddi-raw` | — |
 | Store/load and store/store through different bases | **Yes** | `openvcl__repros_store_load_alias`, `openvcl__repros_store_store_alias`, `checker-mem-copied-base` | F2 |
-| Store and load of one qword in a pipelined loop | **Yes**, even through one base | `mem-loop-same-base`, `mem-loop-copied-base` | not fixed (F2) |
+| Accesses to one qword in a pipelined loop | **Yes**, even through one base and under `-M` | `mem-loop-same-base`, `-same-base-timid`, `-accumulator`, `-store-store` | F2 (not `mem-loop-copied-base`) |
 | Clip programs without `in_hw_clip` | **Yes**, valid programs are rejected | `openvcl__repros_clip_join`, `openvcl__repros_clip_loop_entry`, `openvcl__repros_clipw_implicit_w`, both `quad_adc_bug` | F3 |
 | Exit rows losing the E bit | **Yes** (already known) | `external-vf-two`; one `--cont` stream in the local corpus | F4 |
 | `crossloop`, `regalloc`, `loopvar` | No | `checker-live-*`, `openvcl__repros_crossloop_4regs`, `openvcl__repros_loop_pointer` | — |
@@ -226,16 +226,23 @@ that two addresses are equal. That is the case in all three probes.
 *Pipelined loops.* A software-pipelined loop runs on a copy of its table
 without the memory-order lists, so only shared tags order its accesses
 there (see [MEMORY.md](MEMORY.md#ordinary-memory-operations-and-alias-tags)).
-A store and a load of the same qword in one iteration can swap even
-through one base register (observed from vcl 1.4beta7):
+Accesses to one qword swap even through one base register, and `-M` does
+not prevent it (observed from vcl 1.4beta7):
 
 - `mem-loop-same-base` stores `100(base)` and loads `100(base)`. The
   pipelined loop loads each iteration's qword before its store, so it reads
-  stale memory.
+  stale memory. `mem-loop-same-base-timid` is the same program under `-M`,
+  with the same loop.
 - `mem-loop-copied-base` does the same through a copy of the base.
+- `mem-loop-accumulator` keeps a sum at `50(vi00)`. The next iteration's
+  load runs before this iteration's store, so the sum misses terms.
+- `mem-loop-store-store` stores twice to `100(base)`, and the first store
+  lands last.
+- `mem-loop-load-store` loads `100(base)` before storing over it; the
+  schedule happens to keep that order.
 
 **Fix (`--fix=alias`).** `crates/vcl/src/compiler/memory_alias.rs` gives each
-memory access in a linear table a symbolic address, `root + c`:
+memory access a symbolic address, `root + c`:
 
 - The base register is followed back through its reaching definitions:
   IADDIU, ISUBIU and IADDI by a number, IADD and ISUB with VI00, VI moves,
@@ -247,18 +254,35 @@ memory access in a linear table a symbolic address, `root + c`:
 - `c` is the sum of the steps and the offset, modulo 65536. A symbolic
   offset gives no address.
 
-Two accesses with intersecting fields, the same root and the same `c` keep
-their order, beside vcl's three cases. Every other pair keeps vcl's
-no-alias assumption: different constants never alias, and pairs that do
-not resolve stay unordered, as without the fix. `-M` remains the switch for
-full safety.
+In a linear table, two accesses with intersecting fields, the same root and
+the same `c` keep their order, beside vcl's three cases.
 
-The fix covers linear tables only. In a pipelined loop, ordering the pairs
-it resolves means turning them into tag-like resources of the loop table,
-which also constrains the next iteration; that is not implemented, so
-`mem-loop-*` compile as without the fix. Loop-carried pairs (a root that
-is an induction register with stride `s`, offsets `c1` and `c2` with
-`c1 − c2 = k·s`) are not resolved either.
+In a pipelined loop, the accesses of the body with one address form a
+group when one of them is a store. A group is invariant when its root is
+VI00 or a register no operation of the body defines: then it is the same
+qword in every iteration. After vcl's loop search, the fix checks the
+schedule: a later access of a group must run after an earlier one (store
+and load, load and store, or two stores, over intersecting fields), and
+for an invariant group the next iteration's first access must run after
+this iteration's last. When the schedule breaks that, each group becomes a
+resource of the loop table, as a tag does: every access reads it, every
+store writes it, and only the last store's value reaches the next
+iteration. The loop is searched again; if that fails or still breaks the
+order, it stays unpipelined, where the linear rule applies. A loop that
+vcl schedules in order keeps vcl's schedule. All four broken probes then
+stay pipelined and execute to the sequential result.
+`mem-loop-same-base`, `-same-base-timid` and `-store-store` keep vcl's
+period (7, 7 and 6). `mem-loop-accumulator` goes from 6 to 9: its sum now
+waits for the previous iteration's load, add and store, the recurrence
+vcl's period ignores.
+
+Every other pair keeps vcl's no-alias assumption: different constants
+never alias, and pairs that do not resolve stay unordered, as without the
+fix. That includes two induction registers that step alike: in
+`mem-loop-copied-base` the base and its copy start equal and both step by
+1, but each is its own root. A next-iteration access at another offset
+from an induction register (`c1 − c2 = k·s` for stride `s`) is not
+resolved either.
 
 #### 3.1 The cost of `-M`
 
@@ -277,8 +301,8 @@ on the two `-timid` probes.
 So ordering every pair costs little in code size on most programs, but
 up to 15% on the Tyra dynamic pipelines. Its cycle cost in loop kernels
 is not measured. Step 2 keeps the original's assumption for unresolved
-pairs, so `--fix=alias` changes only provably wrong output. `-M` stays
-the switch for full safety.
+pairs, so `--fix=alias` changes only provably wrong output. `-M` orders
+every pair, except in pipelined loops.
 
 ### F3. Clip history counted as read
 
@@ -528,7 +552,12 @@ Per fix:
   the fix and the stored value with it, and pairs at different constants or
   unrelated roots compile as without the fix.
   `pipelined_loops_reorder_accesses_to_the_same_location` pins the
-  `mem-loop-*` probes, which the fix does not change.
+  original's `mem-loop-*` loops, with and without `-M`, reading stale
+  memory. `the_alias_fix_orders_same_locations_in_pipelined_loops` and
+  `the_alias_fix_orders_each_kind_of_pair_in_pipelined_loops` run the
+  fixed loops for 6, 7 and 9 iterations: they stay pipelined and execute
+  to the sequential result, `mem-loop-load-store` keeps vcl's listing, and
+  `mem-loop-copied-base` compiles as without the fix.
 - F4: `final_compression_can_delete_the_end_row` executes `external-vf-two`
   and `end-cont-lost` in the VU model, which runs past the end of the first
   and through the `--cont` of the second;

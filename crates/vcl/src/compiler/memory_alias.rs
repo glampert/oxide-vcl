@@ -7,7 +7,11 @@
 //! offset. Two registers that hold the same address are assumed not to
 //! alias, so a load can move above a store to the same qword (observed from
 //! vcl 1.4beta7: `openvcl__repros_store_load_alias`,
-//! `openvcl__repros_store_store_alias`, `checker-mem-copied-base`).
+//! `openvcl__repros_store_store_alias`, `checker-mem-copied-base`). A
+//! software-pipelined loop keeps only the order of tagged accesses: one qword
+//! is stored and loaded out of order even through one base register, with
+//! or without `-M` (`mem-loop-same-base`, `mem-loop-same-base-timid`,
+//! `mem-loop-accumulator`, `mem-loop-store-store`).
 //!
 //! With the fix, each address is also written as a root plus a constant,
 //! following the base register back through the steps that set it:
@@ -15,7 +19,10 @@
 //! and the steps of LQI, SQI, LQD and SQD. The root is VI00 (an absolute
 //! address) or a register at its reaching definitions, where the steps stop.
 //! Two accesses with the same root and constant are the same location and
-//! keep their order. Anything else keeps vcl's assumption, as before.
+//! keep their order. In a pipelined loop whose schedule breaks that order
+//! (`breaks_order`), the locations become resources of the loop table
+//! (`add_alias_resources`) and the loop is searched again. Anything else
+//! keeps vcl's assumption, as before.
 
 use super::*;
 use crate::analysis::flow::Read;
@@ -197,4 +204,115 @@ fn written(
         }
         _ => None,
     }
+}
+
+/// The table key prefix of the fix's loop resources: no source tag can be
+/// spelled with parentheses.
+pub(super) const LOOP_RESOURCE: &str = ":(alias)";
+
+/// The program register of the fix's loop resources in a table's
+/// `operand_registers`: they have none. They are pool-0 registers, so no
+/// move renames them.
+pub(super) const NO_PROGRAM_REGISTER: usize = usize::MAX;
+
+/// The accesses of a loop body at one location, in body order, when one of
+/// them is a store.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct LoopGroup {
+    /// Indices into the loop table's operations.
+    pub(super) members: Vec<usize>,
+    /// The location is the same in every iteration: its root is VI00, or a
+    /// register no operation of the loop body defines.
+    pub(super) invariant: bool,
+}
+
+/// The memory fields an instruction touches.
+pub(super) fn fields(located: &Located) -> u8 {
+    if located.instruction.metadata.mask_mode == MaskMode::Unmasked {
+        0xf
+    } else {
+        located.instruction.mask.0
+    }
+}
+
+/// The same-location groups of a loop body's operations `live`.
+pub(super) fn loop_groups(
+    program: &Source,
+    region: &Region,
+    analysis: &flow::Analysis,
+    body: &[usize],
+    live: &[usize],
+) -> Vec<LoopGroup> {
+    let reads: Reads = analysis
+        .reads
+        .iter()
+        .map(|read| ((read.operation, read.register, read.component), read))
+        .collect();
+    let mut groups: Vec<(Location, LoopGroup)> = Vec::new();
+    for (index, &id) in live.iter().enumerate() {
+        if !region.instructions[id].instruction.metadata.is_memory() {
+            continue;
+        }
+        let Some(location) = location(program, region, &reads, id) else {
+            continue;
+        };
+        if let Some((_, group)) = groups.iter_mut().find(|(at, _)| *at == location) {
+            group.members.push(index);
+            continue;
+        }
+        let invariant = match &location.root {
+            Root::Absolute => true,
+            Root::Value(_, definitions) => definitions.iter().all(|definition| {
+                !matches!(definition, Definition::Operation(setter) if body.contains(setter))
+            }),
+        };
+        groups.push((
+            location,
+            LoopGroup {
+                members: vec![index],
+                invariant,
+            },
+        ));
+    }
+    groups
+        .into_iter()
+        .map(|(_, group)| group)
+        .filter(|group| {
+            group.members.len() > 1
+                && group.members.iter().any(|&index| {
+                    region.instructions[live[index]]
+                        .instruction
+                        .metadata
+                        .is_store()
+                })
+        })
+        .collect()
+}
+
+/// Whether a modulo schedule (each operation's absolute line, one
+/// iteration every `period` lines) runs two accesses of a group out of
+/// order: a later one in the body at or before an earlier one, or, at an
+/// invariant location, an earlier one of the next iteration at or before a
+/// later one of this iteration. Two loads never conflict, nor do accesses
+/// to different fields.
+pub(super) fn breaks_order(
+    groups: &[LoopGroup],
+    region: &Region,
+    live: &[usize],
+    lines: &[i32],
+    period: i32,
+) -> bool {
+    let located = |index: usize| &region.instructions[live[index]];
+    groups.iter().any(|group| {
+        group.members.iter().enumerate().any(|(at, &first)| {
+            group.members[at + 1..].iter().any(|&later| {
+                let conflict = (located(first).instruction.metadata.is_store()
+                    || located(later).instruction.metadata.is_store())
+                    && fields(located(first)) & fields(located(later)) != 0;
+                conflict
+                    && (lines[later] <= lines[first]
+                        || (group.invariant && lines[first] + period <= lines[later]))
+            })
+        })
+    })
 }

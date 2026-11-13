@@ -246,6 +246,11 @@ across iterations: the next iteration's load waits for this iteration's
 store, which can lengthen the loop's period. Use tags only where the
 accesses may really alias.
 
+In a software-pipelined loop, **only tags order memory accesses**: the same
+base register and offset, and `-M`, do not. A store and a load of the same
+qword in one iteration can swap, and a sum kept in memory can read a stale
+value. Tag such accesses, or use `--fix=alias` ([Fixes](#fixes)).
+
 On an indirect jump, tags list the labels it can reach:
 `jr target:first:second`. An instruction can have at most one tagged
 operand.
@@ -784,7 +789,7 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-L` | Do not pipeline loops. |
 | `-d` | Plain in-order code only; implies `-L`. |
 | `-C` | Skip the code size reduction pass. |
-| `-M` | Timid memory access mode: keep every pair of loads and stores that touch overlapping fields in program order (see [Memory order and tags](#memory-order-and-tags)). |
+| `-M` | Timid memory access mode: keep every pair of loads and stores that touch overlapping fields in program order, except in software-pipelined loops (see [Memory order and tags](#memory-order-and-tags)). |
 | `-q` | Quiet: print only warnings and errors. |
 | `-p` | Microsoft-style errors: `file(line): error: message`. |
 | `-h`, `--help` | Print the help screen. |
@@ -815,7 +820,7 @@ name with `--fix=`; `--mode=oxide` enables all of them.
 | Fix | Repairs |
 | --- | --- |
 | `imm` | Numeric immediates that do not fit their field, which the assembler truncates without a word. IADDIU and ISUBIU steps are rewritten exactly (`iaddiu …,0xffff` is `isubiu …,1`; adding 0x8000 in one step is an error). Memory offsets outside -1024 to 1023 and FCEQ, FCSET, FSEQ or FSSET values outside their field are errors. FCAND, FCOR, FSAND and FSOR masks with bits past the flag are warnings, as are symbolic IADDI steps and memory offsets. vcl's own rewrite of an offset when it moves a load or store across its pointer's update never leaves the field. |
-| `alias` | A load or store that vcl moves across an earlier store, or a store across an earlier load, to the same qword through a different base register: `sq …,1(p)` with `p = 900` and `lq …,901(vi00)`, or a base and its copy. With the fix, two accesses keep their order when their addresses are provably equal: the base registers are followed back through IADDIU, ISUBIU, IADDI, IADD and ISUB with VI00, VI moves and the LQI, SQI, LQD and SQD steps, to VI00 or a common register. Pairs that cannot be resolved keep vcl's no-alias assumption; `-M` orders every pair. Pipelined loops are not covered. |
+| `alias` | A load or store that vcl moves across an earlier store, or a store across an earlier load, to the same qword through a different base register: `sq …,1(p)` with `p = 900` and `lq …,901(vi00)`, or a base and its copy. With the fix, two accesses keep their order when their addresses are provably equal: the base registers are followed back through IADDIU, ISUBIU, IADDI, IADD and ISUB with VI00, VI moves and the LQI, SQI, LQD and SQD steps, to VI00 or a common register. In a software-pipelined loop, where vcl orders only tagged accesses, accesses to one location keep their order within an iteration and, for a fixed location, from one iteration to the next; the loop is searched again only when vcl's schedule breaks that order. Pairs that cannot be resolved keep vcl's no-alias assumption, and so do two induction registers that step alike (a pointer and its copy). |
 | `clip` | A program that runs CLIPW without declaring `in_hw_clip`, which vcl rejects ("register CLIPa is used before set") even when nothing reads the earlier judgments. With the fix it compiles as if `--enter` declared `in_hw_clip CLIP`, as long as every FCAND, FCOR, FCEQ, FCGET and `out_hw_clip` sees only judgments its own CLIPWs made on every path; otherwise it is still rejected. |
 | `end` | An exit or `--cont` whose E bit or delay slot vcl's final compression deleted, so that the VU ran on past it. The fix puts the E bit on the table's last row and adds an empty delay row after it. It does the same when the delay slot holds an instruction the hardware forbids there (a branch, a load or store, XGKICK, XTOP or XITOP). With `-e` it does nothing. |
 | `size` | A warning for a program larger than the 2048 instructions of VU1 micro memory. A branch farther than its 11-bit offset reaches is not warned about: the assembler truncates the offset, and the program counter wraps around micro memory to the target. |

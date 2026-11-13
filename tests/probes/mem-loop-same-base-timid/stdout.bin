@@ -1,0 +1,49 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_FIX_top__MAIN_LOOP:
+; ===            ldumb : optimal=7 clid=1 mlid=1 size=(7) 
+; ===          normal1 : optimal=7 clid=0 mlid=1 size=(7) 
+; ===            hDown : optimal=7 clid=0 mlid=1 size=(7) 
+; ===             vuta : optimal=7 clid=1 mlid=1 size=(7) 
+; ===              dUp : optimal=7 clid=0 mlid=1 size=(7) 
+; ===           normal : optimal=7 clid=0 mlid=1 size=(7) 
+; ===          another : optimal=7 clid=0 mlid=1 size=(7) 
+; ===            vuta1 : optimal=7 clid=1 mlid=1 size=(7) 
+; ===          normal2 : optimal=7 clid=0 mlid=1 size=(7) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+__v_FIX_4:
+; _LNOPT_w=[ normal2 ] 6 [5 0] 8   [__v_FIX_4]
+         NOP                                                        lq            VF01,2(VI00)                        
+         NOP                                                        lq            VF04,0(VI01)                        
+         NOP                                                        lq            VF02,100(VI01)                      
+         mul           VF04,VF04,VF01                               iaddiu        VI01,VI01,0x00000001                       ;	STALL_LATENCY ?2
+         NOP                                                        NOP                                               
+         add           VF02,VF02,VF02                               isubiu        VI02,VI02,0x00000001                
+EXPL_FIX_top__MAIN_LOOP:
+; _LPOPT_w=[ ldumb ] 7 [7 7] 7   [EXPL_FIX_top__MAIN_LOOP]
+         NOP                                                        lq            VF05,0(VI01)                        
+         NOP                                                        sq            VF04,99(VI01)                       
+         NOP                                                        lq            VF03,100(VI01)                      
+         NOP                                                        sq            VF02,199(VI01)                      
+         mul           VF04,VF05,VF01                               iaddiu        VI01,VI01,0x00000001                
+         NOP                                                        ibne          VI02,VI00,EXPL_FIX_top__MAIN_LOOP   
+         add           VF02,VF03,VF03                               isubiu        VI02,VI02,0x00000001                
+; _LNOPT_w=[ ] 2 [0 0] 2   [EXPL_FIX_top__EXIT_POINT]
+         NOP[E]                                                     NOP                                               
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=15
+; register stats:
+;   3 VU User integer
+;   5 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
