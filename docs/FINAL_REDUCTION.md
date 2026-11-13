@@ -86,7 +86,8 @@ tick from the actual post-stall tick. The emitter later walks the original
 physical row indices, so a marked row can consume a stream flag
 without printing it. The paired `external-vf-two` captures demonstrate
 the visible E-bit consequence of the final pass
-([output flags and original captures](OUTPUT_FORMAT.md#dispatch-formatting-flags-and-statistics)).
+([output flags and original captures](OUTPUT_FORMAT.md#dispatch-formatting-flags-and-statistics)),
+which `--fix=end` repairs ([VCL_BUGS.md](VCL_BUGS.md#f4-exit-rows-without-an-e-bit)).
 
 ## Synchronization preparation for raw tables
 

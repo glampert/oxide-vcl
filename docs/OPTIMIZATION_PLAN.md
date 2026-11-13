@@ -24,8 +24,7 @@ The ground rules:
 ## 1. Timing model
 
 These figures come from the VU User's Manual 6.0, sections 3.4 (pipeline,
-hazards), 3.5 (termination) and 7.4 (throughput/latency list), in
-`~/Repos/GitHub/PS2Docs/markdown`. The port's instruction table
+hazards), 3.5 (termination) and 7.4 (throughput/latency list). The port's instruction table
 (`crates/vcl/src/isa/instruction_data.rs`, matching vcl 1.4beta7) agrees with the
 manual on every latency and throughput. The only difference is branches:
 the manual counts the delay slot, so it lists 2. The timing model is

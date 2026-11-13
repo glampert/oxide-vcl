@@ -1,4 +1,4 @@
-# Original VCL defects and an opt-in fix mode
+# Original VCL defects and their fixes
 
 [vu-checker](https://github.com/glampert/vu-checker) (`check_vu_code.py`)
 guards a VCL build against six kinds of silent failure:
@@ -34,7 +34,8 @@ Ground rules:
   `cli::parse`), so no valid original command line changes meaning. An
   unknown name is rejected the same way.
 - **Fixes are not optimizations.** They change output only where the
-  original's output is wrong, or where it rejects a valid program. Each
+  original's output is wrong, or where it rejects a valid program; the one
+  exception is noted under F2. Each
   keeps vcl's messages unless oxide mode is on too. In the library a fix
   is `vcl::Fix`, chosen in `Options::fixes`; `Options::fixes(fix)` tells
   whether it applies.
@@ -48,7 +49,9 @@ under `local/evidence/oracle/<name>/` (local, not tracked). The two affine-repai
 
 - The 26 accepted `checker-*` probes all equal the port line for line, with
   comments and whitespace ignored.
-- `checker-parse-*` probes record parser behaviour (section 5).
+- `checker-parse-*` probes record parser behaviour (section 5, F6).
+- The `mem-loop-*` probes (`tests/probes`) record memory order in
+  software-pipelined loops (F2).
 - The `repro__*` programs and their original outputs are in
   the public corpus (`tests/corpus`), and the port matches all of them.
 
@@ -60,11 +63,11 @@ under `local/evidence/oracle/<name>/` (local, not tracked). The two affine-repai
 - the alias defects, by running both outputs in the test VU model
   (`crates/oxide-vcl/tests/support/vu_model.rs`) and comparing against sequential
   semantics;
+- the pipelined-loop memory defects (`mem-loop-*`), run the same way;
 - the clip-history rejections;
 - the liveness probes, executed against a reference computed in the test.
 
-Field widths and latencies come from the VU User's Manual 6.0 at
-`~/Repos/GitHub/PS2Docs/markdown`:
+Field widths and latencies come from the VU User's Manual 6.0:
 
 - §3.4.8 (branch conditions);
 - §3.4.4 and Figures 3-16/3-17 (flag timing);
@@ -134,8 +137,8 @@ this defect: 0xffff becomes 0x7fff.
 `(Imm11 + VI[is]) × 16` and does not say what happens past the end of
 data memory. If the hardware wraps modulo the memory size (1024 qwords
 on VU1, 256 on VU0), an offset truncated modulo 2048 would hit the same
-qword. Nothing we have establishes that, so the plan treats a truncated
-offset as a defect.
+qword. Nothing establishes that, so the fix treats a truncated offset as
+a defect.
 
 **Fix (`--fix=imm`).** `crates/vcl/src/compiler/immediate_fields.rs`. The
 field widths come from the manual and are in the instruction table:
@@ -307,23 +310,32 @@ registers with different strides.
 
 #### 3.1 The cost of `-M`
 
-The port compiled each of the 44 accepted corpus programs twice, with and
-without `-M`, and counted emitted rows. Rows measure static size, not
+The port compiled each of the 47 accepted corpus programs twice, with and
+without `-M`, and counted emitted rows (`iCount`). Rows measure static size, not
 cycles. The port's `-M` output has been checked against the original only
 on the two `-timid` probes.
 
 | Measure | Default | `-M` |
 | --- | ---: | ---: |
-| Rows, 44 programs | 9,076 | 9,164 (+1.0%) |
-| Programs that grow | | 16 |
+| Rows, 47 programs | 10,688 | 10,796 (+1.0%) |
+| Programs that grow | | 18 |
 | Largest growth | | `tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1` 155 → 173 (+12%); `tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1` 80 → 92 (+15%) |
 | Programs that shrink | | 6, by 1–3 rows (search variation) |
 
 So ordering every pair costs little in code size on most programs, but
 up to 15% on the Tyra dynamic pipelines. Its cycle cost in loop kernels
-is not measured. Step 2 keeps the original's assumption for unresolved
-pairs, so `--fix=alias` changes only provably wrong output. `-M` orders
+is not measured. `--fix=alias` keeps the original's assumption for pairs
+it cannot resolve, so it orders far fewer pairs than `-M`, which orders
 every pair, except in pipelined loops.
+
+*Where `--fix=alias` can change correct output.* In a pipelined loop the
+fix adds an order only when vcl's schedule breaks it, so a loop that vcl
+already schedules in order keeps vcl's listing. A linear table gets the
+order of every resolved pair as a scheduling constraint, whether or not
+vcl's schedule would have kept it, so the scheduler may then pick another
+correct schedule. No corpus program, probe or local corpus case shows
+this: under `--fix=alias` only programs that vcl compiles wrongly
+change.
 
 ### F3. Clip history counted as read
 

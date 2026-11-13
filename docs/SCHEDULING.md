@@ -172,9 +172,8 @@ inputs for externally entered streams. EFU operand masks are adjusted
 The SCE VU manual gives the hardware reason: P/Q results do not trigger
 ordinary data-dependency interlocks and need `WAITP`/`WAITQ` when software
 needs synchronization. That is corroborative context; the vcl policies above
-are inferred from vcl 1.4beta7. See local
-`PS2Docs/markdown/VU_Users_Manual.md`, P/Q descriptions around lines
-1825-1842 and stall examples around lines 3781-4049.
+are inferred from vcl 1.4beta7. See the VU User's Manual's P and Q
+register descriptions and its stall examples.
 
 ## Static and dynamic scheduling statistics
 

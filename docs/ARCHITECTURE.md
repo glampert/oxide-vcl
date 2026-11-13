@@ -161,9 +161,13 @@ command-line driver is the separate `crates/oxide-vcl` crate.
 behaviour and wording, which every test asserts; `Oxide` (`--mode=oxide`)
 enables the port's own fixes, optimizations and messages, which may break
 compatibility. The mode travels in `vcl::Options::mode`; code that departs
-from vcl checks it and keeps the vcl path unchanged. Today the modes differ
-in their messages and exit statuses, the listing comments, and the
-constant-register copy, which fails the run in oxide mode.
+from vcl checks it and keeps the vcl path unchanged. The modes differ in
+their messages and exit statuses, the listing comments, the
+constant-register copy (which fails the run in oxide mode), spilling into a
+`.vu_work_area`, and the fixes for vcl's defects: oxide mode enables every
+`vcl::Fix`, which vcl mode enables one by one with `--fix=`
+([VCL_BUGS.md](VCL_BUGS.md)). A fix is checked with `Options::fixes(fix)`,
+and `Source::fixes` carries the set into the compiler.
 
 Every message is a typed value in `vcl::diagnostics`, never preformatted
 text: `Message` groups `CliMessage` (command line), `DriverMessage` (files,

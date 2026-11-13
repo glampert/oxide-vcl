@@ -12,6 +12,7 @@ The five rejected programs are repros that the original refuses with implicit
 `CLIPa` used-before-set diagnostics: `openvcl__test_repro_quad_adc_bug`,
 `openvcl__test_repro_quad_adc_bug_fjtrujy`, `openvcl__repros_clip_join`,
 `openvcl__repros_clip_loop_entry` and `openvcl__repros_clipw_implicit_w`.
+With `--fix=clip` all five compile ([VCL_BUGS.md](VCL_BUGS.md), F3).
 
 A match on this corpus says nothing about programs outside it. Emitting the
 same pairs does not establish cycle accuracy, and the original's optimizer

@@ -19,8 +19,9 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
   distributed here) matches too.
 - Matching the corpus does not prove equivalence on programs it does not
   cover. Known gaps are listed in [COMPATIBILITY.md](docs/COMPATIBILITY.md).
-- Defects of the original that the port reproduces, and proposed opt-in
-  fixes, are in [VCL_BUGS.md](docs/VCL_BUGS.md).
+- Defects of the original that the port reproduces by default, and the
+  opt-in fixes for them (`--fix=`, or every one with `--mode=oxide`), are in
+  [VCL_BUGS.md](docs/VCL_BUGS.md).
 
 ## Performance against [openvcl](https://github.com/ps2dev/openvcl)
 
@@ -99,7 +100,7 @@ Using the compiler:
 
 - [VCL reference](docs/VCL_REFERENCE.md): language, annotations, directives, command line
 - [Compatibility and known limitations](docs/COMPATIBILITY.md)
-- [Original defects and proposed fixes](docs/VCL_BUGS.md)
+- [Original defects and their fixes](docs/VCL_BUGS.md)
 - [Code generation compared with openvcl](docs/OPENVCL_COMPARISON.md)
 
 How vcl 1.4beta7 works, and how the port reproduces it:
