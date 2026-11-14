@@ -6,8 +6,8 @@ sets of disassembled VU programs. This chapter asks the next question: where doe
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-No optimization is implemented yet. The measuring and checking tools of
-section 5 exist; section 6 gives the order of the rest.
+One optimization exists, `exit` (part of O9). The measuring and checking
+tools of section 5 exist; section 6 gives the order of the rest.
 
 The ground rules:
 
@@ -367,6 +367,29 @@ the empty slots.
 safe-end padding rows: the manual guarantees that results in flight
 complete after termination.
 
+*The `exit` optimization* (`--opt=exit`, `Emitter::compact_exit` and
+`Emitter::end_in_previous_tables` in `crates/vcl/src/compiler/region.rs`)
+does the part that moves no instruction. vcl 1.4beta7 ends an exit table
+with an E row and a delay row after its last instruction, usually both
+empty. With `exit`:
+
+- The last row that holds an instruction becomes the E delay slot, with the
+  E bit on the row before it, when the manual allows it there (no branch,
+  XTOP, XITOP, XGKICK, load or store). Otherwise that row carries the E bit
+  and an empty delay row follows. The rows after the delay slot go.
+- An exit table that holds no instruction, reached only by falling through
+  from the table before it (none of its labels is named, and the table
+  before ends without a branch), ends that earlier table instead. This is
+  the stream that ends in XGKICK before `--barrier` and `--cont`.
+
+Every instruction issues in the cycle it did; the program ends sooner. In
+the public corpus 36 of 52 programs are a row and a cycle shorter (13,052
+to 13,016 rows and stalls in all); in the local corpus 56 of 117 programs
+lose 66 rows. Most exits end in an XGKICK or a store,
+which may not run in the delay slot, so the delay slot stays empty: filling
+it needs an independent instruction moved past them, which is O5 step 1's
+reordering. With `-e` the optimization does nothing.
+
 ### O10. Code size budget
 
 Pipelining (O1, O2), unrolling (O6) and superblock duplication (O5) all
@@ -404,7 +427,7 @@ phase 0:
 2. **The switch.** Optimizations run only in oxide mode. Each has a name
    in `vcl::Optimization` for `--opt=`, which keeps the named ones (or
    `all`, the default, or `none`); `Options::optimizes` asks whether one
-   runs. None exists yet, so `--opt=` accepts only `all` and `none`.
+   runs. The first is `exit` (O9).
 3. **Timed model.** `crates/oxide-vcl/tests/support/vu_model.rs` has a
    second configuration, `Config::TIMED`: pairs stall on VF fields still in
    the FMAC pipeline (latency 4), on ILW results, and on a busy FDIV or
@@ -442,7 +465,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | Phase | Items | Effort | Expected result |
 | --- | --- | --- | --- |
 | 0 | Survey tool, `--opt=` switch, timed model, equivalence harness (section 5) | Medium | Baseline per table and per program; a check that oxide output computes what vcl output computes |
-| 1 | O5 step 1 and the rest of O9: fill branch delay slots, the E row and its delay slot | Small to medium | 141 of 328 empty delay slots and 235 empty exit slots in the public corpus, 773 delay slots in the local corpus |
+| 1 | O9 (`exit`: the E row on the last instructions) and O5 step 1: fill branch delay slots and the E delay slot | Small to medium | 141 of 328 empty delay slots and 235 empty exit slots in the public corpus, 773 delay slots in the local corpus |
 | 2 | O1 (pipeline unannotated loops) with O10 (code budget) | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 4× on `sprite` |
 | 3 | O3 step 1 (reschedule loop prologues and epilogues) | Medium | Most of the 1,782 stall cycles in loop parts |
 | 4 | O4 (merge induction variables, post-increment folding) | Medium | One cycle per iteration in lower-bound kernels (`general` `xform_loop` 22 → 21, `fast_nolights` 12 → 11) |

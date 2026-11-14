@@ -844,7 +844,7 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-h`, `--help` | Print the help screen. |
 | `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
 | `--mode=vcl` | Generate the code vcl 1.4beta7 generates, with its exit statuses. The default. |
-| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and future optimizations. |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and its optimizations ([Optimizations](#optimizations)). |
 | `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
 | `--opt=<names>` | With `--mode=oxide` only: run just the named optimizations, separated by commas; `--opt=all` (the default) runs every one, `--opt=none` none. May be repeated. See [Optimizations](#optimizations). |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
@@ -892,7 +892,14 @@ causes a difference. `--mode=oxide` runs them all; `--opt=none` runs none,
 and `--opt=NAME,...` exactly those named. vcl mode never optimizes, and
 `--opt=` without `--mode=oxide` is an error.
 
-No optimization exists yet: `--opt=` accepts only `all` and `none`.
+| Optimization | Improves |
+| --- | --- |
+| `exit` | The end of a program and of each `--cont` stream. vcl puts the E bit and its delay slot on rows after the last instruction, usually both empty. With `exit` the last instruction runs in the delay slot when the hardware allows it there, and otherwise carries the E bit itself; the program is a row and a cycle shorter. An XGKICK before `--barrier` and an exit takes the E bit the same way. No instruction moves, and with `-e` nothing changes. |
+
+```sh
+oxide-vcl --mode=oxide -oskin.vsm skin.vcl              # every optimization
+oxide-vcl --mode=oxide --opt=none -oskin.vsm skin.vcl   # fixes only
+```
 
 ### Examples
 

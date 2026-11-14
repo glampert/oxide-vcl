@@ -17,7 +17,7 @@ use crate::scheduler::schedule::{
 use crate::scheduler::timing::{
     self, Synchronization, TimedRow, TimingOperation, TimingRead, TimingWrite,
 };
-use crate::{Fix, Options};
+use crate::{Fix, Optimization, Options};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 

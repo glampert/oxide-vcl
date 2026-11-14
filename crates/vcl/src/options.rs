@@ -169,17 +169,23 @@ impl Fixes {
 
 /// A code generation improvement over vcl 1.4beta7
 /// (docs/OPTIMIZATION_PLAN.md), named for `--opt=NAME` so that it can be
-/// turned off on its own. None exists yet: the plan's first phase adds one.
+/// turned off on its own.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum Optimization {}
+pub enum Optimization {
+    /// The E bit goes on the earliest row that can end the program, and the
+    /// empty rows after its delay slot are dropped (`exit`).
+    Exit,
+}
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 0] = [];
+    pub const ALL: [Optimization; 1] = [Optimization::Exit];
 
     /// The optimization's name on the command line.
     pub const fn name(self) -> &'static str {
-        match self {}
+        match self {
+            Optimization::Exit => "exit",
+        }
     }
 
     /// The optimization a command-line name selects.
@@ -190,7 +196,7 @@ impl Optimization {
     }
 
     const fn bit(self) -> u32 {
-        match self {}
+        1 << self as u32
     }
 }
 
@@ -254,6 +260,13 @@ mod tests {
 
     #[test]
     fn only_oxide_mode_optimizes() {
+        for optimization in Optimization::ALL {
+            assert_eq!(
+                Optimization::from_name(optimization.name()),
+                Some(optimization)
+            );
+            assert!(Optimizations::all().contains(optimization));
+        }
         assert_eq!(Optimization::from_name("all"), None);
         assert_eq!(Optimization::from_name("none"), None);
         let all = Optimizations::all();

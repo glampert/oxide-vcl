@@ -418,8 +418,10 @@ exit or a `--cont` must end in its E row and the delay row after it
 
 `external-vf-two` then ends in `add[E] VF04,VF02,VF03` and an empty row,
 one row longer than the original's output. The added rows are counted in the table comment and in `iCount`. With `-e`
-the fix does nothing. Filling the E row and its delay slot with useful work
-belongs to O9 in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
+the fix does nothing. In oxide mode the `exit` optimization then puts the
+E bit on the last instructions instead, where the delay slot allows it (O9
+in [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md)); `--opt=none` shows the
+fix alone.
 
 ### F5. Program size
 

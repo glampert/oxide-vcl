@@ -20,6 +20,14 @@ impl FinishedRows {
         self.replay.issue_times.push(issue);
         self.replay.stalls.push(Default::default());
     }
+
+    /// Keeps the first `length` rows.
+    pub(super) fn truncate(&mut self, length: usize) {
+        self.rows.truncate(length);
+        self.origins.truncate(length);
+        self.replay.issue_times.truncate(length);
+        self.replay.stalls.truncate(length);
+    }
 }
 
 /// Validate physical producer identities before reducing a straight-line block.

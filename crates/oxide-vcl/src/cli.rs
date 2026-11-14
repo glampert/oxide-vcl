@@ -480,6 +480,10 @@ mod tests {
         );
         assert_eq!(error.to_string(), "--opt=all applies only in oxide mode");
         assert_eq!(error.exit_status(), VCL_EXIT_FAILURE);
+        let exit = parse(["--mode=oxide", "--opt=none", "--opt=exit", "a.vcl"])
+            .unwrap()
+            .compile;
+        assert!(exit.optimizes(vcl::Optimization::Exit));
         for (argument, name) in [
             ("--opt=", ""),
             ("--opt=fast", "fast"),

@@ -56,9 +56,11 @@ fixes for vcl 1.4beta7's defects (--mode=oxide enables them all):
 
 optimizations (--mode=oxide only, which runs them all by default):
   --opt=<names>  run only the named optimizations, separated by commas; may
-                 be repeated (none has a name yet)
+                 be repeated
   --opt=all      run every optimization
   --opt=none     run no optimization
+                 exit: end the program on its last instructions, without
+                 vcl's empty [E] row and delay slot
 
 diagnostics (file(line): severity: message, with the source line and a fix):
   -q             quiet mode: prints only warnings and errors

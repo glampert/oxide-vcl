@@ -550,11 +550,18 @@ fn final_compression_can_delete_the_end_row() {
 #[test]
 fn the_end_fix_keeps_an_end_row_and_its_delay_slot() {
     let unfixed = compile_probe("end-cont-lost", &[]);
-    for flags in [["--fix=end"], ["--fix=all"], ["--mode=oxide"]] {
+    // Oxide mode's `exit` optimization moves the E bit earlier still
+    // (`optimizations.rs`); `--opt=none` shows the fix alone.
+    let fixed: [&[&str]; 3] = [
+        &["--fix=end"],
+        &["--fix=all"],
+        &["--mode=oxide", "--opt=none"],
+    ];
+    for flags in fixed {
         // The exit stops where it should, with every result written: the
         // last instruction row takes the E bit, and an empty delay row
         // follows it.
-        let listing = compile_probe("external-vf-two", &flags);
+        let listing = compile_probe("external-vf-two", flags);
         let last = tables(&listing).pop().unwrap();
         assert!(
             last[last.len() - 2].starts_with("add[E]"),
@@ -569,7 +576,7 @@ fn the_end_fix_keeps_an_end_row_and_its_delay_slot() {
 
         // The `--cont` stream stops at its own E row, its third instruction,
         // before the continuation runs.
-        let listing = compile_probe("end-cont-lost", &flags);
+        let listing = compile_probe("end-cont-lost", flags);
         let rows: Vec<String> = tables(&listing).concat();
         let end = rows.iter().position(|row| row.contains("[E]")).unwrap();
         assert_eq!(end, 2, "{flags:?}: {listing}");

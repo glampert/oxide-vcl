@@ -2469,13 +2469,14 @@ impl Emitter<'_> {
         notes: &[TableNote],
         output: &mut Compiled,
     ) -> Result<(), CompileError> {
-        let mut offset = output.instruction_pairs;
-        let mut last_stream: Option<u16> = None;
+        // Every table is finished before any is printed: the `exit`
+        // optimization can move an E bit into the table before its own.
+        let mut tables = Vec::with_capacity(emission_blocks.len());
         for (block_id, block) in emission_blocks.iter().enumerate() {
             let Some(rows) = &schedules[block_id] else {
+                tables.push(None);
                 continue;
             };
-            self.emit_labels(block_id, block, offset, output);
             let mut finished = finish_rows_planned(
                 self.program,
                 self.region,
@@ -2487,6 +2488,20 @@ impl Emitter<'_> {
                 self.plans.get(&block_id),
             )?;
             let end_row = self.end_row(block, &mut finished, rows.len());
+            tables.push(Some((finished, end_row)));
+        }
+        if self.options.optimizes(Optimization::Exit) {
+            self.end_in_previous_tables(emission_blocks, &mut tables);
+        }
+        let mut offset = output.instruction_pairs;
+        let mut last_stream: Option<u16> = None;
+        for (block_id, block) in emission_blocks.iter().enumerate() {
+            let (Some(rows), Some((finished, end_row))) =
+                (&schedules[block_id], tables[block_id].take())
+            else {
+                continue;
+            };
+            self.emit_labels(block_id, block, offset, output);
             // An empty stream (after `--cont`, say) takes the uid after the
             // previous stream's.
             let stream = block
@@ -2604,7 +2619,8 @@ impl Emitter<'_> {
     /// and its delay slot always end the table. Where either is missing, or
     /// the delay slot holds an instruction the hardware forbids there, the E
     /// bit goes on the table's last row and an empty delay row follows it
-    /// (an empty table gets both rows).
+    /// (an empty table gets both rows). The `exit` optimization moves the E
+    /// bit earlier instead: see [`Emitter::compact_exit`].
     fn end_row(&self, block: &Block, finished: &mut FinishedRows, walked: usize) -> Option<usize> {
         let ends = self.program.end_bit
             && matches!(block.end, End::Exit { macro_text: None } | End::Continue);
@@ -2619,6 +2635,9 @@ impl Emitter<'_> {
         if !self.options.fixes(Fix::End) || self.options.disable_end_bit {
             return original;
         }
+        if self.options.optimizes(Optimization::Exit) {
+            return Some(self.compact_exit(finished));
+        }
 
         let length = finished.rows.len();
         if let Some(row) = original
@@ -2632,6 +2651,106 @@ impl Emitter<'_> {
         }
         finished.push_empty_row();
         Some(finished.rows.len() - 2)
+    }
+
+    /// The `exit` optimization's E row. vcl 1.4beta7 ends an exit table
+    /// with an E row and a delay row after the last instruction, usually
+    /// both empty. Here the last row that holds an instruction becomes the
+    /// delay slot, with the E bit on the row before it, when the hardware
+    /// allows it there; otherwise it carries the E bit, before an empty
+    /// delay row. The rows after the delay slot are dropped. No instruction
+    /// moves, so each issues when it did; the program only ends sooner. An
+    /// instruction still in its pipeline at the end completes (VU User's
+    /// Manual 6.0, section 3.5.3).
+    fn compact_exit(&self, finished: &mut FinishedRows) -> usize {
+        let last = finished
+            .rows
+            .iter()
+            .rposition(|row| row.instructions.iter().any(Option::is_some));
+        let end = match last {
+            Some(last)
+                if last > 0
+                    && self.allowed_in_end_delay(&finished.rows[last])
+                    && self.allowed_on_end_row(&finished.rows[last - 1]) =>
+            {
+                last - 1
+            }
+            Some(last) => last,
+            None => 0,
+        };
+        finished.truncate(end + 2);
+        while finished.rows.len() < end + 2 {
+            finished.push_empty_row();
+        }
+        end
+    }
+
+    /// The `exit` optimization across tables. An exit table that holds no
+    /// instruction, entered only by falling through from the table before
+    /// it, ends that table instead: the E bit goes on the earlier table's
+    /// rows as [`Emitter::compact_exit`] places it, and the exit table keeps
+    /// only the delay row the earlier table still needs. This is how a
+    /// stream that ends in XGKICK before `--cont` or `--exit` ends.
+    fn end_in_previous_tables(
+        &self,
+        blocks: &[Block],
+        tables: &mut [Option<(FinishedRows, Option<usize>)>],
+    ) {
+        // With `-e` the E row is vcl's position, not printed.
+        if self.options.disable_end_bit {
+            return;
+        }
+        for exit in 1..blocks.len() {
+            let block = &blocks[exit];
+            let Some((finished, Some(_))) = &tables[exit] else {
+                continue;
+            };
+            let empty = finished
+                .rows
+                .iter()
+                .all(|row| row.instructions.iter().all(Option::is_none));
+            let named = block
+                .labels
+                .iter()
+                .any(|label| self.referenced.contains(&label.to_ascii_lowercase()));
+            let Some(previous) = (0..exit).rev().find(|&id| tables[id].is_some()) else {
+                continue;
+            };
+            if !empty
+                || named
+                || block.debug_end != 0
+                || previous + 1 != exit
+                || !matches!(blocks[previous].end, End::Fallthrough)
+            {
+                continue;
+            }
+            let Some((earlier, None)) = &mut tables[previous] else {
+                continue;
+            };
+            if earlier.rows.is_empty() {
+                continue;
+            }
+            let length = earlier.rows.len();
+            let end = self.compact_exit(earlier);
+            // `compact_exit` left the delay row in the earlier table; it
+            // moves back to the exit table, which keeps the label position.
+            let delay_rows = earlier.rows.len() - length.min(earlier.rows.len());
+            earlier.truncate(earlier.rows.len() - delay_rows);
+            tables[previous].as_mut().unwrap().1 = Some(end);
+            let (finished, end_row) = tables[exit].as_mut().unwrap();
+            finished.truncate(delay_rows);
+            *end_row = None;
+        }
+    }
+
+    /// Whether a row may carry the E bit: not one with a branch.
+    fn allowed_on_end_row(&self, row: &TimedRow) -> bool {
+        row.instructions.iter().flatten().all(|&id| {
+            !self.region.instructions[id]
+                .instruction
+                .metadata
+                .is_branch()
+        })
     }
 
     /// Whether a row may run in the E bit's delay slot. The VU User's Manual
