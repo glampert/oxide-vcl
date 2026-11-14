@@ -161,9 +161,9 @@ command-line driver is the separate `crates/oxide-vcl` crate.
 1.4beta7's code, which the tests assert; `Oxide` (`--mode=oxide`) enables
 the port's own fixes and optimizations, which may break compatibility. The
 mode travels in `vcl::Options::mode`; code that departs from vcl checks it
-and keeps the vcl path unchanged. The modes differ in their exit statuses,
-the constant-register copy (which fails the run in oxide mode), field
-letters in names (an error in oxide mode), spilling into a `.vu_work_area`,
+and keeps the vcl path unchanged. The modes differ in their exit statuses
+(`Mode::failure_status`, `Mode::usage_status`: `VCL_EXIT_FAILURE` 255,
+`OXIDE_EXIT_FAILURE` 1, `OXIDE_EXIT_USAGE` 2), field letters in names (an error in oxide mode), spilling into a `.vu_work_area`,
 `loi`'s math functions, and the fixes for vcl's defects: oxide mode enables
 every `vcl::Fix`, which vcl mode enables one by one with `--fix=`
 ([VCL_BUGS.md](VCL_BUGS.md)). A fix is checked with `Options::fixes(fix)`,

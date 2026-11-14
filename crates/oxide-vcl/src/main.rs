@@ -1,6 +1,7 @@
 //! `oxide-vcl`: the command-line driver. It parses the original's command line,
 //! runs the optional preprocessors, compiles with the `vcl` crate and writes
-//! the results, keeping the original's exit statuses in vcl mode.
+//! the results, with the original's exit status in vcl mode (255 on any
+//! failure).
 //!
 //! Everything it prints goes through [`vcl::diagnostics::Reporter`].
 
@@ -260,22 +261,10 @@ fn main() {
         return;
     }
 
-    // vcl exits with 255 on every failure but one; oxide mode with 1.
-    let failure_status = match arguments.mode() {
-        vcl::Mode::Vcl => 255,
-        vcl::Mode::Oxide => 1,
-    };
+    let failure_status = i32::from(arguments.mode().failure_status());
     match run(&arguments, &mut reporter) {
         Ok(()) => {}
         Err(RunError::Compile(errors)) => {
-            // vcl's copy detector fails with an error but exits with status
-            // 0; oxide mode treats it as the error it is.
-            if arguments.mode() == vcl::Mode::Vcl
-                && let Some(error) = errors.iter().find(|error| error.exit_status() == 0)
-            {
-                reporter.report(&error.diagnostic());
-                return;
-            }
             let diagnostics: Vec<Diagnostic> = errors.iter().map(|e| e.diagnostic()).collect();
             reporter.compile_errors(&diagnostics);
             std::process::exit(failure_status);

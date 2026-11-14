@@ -373,7 +373,7 @@ mod tests {
             Ok(_) => panic!("external output must not reuse the stream's forced input"),
         };
         assert_eq!(failure.kind, CompileErrorKind::General);
-        assert_eq!(failure.exit_status(), 255);
+        assert!(!failure.vcl_exits_zero());
     }
 
     #[test]

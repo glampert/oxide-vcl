@@ -65,6 +65,7 @@ enum CompileErrorKind {
     /// No register fits a value live across streams (oxide mode only):
     /// spilling can help, scheduling strategies cannot.
     ExternalAllocation,
+    /// A copy into the constant register (see `CompileError::vcl_exits_zero`).
     ZeroCopyDestination,
     /// A region reads undeclared clip history that nothing observes, which
     /// the `clip` fix declares before compiling it again. Its message is
@@ -77,14 +78,13 @@ enum CompileErrorKind {
 }
 
 impl CompileError {
-    /// The original copy-detector abort can return status zero despite an
-    /// ERROR diagnostic and no assembly. Keep library failure distinct.
-    pub fn exit_status(&self) -> u8 {
-        if self.kind == CompileErrorKind::ZeroCopyDestination {
-            0
-        } else {
-            255
-        }
+    /// Whether vcl 1.4beta7 exits with status 0 on this error: its copy
+    /// detector rejects a copy into the constant register and writes no
+    /// listing, but reports success (observed, `copy-reorder-constant-dest`,
+    /// `copy-output-zero-binding`). The port fails the run as for any other
+    /// error.
+    pub fn vcl_exits_zero(&self) -> bool {
+        self.kind == CompileErrorKind::ZeroCopyDestination
     }
 }
 

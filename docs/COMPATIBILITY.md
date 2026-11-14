@@ -100,7 +100,9 @@ where the known boundary lies.
   message`, the source line and a fix), not vcl 1.4beta7's text; vcl's
   start-up, progress and abort lines (`OS_Init`, `Opt::Linear`, `vcl's outta
   here`) and its notices that only confirm an option (`-C`, `-f`, `-K`,
-  `-M`, `-e`) are not printed. vcl mode keeps vcl's exit statuses.
+  `-M`, `-e`) are not printed. vcl mode keeps vcl's exit statuses, except
+  that a copy into the constant register fails the run with 255 where vcl
+  exits 0 without writing a listing ([COPIES.md](COPIES.md)).
 - Some valid programs remain outside complete compiler coverage.
 - Immediate expressions: vcl 1.4beta7 accepts some that the port rejects,
   and keeps them as written: a missing left operand (`*3`, `2+*3`, `**3`)

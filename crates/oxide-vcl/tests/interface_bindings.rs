@@ -188,7 +188,7 @@ fn a_web_bound_to_vf00_is_vf00() {
                  out_vf res(vf02)\n\
                  --endexit\n";
     let errors = vcl::compile(exits, "exits.vcl", &options).unwrap_err();
-    assert_eq!(errors[0].exit_status(), 0);
+    assert!(errors[0].vcl_exits_zero());
     assert_eq!(errors[0].line, 8);
     assert!(
         errors[0]

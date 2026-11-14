@@ -192,7 +192,7 @@ fn exhausted_external_pool_rejects_before_local_schedule_retries() {
             .to_string()
             .contains("external register assignment failed")
     }));
-    assert!(errors.iter().all(|error| error.exit_status() == 255));
+    assert!(!errors.iter().any(vcl::CompileError::vcl_exits_zero));
 }
 
 fixture!(
@@ -865,12 +865,12 @@ fn general_coalescing_and_copy_controls_match_original_pairs() {
 
 #[test]
 #[cfg_attr(not(local_evidence), ignore = "needs local/evidence")]
-fn zero_copy_destination_is_a_library_error_but_preserves_legacy_cli_status_zero() {
+fn a_copy_into_the_constant_register_fails_where_vcl_exits_zero() {
     let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
         .join("local/evidence/oracle/copy-reorder-constant-dest");
     let source = std::fs::read_to_string(root.join("input.vcl")).unwrap();
     let errors = vcl::compile(&source, "copy.vcl", &vcl::Options::default()).unwrap_err();
-    assert_eq!(errors[0].exit_status(), 0);
+    assert!(errors[0].vcl_exits_zero());
     assert!(
         errors[0]
             .message
@@ -882,7 +882,11 @@ fn zero_copy_destination_is_a_library_error_but_preserves_legacy_cli_status_zero
         .arg(root.join("input.vcl"))
         .output()
         .unwrap();
-    assert_eq!(run.status.code(), Some(0));
+    // vcl exits 0 here (`result.json`); the port fails the run.
+    assert_eq!(
+        run.status.code(),
+        Some(i32::from(vcl::diagnostics::VCL_EXIT_FAILURE))
+    );
     assert_eq!(run.stdout, std::fs::read(root.join("stdout.bin")).unwrap());
     assert!(
         String::from_utf8_lossy(&run.stderr)

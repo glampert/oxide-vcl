@@ -912,11 +912,11 @@ Messages without a source line start with the file name, or with
 number of errors.
 
 The exit status follows the mode. vcl mode exits 0 on success and 255 on
-any failure, as vcl does, with one exception it keeps: a copy into the
-constant register VI00 or VF00 prints its error but exits 0. Oxide mode
-exits 0 on success, 1 when the program fails to compile, a file can't be read
-or written, or a warning fails the run, and 2 for a bad command line; a copy
-into the constant register is an error (1).
+any failure, as vcl does. (vcl exits 0 after rejecting a copy into the
+constant register VI00 or VF00, though it writes no listing; oxide-vcl fails
+that run like any other.) Oxide mode exits 0 on success, 1 when the program
+fails to compile, a file can't be read or written, or a warning fails the
+run, and 2 for a bad command line.
 
 `--warnings-as-errors` fails a run that prints any warning, after printing
 every warning and error: each warning prints as an error, marked

@@ -178,16 +178,14 @@ Any other write into such a web is removed: see
 builds the webs once after its second copy pass (`spell_zero_webs`) to make
 both checks.
 
-The library returns a typed compilation error. In vcl mode the CLI keeps the
-status zero and empty stdout, and prints the error in its own layout; oxide
-mode fails the run (status 1). Ordinary compiler errors keep their usual
-status handling.
-
-The differential comparator classifies `ERROR:` plus absent assembly at status zero
-as `diagnostic_failure`, for both vcl and candidate observations, distinct from
-compiled output, help and a status-255 rejection. A Rust process test compares the
-exact captured streams and status and requires the library result to remain an
-error.
+The library returns a typed compilation error. The port treats it as the
+error it is and fails the run, unlike vcl: status 255 in vcl mode
+(`VCL_EXIT_FAILURE`), 1 in oxide mode, with no listing written. A build
+that relied on vcl's status 0 would go on with a missing or stale listing.
+`CompileError::vcl_exits_zero` marks the error, so the corpus and probe
+comparisons accept the port's failure where vcl's recorded run exits 0
+(`a_copy_into_the_constant_register_fails_the_run`,
+`a_copy_into_the_constant_register_fails_where_vcl_exits_zero`).
 
 ## Observations and remaining differences
 

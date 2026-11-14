@@ -138,7 +138,7 @@ fn oxide_mode_rejects_the_name() {
                 "{token}: {:?}",
                 errors[0]
             );
-            assert_eq!(errors[0].exit_status(), 255);
+            assert!(!errors[0].vcl_exits_zero());
         }
     }
 }

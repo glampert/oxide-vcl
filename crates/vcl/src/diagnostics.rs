@@ -51,6 +51,33 @@ impl Mode {
     }
 }
 
+/// The exit status of a failed run in vcl mode, whatever failed: vcl
+/// 1.4beta7's `exit(-1)` as its parent sees it.
+pub const VCL_EXIT_FAILURE: u8 = 255;
+/// The exit status of a failed run in oxide mode: the program does not
+/// compile, a file can't be read or written, or a warning fails the run.
+pub const OXIDE_EXIT_FAILURE: u8 = 1;
+/// The exit status of a bad command line in oxide mode.
+pub const OXIDE_EXIT_USAGE: u8 = 2;
+
+impl Mode {
+    /// The exit status of a failed run.
+    pub const fn failure_status(self) -> u8 {
+        match self {
+            Mode::Vcl => VCL_EXIT_FAILURE,
+            Mode::Oxide => OXIDE_EXIT_FAILURE,
+        }
+    }
+
+    /// The exit status of a bad command line.
+    pub const fn usage_status(self) -> u8 {
+        match self {
+            Mode::Vcl => VCL_EXIT_FAILURE,
+            Mode::Oxide => OXIDE_EXIT_USAGE,
+        }
+    }
+}
+
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())

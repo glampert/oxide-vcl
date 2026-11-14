@@ -148,12 +148,12 @@ pub fn compare(case: &Case) -> Result<(), String> {
             "port accepts, the original exits {}",
             case.exit_code
         )),
-        // The copy detector's abort: an ERROR, no listing and exit 0, which
-        // the driver reproduces from `CompileError::exit_status`.
+        // The copy detector's abort: an error, no listing and vcl's exit 0,
+        // where the port fails the run (`CompileError::vcl_exits_zero`).
         Err(errors)
             if case.exit_code == 0
                 && normalized(&case.expected).is_empty()
-                && errors.iter().all(|error| error.exit_status() == 0) =>
+                && errors.iter().all(vcl::CompileError::vcl_exits_zero) =>
         {
             Ok(())
         }

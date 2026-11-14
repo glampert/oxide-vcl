@@ -85,11 +85,12 @@ const FIELD_LETTERS: &str = ".init_vf_all\n\
 /// The status of a failed run: vcl's 255 in vcl mode, 1 (or 2 for a bad
 /// command line) in oxide mode.
 fn failure_status(mode: &str, command_line: bool) -> i32 {
-    match (mode, command_line) {
-        ("--mode=vcl", _) => 255,
-        (_, true) => 2,
-        _ => 1,
-    }
+    let mode = vcl::Mode::from_name(mode.trim_start_matches("--mode=")).unwrap();
+    i32::from(if command_line {
+        mode.usage_status()
+    } else {
+        mode.failure_status()
+    })
 }
 
 const MODES: [&str; 2] = ["--mode=vcl", "--mode=oxide"];
@@ -249,9 +250,10 @@ fn loop_hint_warnings_carry_their_line() {
 
 /// vcl's copy detector rejects a copy into VI00 but exits with status 0
 /// (`copy-reorder-constant-dest`), and so a copy into a name an EXIT binds to
-/// VF00 (`copy-output-zero-binding`); oxide mode fails the run.
+/// VF00 (`copy-output-zero-binding`); the port fails the run, writing
+/// nothing, in both modes.
 #[test]
-fn a_copy_into_the_constant_register_fails_in_oxide_mode() {
+fn a_copy_into_the_constant_register_fails_the_run() {
     let raw = ".init_vf_all\n.init_vi_all\n--enter\nin_vf source(vf01)\nin_vi base(vi01)\n\
                --endenter\n.vsm reorder\nnop iaddiu vi00,base,0\n.endvsm\n--exit\n\
                out_vi base(vi01)\n--endexit\n";
@@ -266,24 +268,24 @@ fn a_copy_into_the_constant_register_fails_in_oxide_mode() {
                  --endexit\n";
     for (name, source, line) in [("raw", raw, 8), ("bound", bound, 6)] {
         let files = [("copy.vcl", source)];
-        let error = format!(
-            "copy.vcl({line}): error: this copy writes to the constant register (vf00 or vi00)\n"
-        );
-        let vcl = run(
-            &format!("copy-zero-{name}"),
-            &["-oout.vsm", "copy.vcl"],
-            &files,
-        );
-        assert_eq!(vcl.status, 0, "{name}");
-        assert!(vcl.stderr.starts_with(&error), "{name}: {}", vcl.stderr);
-        let oxide = run(
-            &format!("copy-zero-{name}-oxide"),
-            &["--mode=oxide", "-oout.vsm", "copy.vcl"],
-            &files,
-        );
-        assert_eq!(oxide.status, 1, "{name}");
-        assert!(oxide.stderr.starts_with(&error), "{name}: {}", oxide.stderr);
-        for run in [vcl, oxide] {
+        for mode in MODES {
+            let run = run(
+                &format!("copy-zero-{name}"),
+                &[mode, "-oout.vsm", "copy.vcl"],
+                &files,
+            );
+            assert_eq!(run.status, failure_status(mode, false), "{name} {mode}");
+            assert!(
+                run.stderr.starts_with(&format!(
+                    "copy.vcl({line}): error: this copy writes to the constant register (vf00 or vi00)\n"
+                )),
+                "{name}: {}",
+                run.stderr
+            );
+            assert!(
+                run.stderr
+                    .ends_with("oxide-vcl: 1 error; no output written\n")
+            );
             assert_eq!(run.file("out.vsm"), None, "{name}");
         }
     }

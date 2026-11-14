@@ -104,18 +104,10 @@ impl CliError {
         &self.diagnostic.message
     }
 
-    /// Original `exit(-1)` argument, as observed at the i386 syscall boundary.
-    pub const fn raw_exit_code(&self) -> u32 {
-        u32::MAX
-    }
-
-    /// vcl's status 255, or 2 in oxide mode (the usual status of a usage
-    /// error).
+    /// The exit status: vcl's 255, or 2 in oxide mode (the usual status of
+    /// a usage error).
     pub const fn exit_status(&self) -> u8 {
-        match self.mode {
-            vcl::Mode::Vcl => unix_exit_status(self.raw_exit_code()),
-            vcl::Mode::Oxide => 2,
-        }
+        self.mode.usage_status()
     }
 }
 
@@ -126,11 +118,6 @@ impl fmt::Display for CliError {
 }
 
 impl std::error::Error for CliError {}
-
-/// Linux exposes the low byte of a normal process's exit argument to its parent.
-pub const fn unix_exit_status(raw_code: u32) -> u8 {
-    raw_code as u8
-}
 
 /// Parse arguments excluding the executable's name.
 pub fn parse<I, S>(arguments: I) -> Result<Arguments, CliError>
@@ -339,6 +326,7 @@ fn strtol_decimal_i32(value: &str) -> i32 {
 mod tests {
     use super::*;
     use vcl::diagnostics::Severity;
+    use vcl::diagnostics::{OXIDE_EXIT_USAGE, VCL_EXIT_FAILURE};
 
     #[test]
     fn mode_defaults_to_vcl_and_oxide_is_explicit() {
@@ -359,7 +347,7 @@ mod tests {
                 }
         );
         assert_eq!(error.to_string(), "unknown mode 'sce'");
-        assert_eq!(error.exit_status(), 255);
+        assert_eq!(error.exit_status(), VCL_EXIT_FAILURE);
     }
 
     #[test]
@@ -405,10 +393,10 @@ mod tests {
                 "{argument}"
             );
             assert!(error.to_string().contains("fix"), "{argument}");
-            assert_eq!(error.exit_status(), 255);
+            assert_eq!(error.exit_status(), VCL_EXIT_FAILURE);
         }
         let error = parse(["--mode=oxide", "--fix=alias-warn"]).unwrap_err();
-        assert_eq!(error.exit_status(), 2);
+        assert_eq!(error.exit_status(), OXIDE_EXIT_USAGE);
         assert!(error.diagnostic.text().contains("unknown fix 'alias-warn'"));
     }
 
@@ -448,11 +436,14 @@ mod tests {
     fn command_line_errors_use_the_mode_given_anywhere() {
         let error = parse(["-x", "--mode=oxide"]).unwrap_err();
         assert_eq!(error.mode, vcl::Mode::Oxide);
-        assert_eq!(error.exit_status(), 2);
+        assert_eq!(error.exit_status(), OXIDE_EXIT_USAGE);
         let error = parse(["-o", "out.vsm", "--mode=oxide", "file.vcl"]).unwrap_err();
         assert_eq!(error.mode, vcl::Mode::Oxide);
         let error = parse(["-x"]).unwrap_err();
-        assert_eq!((error.mode, error.exit_status()), (vcl::Mode::Vcl, 255));
+        assert_eq!(
+            (error.mode, error.exit_status()),
+            (vcl::Mode::Vcl, VCL_EXIT_FAILURE)
+        );
     }
 
     #[test]
@@ -561,10 +552,8 @@ mod tests {
     }
 
     #[test]
-    fn failures_retain_raw_syscall_code_and_parent_visible_status() {
+    fn vcl_mode_fails_with_status_255() {
         let error = parse(["--unknown"]).unwrap_err();
-        assert_eq!(error.raw_exit_code(), 0xffff_ffff);
-        assert_eq!(error.exit_status(), 255);
-        assert_eq!(unix_exit_status(0x1234), 0x34);
+        assert_eq!(error.exit_status(), VCL_EXIT_FAILURE);
     }
 }
