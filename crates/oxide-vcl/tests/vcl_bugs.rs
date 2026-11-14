@@ -14,7 +14,7 @@ mod vu_model;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use vcl_cli as cli;
-use vu_model::{Program, State};
+use vu_model::{Config, Program, State};
 
 fn directory(case: &str) -> PathBuf {
     let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
@@ -1421,4 +1421,165 @@ fn the_size_fix_warns_only_about_programs_too_large() {
         )]
     );
     assert!(compiled(&source, &[]).unwrap().warnings.is_empty());
+}
+
+// ----------------------------------------------
+// F7: values in flight at a pipelined loop's entry (`--fix=entry`)
+// ----------------------------------------------
+
+fn entry_compile(source: &str, flags: &[&str]) -> String {
+    compile_with(source, flags).unwrap()
+}
+
+/// Data memory after running `listing` from the first row, with VI01 a
+/// pointer, VI02 a count of `count` and memory holding distinct values.
+fn entry_run(listing: &str, count: u16) -> Vec<[u32; 4]> {
+    let mut state = State::default();
+    state.set_vector(1, [6.0, 3.0, 1.5, 2.0]);
+    state.vi[1] = 20;
+    state.vi[2] = count;
+    for (address, qword) in state.memory.iter_mut().enumerate() {
+        *qword = [(address % 5 + 1) as f32, (address % 3 + 2) as f32, 0.5, 1.0].map(f32::to_bits);
+    }
+    Program::parse(listing)
+        .unwrap()
+        .run(state, Config::TIMED, 4096)
+        .unwrap()
+        .state
+        .memory
+}
+
+/// A `--LoopCS` loop whose first iteration reads `entry_value`, which the
+/// instruction before the loop writes.
+fn entry_program(before: &str, first: &str) -> String {
+    format!(
+        ".init_vf_all\n\
+         .init_vi_all\n\
+         --enter\n\
+         in_vf a(vf01)\n\
+         in_vi p(vi01)\n\
+         in_vi n(vi02)\n\
+         --endenter\n\
+         {before}\n\
+         loop:\n\
+         --LoopCS 1,0\n\
+         {first}\n\
+         sq.x b,0(p)\n\
+         iaddiu p,p,1\n\
+         lq a,0(p)\n\
+         {before}\n\
+         isubiu n,n,1\n\
+         ibne n,vi00,loop\n\
+         --exit\n\
+         --endexit\n"
+    )
+}
+
+#[test]
+fn the_entry_fix_waits_for_values_in_flight_before_a_pipelined_loop() {
+    for (before, first, wait) in [
+        // Q from a DIV, read by the first MULQ (`loop-entry-q-in-flight`).
+        ("div Q,a.x,a.y", "mulq b,a,Q", "waitq"),
+        // P from an EFU instruction, read by the first MFP.
+        ("esadd P,a", "mfp.x b,P", "waitp"),
+    ] {
+        let source = entry_program(before, first);
+        // Not pipelined, so not affected: what the loop computes.
+        let reference = entry_compile(&source, &["-L"]);
+        let unfixed = entry_compile(&source, &[]);
+        assert!(unfixed.contains("__MAIN_LOOP:"), "{unfixed}");
+        // vcl's kernel reads Q before it lands; its P is read late enough.
+        if wait == "waitq" {
+            assert_ne!(
+                entry_run(&unfixed, 1),
+                entry_run(&reference, 1),
+                "{unfixed}"
+            );
+        }
+        for flags in [&["--fix=entry"][..], &["--mode=oxide"]] {
+            let fixed = entry_compile(&source, flags);
+            assert!(fixed.contains("__MAIN_LOOP:"), "{flags:?}: {fixed}");
+            let rows = tables(&fixed).concat();
+            let kernel = rows.iter().position(|row| row.contains("ibne")).unwrap();
+            assert!(
+                rows[..kernel].iter().any(|row| row.ends_with(wait)),
+                "{flags:?}: {fixed}"
+            );
+            for count in 1..=6 {
+                assert_eq!(
+                    entry_run(&fixed, count),
+                    entry_run(&reference, count),
+                    "{before} {flags:?} count {count}: {fixed}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_entry_fix_waits_for_a_flag_set_before_a_pipelined_loop() {
+    // The status flags of the ADD before the loop, read by the first FSAND.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vf a(vf01)\n\
+                  in_vi p(vi01)\n\
+                  in_vi n(vi02)\n\
+                  --endenter\n\
+                  sub b,a,a\n\
+                  loop:\n\
+                  --LoopCS 1,0\n\
+                  fsand r,0x1\n\
+                  isw.x r,10(p)\n\
+                  iaddiu p,p,1\n\
+                  lq a,0(p)\n\
+                  add b,a,a\n\
+                  isubiu n,n,1\n\
+                  ibne n,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let reference = entry_compile(source, &["-L"]);
+    let fixed = entry_compile(source, &["--fix=entry"]);
+    assert!(fixed.contains("__MAIN_LOOP:"), "{fixed}");
+    assert_ne!(fixed, entry_compile(source, &[]));
+    for count in 1..=6 {
+        assert_eq!(
+            entry_run(&fixed, count),
+            entry_run(&reference, count),
+            "count {count}: {fixed}"
+        );
+    }
+}
+
+#[test]
+fn the_entry_fix_leaves_loops_that_read_nothing_from_before_them() {
+    // The loop writes Q before reading it, and vcl mode stays unchanged.
+    let plain = ".init_vf_all\n\
+                 .init_vi_all\n\
+                 --enter\n\
+                 in_vf a(vf01)\n\
+                 in_vi p(vi01)\n\
+                 in_vi n(vi02)\n\
+                 --endenter\n\
+                 div Q,a.x,a.y\n\
+                 loop:\n\
+                 --LoopCS 1,0\n\
+                 lq a,0(p)\n\
+                 div Q,a.y,a.x\n\
+                 iaddiu p,p,1\n\
+                 isubiu n,n,1\n\
+                 ibne n,vi00,loop\n\
+                 --exit\n\
+                 --endexit\n";
+    assert_eq!(
+        entry_compile(plain, &["--fix=entry"]),
+        entry_compile(plain, &[])
+    );
+    assert_eq!(
+        entry_compile(
+            &entry_program("div Q,a.x,a.y", "mulq b,a,Q"),
+            &["-L", "--fix=entry"]
+        ),
+        entry_compile(&entry_program("div Q,a.x,a.y", "mulq b,a,Q"), &["-L"])
+    );
 }

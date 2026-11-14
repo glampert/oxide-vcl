@@ -53,6 +53,8 @@ fixes for vcl 1.4beta7's defects (--mode=oxide enables them all):
                  size: warn about programs larger than VU1 micro memory
                  operands: accept memory operands like 0(p) in ilw and isw,
                  which vcl rejects for being short
+                 entry: wait for Q, P or a flag set before a software-
+                 pipelined loop that reads it in its first iteration
 
 optimizations (--mode=oxide only, which runs them all by default):
   --opt=<names>  run only the named optimizations, separated by commas; may

@@ -282,7 +282,7 @@ fn optimizations_keep_what_every_program_computes() {
 
 /// Programs whose oxide-mode code computes something other than the
 /// original's, because a fix repairs it (docs/VCL_BUGS.md).
-const FIXED: [(&str, &str); 9] = [
+const FIXED: [(&str, &str); 10] = [
     ("openvcl__repros_store_load_alias", "alias"),
     ("openvcl__repros_store_store_alias", "alias"),
     ("checker-mem-copied-base", "alias"),
@@ -292,6 +292,7 @@ const FIXED: [(&str, &str); 9] = [
     ("mem-loop-same-base", "alias"),
     ("mem-loop-same-base-timid", "alias"),
     ("mem-loop-store-store", "alias"),
+    ("loop-entry-q-in-flight", "entry"),
 ];
 
 #[test]

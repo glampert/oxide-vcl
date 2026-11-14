@@ -410,12 +410,12 @@ mod tests {
         for flags in [
             vec!["--fix=all"],
             vec!["--fix=end,all"],
-            vec!["--fix=imm,alias,clip,end,size,operands"],
+            vec!["--fix=imm,alias,clip,end,size,operands,entry"],
             vec![
                 "--fix=end",
                 "--fix=clip,size",
                 "--fix=imm,alias,operands",
-                "--fix=end",
+                "--fix=end,entry",
             ],
         ] {
             let options = parse(flags.iter().copied().chain(["a.vcl"]))

@@ -27,6 +27,7 @@ mod flow_graph;
 mod generated_rows;
 mod immediate_fields;
 mod loi_functions;
+mod loop_entry;
 mod memory_alias;
 mod program_size;
 mod raw_reduction;
@@ -365,6 +366,9 @@ struct Source {
     bindings: BTreeMap<usize, usize>,
     /// Oxide mode's `.vu_work_area` requests, in source order.
     work_areas: Vec<spill::WorkArea>,
+    /// Lowercase first labels of the loops the `entry` fix waits before
+    /// (`loop_entry`).
+    waited_loops: BTreeSet<String>,
 }
 
 /// The original's global flow UIDs, one per source statement
@@ -516,6 +520,7 @@ impl Source {
             field_letter_names: BTreeSet::new(),
             bindings: BTreeMap::new(),
             work_areas: Vec::new(),
+            waited_loops: BTreeSet::new(),
         }
     }
 
@@ -1506,9 +1511,44 @@ fn compile_parsed(
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
+    let waiting = options.fixes(Fix::Entry) || options.optimizes(Optimization::Loops);
+    let unchanged = waiting.then(|| parsed.clone());
     let mut program = Source::new(options);
     program.parse_program(parsed)?;
+    let Some(unchanged) = unchanged else {
+        return compile_source(program, filename, options);
+    };
+    // The `entry` fix adds raw code before some loops (`loop_entry`): the
+    // program is parsed again with it. A wait for a loop the `loops`
+    // optimization then does not pipeline only costs cycles, so the
+    // program is compiled again without it.
+    let mut waits = loop_entry::entry_waits(&program, options);
+    loop {
+        if waits.is_empty() {
+            return compile_source(program, filename, options);
+        }
+        let mut parsed = unchanged.clone();
+        if !loop_entry::insert_entry_waits(&mut parsed, &waits) {
+            return compile_source(program, filename, options);
+        }
+        let mut waited = Source::new(options);
+        waited.parse_program(parsed)?;
+        waited.waited_loops = loop_entry::waited_labels(&waits);
+        let output = compile_source(waited, filename, options)?;
+        let before = waits.len();
+        waits.retain(|wait| wait.annotated() || loop_entry::pipelined(wait, &output.assembly));
+        if waits.len() == before {
+            return Ok(output);
+        }
+    }
+}
 
+/// Compiles a parsed program's regions into a listing.
+fn compile_source(
+    mut program: Source,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Box<Failure>> {
     let mut output = Compiled::default();
     output.warnings.append(&mut program.warnings);
     write_prologue(&program, &mut output);

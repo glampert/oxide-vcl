@@ -6,8 +6,8 @@ sets of disassembled VU programs. This chapter asks the next question: where doe
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-Two optimizations exist: `exit` (part of O9) and `loops` (the first step
-of O1). The measuring and checking tools of section 5 exist; section 6
+Two optimizations exist: `exit` (part of O9) and `loops` (O1 without
+O10's budget option). The measuring and checking tools of section 5 exist; section 6
 gives the order of the rest.
 
 The ground rules:
@@ -206,21 +206,35 @@ with three limits:
   none is found, the loop stays as it is.
 - **Size.** A region whose pipelined loops would take the program past the
   2048 instructions of VU1 micro memory is compiled without them.
-- **Values from before the loop.** vcl's pipeliner times Q, P, R and the
-  MAC, status and clip flags, which are not interlocked, between iterations
-  but not from the code before the loop: with `--LoopCS 1,0` on
-  `loop-entry-q-in-flight`, vcl's kernel reads the quotient of the DIV
-  before the loop one cycle after it issues (observed from vcl 1.4beta7).
-  A loop that reads one of these before writing it is left alone.
+- **Values from before the loop.** vcl's pipeliner times Q, P and the MAC,
+  status and clip flags, which are not interlocked, between iterations but
+  not from the code before the loop (defect F7 in
+  [VCL_BUGS.md](VCL_BUGS.md#f7-values-in-flight-at-a-pipelined-loops-entry)).
+  The `entry` fix, implied by oxide mode, waits for them before the loop: a
+  WAITQ or WAITP row, or empty rows for a flag. A loop a branch can enter
+  past the wait is left alone, and a loop that ends up not pipelined is
+  compiled again without its wait, which would only cost cycles.
 
-In the public corpus it pipelines 7 loops: `vertexLoop` of the four openvcl
-examples (`sprite`, `triangle`, `triangle-gasp`, `triangle_strip`), 27 cycles
-per iteration as straight-line code against a period of 9, and three tyra
-renderers, 30 → 23, 67 → 57 and 70 → 60. The loops of quake2's particles,
-doom3 and the other tyra renderers are hand-pipelined: their first
-iteration reads a Q or flag value from before the loop, so the last limit
-keeps them. Timing those values at the loop's entry, which would also
-repair vcl's defect, is the next step.
+In the public corpus it pipelines 18 loops, from 1,002 cycles per iteration
+in all as straight-line code (rows and stalls) to a period sum of 742
+(−26%):
+
+| Loops | Straight-line | Period |
+| --- | ---: | ---: |
+| openvcl examples `vertexLoop` (`sprite`, `triangle`, `triangle-gasp`, `triangle_strip`) | 27 each | 9 each |
+| quake2 `particles` `lParticleLoop` | 40 | 19 |
+| doom3 `world_lm` `lTransform`, `lFanLoop`; `world_strips` `lFanLoop` | 43, 36, 36 | 21, 28, 28 |
+| tyra `dynpip` `vertexLoop` (c, d, tc, td) | 59, 107, 64, 125 | 36, 95, 48, 105 |
+| tyra `mcpip` `vertexLoop` (as_is, cull) | 30, 45 | 23, 33 |
+| tyra `stapip` `vertexLoop` (as_is d, td; cull d, td) | 67, 70, 84, 88 | 57, 60, 75, 78 |
+
+quake2's particles, `dynpip_c` and `mcpip_as_is` reach their bounds. The
+code grows: rows and stalls over the corpus go from 13,016 to 14,682, the
+prologues and epilogues. In the cycle report (docs/TESTING.md), over the
+public corpus and the probes at each count seed, one run of 733 is slower:
+`checker-lat-status-loop` at one iteration, 9 → 10 cycles, from the rows
+the `entry` fix adds for a flag. quake2's particles go from 515 to 277
+cycles at the largest count.
 
 ### O2. Reach the bound in kernels the original's search gives up on
 
@@ -500,7 +514,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | --- | --- | --- | --- |
 | 0 | Survey tool, `--opt=` switch, timed model, equivalence harness (section 5) | Medium | Baseline per table and per program; a check that oxide output computes what vcl output computes |
 | 1 | O9 (`exit`: the E row on the last instructions) | Small | A row and a cycle off 36 of 52 public programs |
-| 2 | O1 (pipeline unannotated loops) with O10 (code budget): `loops`, then the entry timing of Q, P and flags | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 3× on `sprite` |
+| 2 | O1 (pipeline unannotated loops) with O10 (code budget): `loops` and the `entry` fix | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 3× on `sprite` |
 | 3 | O3 step 1 (reschedule loop prologues and epilogues) | Medium | Most of the 1,782 stall cycles in loop parts |
 | 4 | O4 (merge induction variables, post-increment folding) | Medium | One cycle per iteration in lower-bound kernels (`general` `xform_loop` 22 → 21, `fast_nolights` 12 → 11) |
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
@@ -521,9 +535,9 @@ Why this order:
   tight dependency chains. Filling them needs work from other streams,
   which is what O5's regions bring.
 - **O1 is the largest measured runtime gain.** vcl's own pipeliner does
-  the work given `--LoopCS 1,0` (O1, the `loops` optimization); what
-  remains is the entry timing of values that are not interlocked, which
-  keeps the hand-pipelined loops out.
+  the work given `--LoopCS 1,0` (the `loops` optimization), with the
+  `entry` fix for the values it does not time from before the loop. What
+  remains of O10 is a size option for programs that share micro memory.
 - **O3 before O2 and O4** although they save more per vertex: O3 keeps the
   original's data flow, so its risk is low. It reschedules code that is
   already allocated, so reuse of physical registers limits what it finds.

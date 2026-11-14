@@ -21,8 +21,7 @@ original" below) with synthetic probes. The results fall into three groups:
 
 The shared defects get opt-in fixes, one per defect, plus a warning for
 program size: `imm` (F1), `alias` (F2), `clip` (F3), `end` (F4),
-`size` (F5) and `operands` (F6). F7, found while pipelining loops in oxide
-mode, has no fix yet.
+`size` (F5), `operands` (F6) and `entry` (F7).
 
 Ground rules:
 
@@ -90,7 +89,7 @@ Field widths and latencies come from the VU User's Manual 6.0:
 | `-c` schedules differently | No | identical pairs with and without `-c`: 3 corpus programs on the original, 49 on the port | — |
 | `branches`: wrapped offsets | No: the program counter wraps, so they land | VCL emits labels; dvp-as encodes | program-size warning only (F5) |
 | Short ILW, ISW, ILWR, ISWR operands | **Yes**, valid programs are rejected | `checker-parse-*` | F6 |
-| A pipelined loop reading Q, P or a flag set before it | **Yes** | `loop-entry-q-in-flight` | F7 (no fix) |
+| A pipelined loop reading Q, P or a flag set before it | **Yes** | `loop-entry-q-in-flight` | F7 |
 
 ## 3. Defects the original shares
 
@@ -477,12 +476,28 @@ whose MULQ then reads the old Q (observed from vcl 1.4beta7). The same loop
 without the hint is scheduled as straight-line code, which waits for the
 quotient.
 
-The port reproduces it in both modes. Oxide mode's `loops` optimization
-does not give such a loop the `--LoopCS` it lacks
-([OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md), O1). There is no fix yet:
-a loop with `--LoopCS` that reads one of these values first should be
-written to wait for it (WAITQ or WAITP before the loop, or enough
-instructions between).
+The port reproduces it by default.
+
+**Fix (`--fix=entry`).** Before compiling, the fix finds each loop that
+will be software-pipelined (`--LoopCS`, or the `loops` optimization's
+derived hint) and reads Q, P, CLIP, MAC or a current status flag before
+writing it (`crates/vcl/src/compiler/loop_entry.rs`). CLIPW's read of the
+clip history does not count: the flags shift in order. Before the loop's
+label it puts raw code, as if the source had it:
+
+- `nop waitq` for Q and `nop waitp` for P, which stall only while the
+  value is still on its way;
+- for a flag, raw rows up to three, after which a flag set in the row
+  before them has landed (latency 4).
+
+Only a loop entered by falling into its label is changed; a branch to it
+from elsewhere would pass the wait, and vcl's code stays. The raw code
+splits the stream before the loop, and the program is then compiled as
+usual. The F7 tests in `crates/oxide-vcl/tests/vcl_bugs.rs` compile loops
+whose first iteration reads Q, P or the status flags of the instruction
+before them, and require the fixed listing to compute, in the timed VU
+model, what the same source compiled with `-L` computes; the unfixed Q
+loop does not.
 
 ## 4. OpenVCL-only defects (absent from the original)
 

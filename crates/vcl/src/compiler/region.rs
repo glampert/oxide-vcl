@@ -2480,43 +2480,29 @@ fn referenced_labels(
 /// store run past the last iteration: the hint promises only what every
 /// such loop does.
 ///
-/// A loop that reads Q, P, R or a flag before writing it is left alone:
-/// vcl 1.4beta7's pipeliner times these values, which are not interlocked,
-/// between iterations but not from before the loop, so its kernel can read
-/// one before it lands (observed from vcl 1.4beta7 with `--LoopCS 1,0` on
-/// `checker-lat-q-loop`, where the first MULQ reads the Q before the DIV's).
+/// A loop that reads Q, P or a flag before writing it is pipelined only
+/// when the `entry` fix waits for that value before the loop
+/// (`loop_entry`): vcl's pipeliner does not time such values from the code
+/// before the loop (defect F7).
 fn with_derived_loop_hints(program: &Source, region: &Region) -> Region {
-    let not_interlocked = |register: usize| {
-        source_passes::hardware_register(&program.registers.named(register).name)
-            .is_some_and(|(_, _, nonblocking, _)| nonblocking != 0)
-    };
     let mut region = region.clone();
-    for block in &mut region.blocks {
-        let mut written = BTreeSet::new();
-        let mut reads_entry_value = false;
-        for &id in &block.operations {
-            let effects = &region.instructions[id].effects;
-            reads_entry_value |= effects
-                .reads
-                .iter()
-                .any(|read| !written.contains(&read.register) && not_interlocked(read.register));
-            written.extend(effects.writes.iter().map(|write| write.register));
-        }
-        if reads_entry_value {
+    for id in 0..region.blocks.len() {
+        let block = &region.blocks[id];
+        if block.loop_hints.minimum.is_some() || !loop_entry::is_ordinary_self_loop(&region, block)
+        {
             continue;
         }
-        let self_loop = matches!(&block.end, End::Branch { target: Some(target), conditional: true, call: false, .. }
-            if block.labels.iter().any(|label| label.eq_ignore_ascii_case(target)));
-        let ordinary = !block.operations.is_empty()
-            && block
-                .operations
-                .iter()
-                .all(|&id| region.instructions[id].instruction.mode == ParseMode::Vcl);
-        if self_loop && ordinary && block.loop_hints.minimum.is_none() {
-            block.loop_hints.minimum = Some(1);
-            block.loop_hints.safe = 0;
-            block.loop_hints.derived = true;
+        let waited = block
+            .labels
+            .first()
+            .is_some_and(|label| program.waited_loops.contains(&label.to_ascii_lowercase()));
+        if !waited && loop_entry::reads_entry_value(program, &region, block) {
+            continue;
         }
+        let hints = &mut region.blocks[id].loop_hints;
+        hints.minimum = Some(1);
+        hints.safe = 0;
+        hints.derived = true;
     }
     region
 }

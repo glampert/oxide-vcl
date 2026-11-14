@@ -310,29 +310,46 @@ fn loops_keeps_values_the_code_after_the_loop_reads() {
 }
 
 #[test]
-fn loops_leaves_a_loop_that_reads_q_from_before_it() {
-    // The first MULQ reads the quotient of the DIV before the loop. vcl's
-    // pipeliner would read it before it lands (`loop-entry-q-in-flight`).
-    let source = ".init_vf_all\n\
-                  .init_vi_all\n\
-                  --enter\n\
-                  in_vf a(vf01)\n\
-                  in_vi n(vi02)\n\
-                  in_vi p(vi01)\n\
-                  --endenter\n\
-                  div Q,a.x,a.y\n\
-                  loop:\n\
-                  mulq b,a,Q\n\
-                  sq b,0(p)\n\
-                  iaddiu p,p,1\n\
-                  lq a,0(p)\n\
-                  div Q,a.x,a.y\n\
-                  isubiu n,n,1\n\
-                  ibne n,vi00,loop\n\
-                  --exit\n\
-                  --endexit\n";
-    let (_, optimized) = same_results(source);
-    assert!(!pipelined(&optimized), "{optimized}");
+fn loops_waits_for_q_from_before_the_loop() {
+    // The first MULQ reads the quotient of the DIV before the loop, which
+    // vcl's pipeliner would read before it lands (F7): the `entry` fix puts
+    // a WAITQ before the loop, and the loop is pipelined.
+    let source = |body: &str| {
+        format!(
+            ".init_vf_all\n\
+             .init_vi_all\n\
+             --enter\n\
+             in_vf a(vf01)\n\
+             in_vi p(vi01)\n\
+             in_vi n(vi02)\n\
+             --endenter\n\
+             div Q,a.x,a.y\n\
+             loop:\n\
+             mulq b,a,Q\n\
+             {body}\
+             iaddiu p,p,1\n\
+             lq a,0(p)\n\
+             div Q,a.x,a.y\n\
+             isubiu n,n,1\n\
+             ibne n,vi00,loop\n\
+             --exit\n\
+             --endexit\n"
+        )
+    };
+    let longer = source(
+        "mul c,b,b\n\
+         add c,c,b\n\
+         sq c,0(p)\n",
+    );
+    let (plain, optimized) = same_results(&longer);
+    assert!(pipelined(&optimized), "{optimized}");
+    let waits = |listing: &str| rows(listing).iter().any(|row| row.ends_with("waitq"));
+    assert!(waits(&optimized) && !waits(&plain), "{optimized}");
+    // A loop pipelining does not shorten keeps no wait either.
+    let short = source("sq b,0(p)\n");
+    let (_, optimized) = same_results(&short);
+    assert!(!pipelined(&optimized) && !waits(&optimized), "{optimized}");
+    assert_eq!(optimized, compile(&short, &["--opt=exit"]));
 }
 
 #[test]

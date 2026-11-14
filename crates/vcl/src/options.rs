@@ -96,17 +96,22 @@ pub enum Fix {
     /// Memory operands shorter than vcl 1.4beta7's token decoder allows,
     /// such as `ilw.x t,0(p)`, are accepted (`operands`).
     Operands,
+    /// A software-pipelined loop that reads Q, P or a flag before writing
+    /// it waits for the value the code before it may still be computing
+    /// (`entry`).
+    Entry,
 }
 
 impl Fix {
     /// Every fix, in the order the help lists them.
-    pub const ALL: [Fix; 6] = [
+    pub const ALL: [Fix; 7] = [
         Fix::Imm,
         Fix::Alias,
         Fix::Clip,
         Fix::End,
         Fix::Size,
         Fix::Operands,
+        Fix::Entry,
     ];
 
     /// The fix's name on the command line.
@@ -118,6 +123,7 @@ impl Fix {
             Fix::End => "end",
             Fix::Size => "size",
             Fix::Operands => "operands",
+            Fix::Entry => "entry",
         }
     }
 
