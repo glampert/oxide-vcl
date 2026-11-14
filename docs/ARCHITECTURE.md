@@ -157,36 +157,37 @@ command-line driver is the separate `crates/oxide-vcl` crate.
 
 ### Modes and diagnostics
 
-`vcl::Mode` selects the compiler: `Vcl`, the default, is vcl 1.4beta7's
-behaviour and wording, which every test asserts; `Oxide` (`--mode=oxide`)
-enables the port's own fixes, optimizations and messages, which may break
-compatibility. The mode travels in `vcl::Options::mode`; code that departs
-from vcl checks it and keeps the vcl path unchanged. The modes differ in
-their messages and exit statuses, the listing comments, the
-constant-register copy (which fails the run in oxide mode), spilling into a
-`.vu_work_area`, and the fixes for vcl's defects: oxide mode enables every
-`vcl::Fix`, which vcl mode enables one by one with `--fix=`
+`vcl::Mode` selects the compiler: `Vcl`, the default, generates vcl
+1.4beta7's code, which the tests assert; `Oxide` (`--mode=oxide`) enables
+the port's own fixes and optimizations, which may break compatibility. The
+mode travels in `vcl::Options::mode`; code that departs from vcl checks it
+and keeps the vcl path unchanged. The modes differ in their exit statuses,
+the constant-register copy (which fails the run in oxide mode), field
+letters in names (an error in oxide mode), spilling into a `.vu_work_area`,
+`loi`'s math functions, and the fixes for vcl's defects: oxide mode enables
+every `vcl::Fix`, which vcl mode enables one by one with `--fix=`
 ([VCL_BUGS.md](VCL_BUGS.md)). A fix is checked with `Options::fixes(fix)`,
-and `Source::fixes` carries the set into the compiler.
+and `Source::fixes` carries the set into the compiler. The mode does not
+change how messages or the listing's comments are printed.
 
 Every message is a typed value in `vcl::diagnostics`, never preformatted
 text: `Message` groups `CliMessage` (command line), `DriverMessage` (files,
 streams, preprocessors), `ParseMessage` and `CompileMessage`.
 `CompileMessage::Internal` carries a failure of one of the port's own phases,
 for which vcl has no message. A `Diagnostic` adds severity and source line.
-Each message has a vcl wording (`vcl_text`) and an oxide one
-(`diagnostics/oxide.rs`: `Wording`, its text, the token it is about and a
-suggested fix). `Reporter` owns standard output and standard error and
-prints everything the driver writes (notices, warnings, compile and driver
-errors, the abort line, the help screen and the assembly), reproducing the
-vcl layout byte for byte in vcl mode. In oxide mode it prints each
-diagnostic as `file(line): severity: text` with the source line it was given
+Each message has one wording (`diagnostics/oxide.rs`: `Wording`, its text,
+the token it is about and a suggested fix); vcl 1.4beta7's texts are not
+reproduced. `Reporter` owns standard output and standard error and prints
+everything the driver writes (notices, warnings, compile and driver errors,
+the help screen and the assembly). It prints each diagnostic as
+`file(line): severity: text` with the source line it was given
 (`Reporter::set_source`), a caret under the token and the fix, counts
 warnings and errors for `--warnings-as-errors` and the closing count, and
-prints nothing on standard output for a failure. `CompileError` and `Compiled::warnings`
-carry these values; their `Display` is the vcl rendering. Developer traces,
-switched on by `VCL_*` environment variables, print through `vcl::trace!`
-and belong to neither mode.
+prints nothing on standard output for a failure. `CompileError` and
+`Compiled::warnings` carry these values; their `Display` is `line N: text`.
+Developer traces print through `vcl::trace!`, or `vcl::trace_if!` with the
+name of a switch; the switches are the `VCL_*` environment variables, read
+once into `vcl::debug::Switches`.
 
 Unit coverage of a score or allocator does not establish the original
 scheduler's complete lock, move, loop-expansion, or final-reduction behavior.

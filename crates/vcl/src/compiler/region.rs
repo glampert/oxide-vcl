@@ -34,9 +34,7 @@ pub(super) fn compile_region(
     match compile_region_round(program, region, unique, options, normal, output) {
         Ok(()) => Ok(()),
         Err(failure) if normal => {
-            if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
-                crate::trace!("normal loop round failed: {failure:?}");
-            }
+            crate::trace_if!(lpgen_trace, "normal loop round failed: {failure:?}");
             *output = initial;
             compile_region_round(program, region, unique, options, false, output)
         }
@@ -72,9 +70,7 @@ pub(super) fn compile_region_round(
     ) {
         Ok(()) => return Ok(()),
         Err(failure) if failure.kind == CompileErrorKind::Allocation && !options.dumb => {
-            if std::env::var_os("VCL_RETRY_TRACE").is_some() {
-                crate::trace!("retry after allocation failure: {failure:?}");
-            }
+            crate::trace_if!(retry_trace, "retry after allocation failure: {failure:?}");
             failure
         }
         Err(failure) => return Err(failure),
@@ -476,7 +472,7 @@ fn expand_and_prune(
 
 /// Traces each undefined dependency of an expanded loop (`VCL_LPGEN_TRACE`).
 fn trace_undefined(program: &Source, region: &Region, analysis: &flow::Analysis) {
-    if std::env::var_os("VCL_LPGEN_TRACE").is_none() {
+    if !crate::debug::switches().lpgen_trace {
         return;
     }
 
@@ -761,7 +757,7 @@ impl<'a> ScheduleContext<'a> {
     ) -> Self {
         let planned = if !options.dumb
             && candidate.strategy.is_none()
-            && std::env::var_os("VCL_OLD_SCHEDULER").is_none()
+            && !crate::debug::switches().old_scheduler
         {
             plan_wrangled_tables(
                 program,
@@ -1609,7 +1605,7 @@ fn allocate_family(
         return Ok(());
     }
 
-    if std::env::var_os("VCL_ALLOC_TRACE").is_some() {
+    if crate::debug::switches().alloc_trace {
         for v in &virtuals {
             crate::trace!(
                 "global {} {} forced {:?} rows {}",
@@ -2228,9 +2224,7 @@ fn raw_reduce_tables(
         }
 
         let stalled = table_stalls(region, &timing, &lengths, &placed, block_id, analysis);
-        if std::env::var_os("VCL_MOVE_TRACE").is_some() {
-            crate::trace!("raw reduce block {block_id} stalled {stalled}");
-        }
+        crate::trace_if!(move_trace, "raw reduce block {block_id} stalled {stalled}");
         if let Some(plan) = raw_reduce_wrangled(
             program,
             region,
@@ -2507,7 +2501,7 @@ impl Emitter<'_> {
                 && block.part_name.is_none()
                 && block.operations.is_empty()
                 && matches!(block.end, End::Exit { .. }));
-            if self.options.mode == crate::Mode::Vcl && commented {
+            if commented {
                 self.emit_table_comment(
                     block,
                     stream,

@@ -6,7 +6,7 @@
 
 use crate::allocator::allocation::{Allocator, VirtualRegister};
 use crate::analysis::flow::{self, Access, Definition};
-use crate::diagnostics::{CompileMessage, Diagnostic, Message, Severity};
+use crate::diagnostics::{CompileMessage, Diagnostic, Message, ParseMessage, Severity};
 use crate::isa::instruction::{
     self, Direction, MaskMode, RegisterFamily, Syntax, class, id, issue, order, subtype, unit,
 };
@@ -838,9 +838,9 @@ impl Source {
                 }
                 let request =
                     crate::analysis::memory::WorkAreaRequest::from_parsed(&device, address, size)
-                        .map_err(|e| internal(line, e))?;
+                        .map_err(|e| error(line, work_area_message(&e)))?;
                 crate::analysis::memory::activate_marigold(&request)
-                    .map_err(|e| internal(line, e))?;
+                    .map_err(|e| error(line, work_area_message(&e)))?;
             }
         }
         Ok(())
@@ -1304,6 +1304,22 @@ fn immediate_i32(
         .map(|value| value.to_i32())
         .ok_or_else(|| error(line, CompileMessage::LoopHintNotConstant))
 }
+/// The message for a work area vcl mode rejects: vcl 1.4beta7 never
+/// installs the memory a work area needs (observed, `spill-vf-area`).
+fn work_area_message(failure: &crate::analysis::memory::MemoryError) -> Message {
+    use crate::analysis::memory::MemoryError;
+    match failure {
+        MemoryError::CoreUnsupported => ParseMessage::CoreWorkArea.into(),
+        MemoryError::UnknownDevice => ParseMessage::WorkAreaDevice.into(),
+        MemoryError::EmptyArea | MemoryError::NegativeAddress | MemoryError::AreaOverrun => {
+            ParseMessage::WorkAreaOutsideMemory.into()
+        }
+        MemoryError::MissingVuMemoryPool | MemoryError::InvalidComponentMask(_) => {
+            CompileMessage::WorkAreaNeedsOxideMode.into()
+        }
+    }
+}
+
 fn error(line: usize, message: impl Into<Message>) -> CompileError {
     CompileError {
         line,
@@ -1492,7 +1508,7 @@ fn compile_parsed(
 
     let mut output = Compiled::default();
     output.warnings.append(&mut program.warnings);
-    write_prologue(&program, options, &mut output);
+    write_prologue(&program, &mut output);
 
     let unique = program
         .unique_prefix
@@ -1522,27 +1538,19 @@ fn compile_parsed(
             }));
         }
     }
-    write_epilogue(&program, options, &mut output);
+    write_epilogue(&program, &mut output);
     Ok(output)
 }
 
 /// Writes the listing header: banner, `.vu`/`.align`, `.global` exports,
 /// the MPG header and the `.name` start label.
-fn write_prologue(program: &Source, options: &Options, output: &mut Compiled) {
-    if options.mode == crate::Mode::Vcl {
-        // vcl's emitter banner, with oxide-vcl's name and version where vcl
-        // names itself.
-        output.assembly.push_str(&format!(
-            "; =================================================\n\
-             ; flowMon::Emit() oxide-vcl {} produced this code:\n",
-            crate::VERSION
-        ));
-    } else {
-        output.assembly.push_str(&format!(
-            "; oxide-vcl {} produced this code\n",
-            crate::VERSION
-        ));
-    }
+fn write_prologue(program: &Source, output: &mut Compiled) {
+    // vcl's emitter banner, naming oxide-vcl.
+    output.assembly.push_str(&format!(
+        "; =================================================\n\
+         ; oxide-vcl {} produced this code\n",
+        crate::VERSION
+    ));
     // Prologue: old syntax or an explicit `.vu`, unless MPG output.
     if (program.syntax == Syntax::Old || program.vu_directive) && program.mpg.is_none() {
         output.assembly.push_str("\t\t.vu\n");
@@ -1618,7 +1626,7 @@ fn make_labels_unique(program: &mut Source, unique: &str) {
 
 /// Writes the listing trailer: closing alignment and labels, MPG end
 /// markers and the instruction and register statistics.
-fn write_epilogue(program: &Source, options: &Options, output: &mut Compiled) {
+fn write_epilogue(program: &Source, output: &mut Compiled) {
     if program.align {
         output.assembly.push_str("\t\t.align 4\n");
     }
@@ -1629,22 +1637,12 @@ fn write_epilogue(program: &Source, options: &Options, output: &mut Compiled) {
         output.assembly.push_str("\t.EndMPG\n\t.EndDmaData\n");
     }
     let (integer, float) = register_counts(&output.assembly);
-    if options.mode == crate::Mode::Vcl {
-        output
-            .assembly
-            .push_str(&format!(";\tiCount={}\n", output.instruction_pairs));
-        output.assembly.push_str(&format!(
-            "; register stats:\n;{integer:4} VU User integer\n;{float:4} VU User floating point\n"
-        ));
-    } else {
-        output.assembly.push_str(&format!(
-            "; instruction pairs: {}\n",
-            output.instruction_pairs
-        ));
-        output.assembly.push_str(&format!(
-            "; registers used: {integer} VU integer; {float} VU floating point\n"
-        ));
-    }
+    output
+        .assembly
+        .push_str(&format!(";\tiCount={}\n", output.instruction_pairs));
+    output.assembly.push_str(&format!(
+        "; register stats:\n;{integer:4} VU User integer\n;{float:4} VU User floating point\n"
+    ));
 }
 
 /// vcl's register statistics: the distinct integer and floating-point

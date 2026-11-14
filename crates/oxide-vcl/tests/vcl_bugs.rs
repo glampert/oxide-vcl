@@ -1135,11 +1135,11 @@ fn messages(result: &Result<vcl::Compiled, Vec<vcl::CompileError>>) -> Vec<Strin
         Ok(compiled) => compiled
             .warnings
             .iter()
-            .map(|warning| warning.located(vcl::Mode::Vcl))
+            .map(|warning| warning.located())
             .collect(),
         Err(errors) => errors
             .iter()
-            .map(|error| error.diagnostic().located(vcl::Mode::Vcl))
+            .map(|error| error.diagnostic().located())
             .collect(),
     }
 }
@@ -1208,7 +1208,8 @@ fn the_imm_fix_rewrites_vi_steps_exactly() {
         assert!(compiled(&source, &[]).is_ok(), "{step}");
         let result = compiled(&source, &["--fix=imm"]);
         assert!(
-            messages(&result)[0].starts_with("line 6: immediate"),
+            messages(&result)[0].starts_with("line 6: ")
+                && messages(&result)[0].contains("does not fit"),
             "{step}: {result:?}"
         );
     }
@@ -1240,7 +1241,7 @@ fn the_imm_fix_rejects_offsets_and_flag_values_outside_their_fields() {
             assert!(result.is_err(), "{flags:?}: {case}");
             let message = &messages(&result)[0];
             assert!(
-                message.starts_with("line 10: immediate"),
+                message.starts_with("line 10: ") && message.contains("does not fit"),
                 "{case}: {message}"
             );
         }
@@ -1252,7 +1253,7 @@ fn the_imm_fix_rejects_offsets_and_flag_values_outside_their_fields() {
         .unwrap();
         let result = compiled(corpus::without_header(&input), flags);
         assert!(
-            messages(&result)[0].contains("immediate 2000 of isw"),
+            messages(&result)[0].contains("2000 does not fit isw's immediate field"),
             "{result:?}"
         );
     }
@@ -1278,8 +1279,8 @@ fn the_imm_fix_warns_about_masks_and_symbols_it_cannot_check() {
     assert_eq!(
         messages(&result),
         [
-            "line 7: fcand mask 0x1000001 has bits past the flag's 24 bits; they are ignored",
-            "line 9: fsand mask 0x1001 has bits past the flag's 12 bits; they are ignored",
+            "line 7: fcand's mask 0x1000001 has bits past the flag's 24 bits, which do not exist",
+            "line 9: fsand's mask 0x1001 has bits past the flag's 12 bits, which do not exist",
         ]
     );
     assert!(out_of_field(&result.unwrap().assembly).is_empty());
@@ -1294,8 +1295,8 @@ fn the_imm_fix_warns_about_masks_and_symbols_it_cannot_check() {
     assert_eq!(
         messages(&result),
         [
-            "line 6: symbolic immediate OFFSET of lq is not checked against its 11-bit field",
-            "line 7: symbolic immediate STEP of iaddi is not checked against its 5-bit field",
+            "line 6: 'OFFSET' is not a number, so its fit in lq's 11-bit field is not checked",
+            "line 7: 'STEP' is not a number, so its fit in iaddi's 5-bit field is not checked",
         ]
     );
     assert_eq!(
@@ -1409,7 +1410,7 @@ fn the_size_fix_warns_only_about_programs_too_large() {
     assert_eq!(
         messages(&large),
         [format!(
-            "program is {rows} instructions; VU1 micro memory holds 2048"
+            "the program is {rows} instructions, more than the 2048 of VU1 micro memory"
         )]
     );
     assert!(compiled(&source, &[]).unwrap().warnings.is_empty());

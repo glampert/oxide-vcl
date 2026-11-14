@@ -118,19 +118,18 @@ fn classify_blocks(
             .filter(|id| analysis.live_operations.contains(id))
             .collect();
         plans.live_of[b] = live.clone();
-        if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-            crate::trace!(
-                "plan block {b} live {live:?} selected {} modes {:?}",
-                block.selected_table.is_some(),
-                live.iter()
-                    .map(|&id| (
-                        region.instructions[id].instruction.mnemonic.clone(),
-                        region.instructions[id].line,
-                        region.instructions[id].instruction.mode
-                    ))
-                    .collect::<Vec<_>>()
-            );
-        }
+        crate::trace_if!(
+            timing_debug,
+            "plan block {b} live {live:?} selected {} modes {:?}",
+            block.selected_table.is_some(),
+            live.iter()
+                .map(|&id| (
+                    region.instructions[id].instruction.mnemonic.clone(),
+                    region.instructions[id].line,
+                    region.instructions[id].instruction.mode
+                ))
+                .collect::<Vec<_>>()
+        );
         let raw = !live.is_empty()
             && live
                 .iter()
@@ -249,9 +248,10 @@ impl TableSelector<'_> {
         let mut best: Option<(usize, i32, i32)> = None;
         for &b in pending {
             let (inputs, outputs) = self.score(b);
-            if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                crate::trace!("select candidate {b} inputs {inputs} outputs {outputs}");
-            }
+            crate::trace_if!(
+                timing_debug,
+                "select candidate {b} inputs {inputs} outputs {outputs}"
+            );
             if best.is_none_or(|(_, bi, bo)| inputs < bi || (inputs == bi && bo < outputs)) {
                 best = Some((b, inputs, outputs));
             }
@@ -471,7 +471,7 @@ fn optimize_table(
     };
     let mut table = tables.remove(&b).unwrap();
     context.apply(&mut table, b, &lengths, &placed);
-    if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
+    if crate::debug::switches().timing_debug {
         crate::trace!(
             "apply block {b} minimum {:?} end {:?}",
             table
@@ -518,15 +518,14 @@ pub(super) fn run_wrangle(table: &mut WrangledTable, block_id: usize) -> Option<
         Some(&table.pools),
         &mut |_| true,
     )?;
-    if std::env::var_os("VCL_WRANGLE_TRACE").is_some() {
-        crate::trace!(
-            "wrangle block {block_id}: {:?} lb {} rows {} trace {:?}",
-            outcome.strategy,
-            table.lower_bound,
-            outcome.rows.len(),
-            outcome.trace
-        );
-    }
+    crate::trace_if!(
+        wrangle_trace,
+        "wrangle block {block_id}: {:?} lb {} rows {} trace {:?}",
+        outcome.strategy,
+        table.lower_bound,
+        outcome.rows.len(),
+        outcome.trace
+    );
     table.end = outcome.rows.len();
     table.strategy = Some(outcome.strategy);
     table.rows = outcome.rows;
@@ -575,12 +574,11 @@ pub(super) fn table_stalls(
                 + timing.offset(read.operation, read.register);
             let _ = region;
             if available < needed {
-                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    crate::trace!(
-                        "stall block {block}: setter {setter} ({setter_block} row {setter_row}/{setter_len}) reader {} ({reader_block} row {user_row}) distance {distance} needed {needed}",
-                        read.operation
-                    );
-                }
+                crate::trace_if!(
+                    timing_debug,
+                    "stall block {block}: setter {setter} ({setter_block} row {setter_row}/{setter_len}) reader {} ({reader_block} row {user_row}) distance {distance} needed {needed}",
+                    read.operation
+                );
                 return true;
             }
         }
@@ -620,7 +618,7 @@ pub(super) fn raw_reduce_wrangled(
     specialize_pipes(&mut problem, &local_rows);
     let statics = vec![wrangle::Statics::default(); problem.instructions.len()];
     problem.horizon = problem.horizon.max(local_rows.len() as i32 + 1);
-    if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
+    if crate::debug::switches().wrangle_problem {
         trace_raw_problem(region, table, &problem, &local_rows);
     }
     let scratch = scratch_destinations(region, table, mappings, &mut problem, &mut keys);
@@ -634,15 +632,16 @@ pub(super) fn raw_reduce_wrangled(
         if !reduced.raw_reduce(true, true) {
             return None;
         }
-        if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-            crate::trace!("  after raw {} {:?}", reduced.start(), reduced.window());
-        }
+        crate::trace_if!(
+            wrangle_problem,
+            "  after raw {} {:?}",
+            reduced.start(),
+            reduced.window()
+        );
     }
     if reduce {
         reduced.prepare_size_reduction();
-        if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-            crate::trace!("  after sred {:?}", reduced.window());
-        }
+        crate::trace_if!(wrangle_problem, "  after sred {:?}", reduced.window());
     }
 
     // Tidy runs after reduction, so the E-bit padding follows

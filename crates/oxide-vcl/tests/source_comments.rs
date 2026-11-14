@@ -74,7 +74,8 @@ fn comparable(listing: &str) -> Vec<String> {
         // vcl compiled `/work/NAME.vcl`, which names unlabelled streams.
         .replace("__v__work_", "__v_")
         .lines()
-        .filter(|line| !line.starts_with("; flowMon::Emit() "))
+        // The emitter line names the compiler.
+        .filter(|line| !line.starts_with("; flowMon::Emit() ") && !line.starts_with("; oxide-vcl "))
         .filter(|line| !(line.starts_with("; === ") && !line.starts_with("; ====")))
         .map(|line| {
             let line = line.split("       ;\tSTALL_").next().unwrap();
@@ -158,22 +159,16 @@ fn raw_code_comments_show_its_own_registers() {
 }
 
 #[test]
-fn oxide_mode_prints_the_same_source_comments() {
+fn oxide_mode_prints_the_same_comments() {
     let case = probe("comments-pairs");
-    let listing = run(&case, Some("--mode=oxide"));
-    let copies = |listing: &str| -> Vec<String> {
+    let comments = |listing: &str| -> Vec<String> {
         listing
             .lines()
-            .filter(|line| line.starts_with(";         ") || *line == "; ")
+            .filter(|line| line.starts_with(';'))
             .map(str::to_string)
             .collect()
     };
-    let expected = copies(&run(&case, None));
-    assert!(!expected.is_empty());
-    assert_eq!(copies(&listing), expected);
-    assert!(!listing.contains("; source line"), "{listing}");
-    assert!(
-        !listing.contains("_LNOPT_") && !listing.contains("VCL CODE"),
-        "{listing}"
-    );
+    let expected = comments(&run(&case, None));
+    assert!(expected.iter().any(|line| line.contains("_LNOPT_")));
+    assert_eq!(comments(&run(&case, Some("--mode=oxide"))), expected);
 }

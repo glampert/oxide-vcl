@@ -63,16 +63,19 @@ scheduling or allocation changed.
 - Before changing behaviour, establish what the original does: run it on a
   small program (`.claude/skills/run-original`). Do not guess from the
   manuals or from other implementations.
-- Match the original even where it is odd; keep its user-visible messages
-  verbatim. Where the port deliberately differs, say so in the docs.
+- Match the original's generated code even where it is odd. Its messages
+  are not reproduced: every diagnostic uses the port's own wording and
+  layout, in both modes. Where the port deliberately differs, say so in the
+  docs.
 - Two modes (`vcl::Mode`, `--mode=`): `vcl` (default) is the original's
-  behaviour and is what the tests assert; `oxide` holds fixes, optimizations
-  and better messages. Anything that breaks compatibility goes behind
-  `options.mode == Mode::Oxide`, leaving the vcl path unchanged.
+  code generation and exit statuses, and is what the tests assert; `oxide`
+  holds fixes and optimizations. Anything that breaks compatibility goes
+  behind `options.mode == Mode::Oxide`, leaving the vcl path unchanged.
 - No `println!`/`eprintln!` outside `crates/vcl/src/diagnostics.rs`: messages
-  are `vcl::diagnostics` enum variants (vcl wording in `vcl_text`, oxide
-  wording, subject and suggested fix in `diagnostics/oxide.rs`), printed
-  through `Reporter`; developer traces use `vcl::trace!`.
+  are `vcl::diagnostics` enum variants (wording, subject and suggested fix in
+  `diagnostics/oxide.rs`), printed through `Reporter`; developer traces use
+  `vcl::trace!` or `vcl::trace_if!(switch, ...)`, with switches read once
+  from `VCL_*` environment variables into `vcl::debug::Switches`.
 - Every behaviour fix gets a test that runs without local data (an inline
   program, or a probe in `tests/probes`) and, where an original run exists, a
   comparison with it.

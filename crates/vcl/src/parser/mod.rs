@@ -1690,8 +1690,7 @@ mod tests {
             .collect()
     }
 
-    fn rejected(source: &str, needle: impl std::fmt::Display) {
-        let needle = needle.to_string();
+    fn rejected(source: &str, expected: impl Fn(&ParseMessage) -> bool) {
         let errors = parse_with_options(
             source,
             ParserOptions {
@@ -1701,9 +1700,7 @@ mod tests {
         )
         .unwrap_err();
         assert!(
-            errors
-                .iter()
-                .any(|error| error.message.to_string().contains(&needle)),
+            errors.iter().any(|error| expected(&error.message)),
             "{errors:?}"
         );
     }
@@ -1743,7 +1740,7 @@ mod tests {
             )
             .unwrap_err()
             .iter()
-            .any(|error| error.message.to_string().contains("no exit"))
+            .any(|error| error.message == ParseMessage::NoExit)
         );
         assert!(
             parse(
@@ -1753,19 +1750,19 @@ mod tests {
             )
             .unwrap_err()
             .iter()
-            .any(|error| error.message.to_string().contains("unterminated"))
+            .any(|error| error.message == ParseMessage::UnterminatedEnterExit)
         );
         rejected(
             "--exit\n\
                   in_vf a\n\
                   --endexit",
-            "invalid enter/exit",
+            |message| matches!(message, ParseMessage::SyntheticContext),
         );
         rejected(
             "--enter\n\
                   add b,a,a\n\
                   --endenter",
-            "ordinary instruction",
+            |message| matches!(message, ParseMessage::InstructionInEnterExit),
         );
     }
 
@@ -1780,10 +1777,9 @@ mod tests {
         let instructions = instructions(&program);
         assert_eq!(instructions.len(), 2);
         assert_eq!(program.statements[1].line, 4);
-        rejected(
-            "add b,a,a # note",
-            "can't use '#' in the name of a register : 'a#note'",
-        );
+        rejected("add b,a,a # note", |message| {
+            matches!(message, ParseMessage::InvalidRegisterCharacter { .. })
+        });
     }
 
     #[test]
@@ -1795,7 +1791,9 @@ mod tests {
         let instructions = instructions(&program);
         assert_eq!(instructions.len(), 1);
         assert_eq!(instructions[0].operands[2].register.as_deref(), Some("a"));
-        rejected("= add a,b,c", ParseMessage::UnexpectedContinuation);
+        rejected("= add a,b,c", |message| {
+            *message == ParseMessage::UnexpectedContinuation
+        });
     }
 
     #[test]
@@ -1818,7 +1816,7 @@ mod tests {
         rejected(
             "a:\n\
                   a:\n",
-            "duplicate label",
+            |message| matches!(message, ParseMessage::DuplicateLabel { .. }),
         );
     }
 
@@ -1833,12 +1831,25 @@ mod tests {
         assert_eq!(instructions[0].mask, Mask::XYZ);
         assert_eq!(instructions[1].mask, Mask(3));
         assert_eq!(instructions[2].operands[2].mask, Mask::X);
-        rejected("add b.x,a.y,a.x", "component masks do not match");
-        rejected("add.bad b,a,a", "component mask");
+        rejected("add b.x,a.y,a.x", |message| {
+            matches!(message, ParseMessage::VectorMasksDiffer)
+        });
+        rejected("add.bad b,a,a", |message| {
+            matches!(
+                message,
+                ParseMessage::InvalidInstructionMask
+                    | ParseMessage::MaskNotAccepted { .. }
+                    | ParseMessage::VectorMasksDiffer
+                    | ParseMessage::InvalidMemoryMask
+                    | ParseMessage::MemoryMaskRequired
+                    | ParseMessage::MemoryMaskDiffers
+                    | ParseMessage::InvalidOperandMask
+            )
+        });
         rejected(
             ".raw\n\
                   nop.xyz nop",
-            "does not accept",
+            |message| matches!(message, ParseMessage::MaskNotAccepted { .. }),
         );
     }
 
@@ -1865,12 +1876,12 @@ mod tests {
         rejected(
             ".syntax new\n\
                   add b[x],a,a",
-            "scalar can only",
+            |message| matches!(message, ParseMessage::ScalarNotThird),
         );
         rejected(
             ".syntax new\n\
                   add b,a,acc",
-            "ACC can only",
+            |message| matches!(message, ParseMessage::AccNotFirst),
         );
     }
 
@@ -1884,8 +1895,12 @@ mod tests {
         assert_eq!(instructions[0].operands[1].mask, Mask::X);
         assert_eq!(instructions[0].operands[2].mask, Mask::W);
         assert_eq!(instructions[1].operands[2].register.as_deref(), Some("c"));
-        rejected("div Q,a,b.w", "scalar operand requires");
-        rejected("addx b,a,c.y", "field selections differ");
+        rejected("div Q,a,b.w", |message| {
+            matches!(message, ParseMessage::ScalarComponentRequired)
+        });
+        rejected("addx b,a,c.y", |message| {
+            matches!(message, ParseMessage::FieldSelectionsDiffer)
+        });
     }
 
     #[test]
@@ -1904,8 +1919,12 @@ mod tests {
         assert_eq!(parsed[2].operands[1].register.as_deref(), Some("value"));
         assert_eq!(parsed[2].operands[1].mask, Mask(3));
         assert_eq!(parsed[3].operands[1].register.as_deref(), Some("matri"));
-        rejected("mtir vi02,valuexx", "duplicate operand");
-        rejected("mtir vi02,value", "scalar operand requires");
+        rejected("mtir vi02,valuexx", |message| {
+            matches!(message, ParseMessage::DuplicateComponent)
+        });
+        rejected("mtir vi02,value", |message| {
+            matches!(message, ParseMessage::ScalarComponentRequired)
+        });
     }
 
     #[test]
@@ -1928,12 +1947,18 @@ mod tests {
         rejected(
             ".syntax new\n\
              add dst,model,model[xy]",
-            "one selected component",
+            |message| {
+                matches!(
+                    message,
+                    ParseMessage::GeneralizedScalarComponent
+                        | ParseMessage::ScalarComponentRequired
+                )
+            },
         );
         rejected(
             ".syntax new\n\
                   mtir vi02,valuex",
-            "scalar operand requires",
+            |message| matches!(message, ParseMessage::ScalarComponentRequired),
         );
     }
 
@@ -1981,7 +2006,7 @@ mod tests {
         rejected(
             ".syntax new\n\
                   add b,ACC,a",
-            "ACC can only",
+            |message| matches!(message, ParseMessage::AccNotFirst),
         );
     }
 
@@ -2003,8 +2028,12 @@ mod tests {
         assert_eq!(instructions[1].operands[1].register.as_deref(), Some("ptr"));
         assert_eq!(instructions[2].operands[1].register.as_deref(), Some("ptr"));
         assert_eq!(instructions[3].mask, Mask::X);
-        rejected("lqi vf03,(ptr)", "postincrement");
-        rejected("ilw vi02,0(vi03)", "mask is required");
+        rejected("lqi vf03,(ptr)", |message| {
+            matches!(message, ParseMessage::PostincrementRequired)
+        });
+        rejected("ilw vi02,0(vi03)", |message| {
+            matches!(message, ParseMessage::MemoryMaskRequired)
+        });
     }
 
     #[test]
@@ -2035,7 +2064,9 @@ mod tests {
             "lqi vf01,x(p++)",
             "lqd vf01,x(--p)",
         ] {
-            rejected(source, "failed to decode memory operand");
+            rejected(source, |message| {
+                matches!(message, ParseMessage::MalformedMemoryOperand { .. })
+            });
         }
     }
 
@@ -2123,14 +2154,16 @@ mod tests {
             ".raw\n\
                   nop\n\
                   .endraw",
-            "requires two",
+            |message| matches!(message, ParseMessage::RawPairRequired),
         );
-        rejected("add b,a,a add c,a,a", "more than one");
+        rejected("add b,a,a add c,a,a", |message| {
+            matches!(message, ParseMessage::MultipleInstructions)
+        });
         rejected(
             ".raw\n\
                   nop | nop\n\
                   .endraw",
-            "unknown instruction",
+            |message| matches!(message, ParseMessage::UnknownInstruction { .. }),
         );
     }
 
@@ -2148,9 +2181,16 @@ mod tests {
         rejected(
             ".rawloop\n\
                   .rawloop",
-            "nested",
+            |message| matches!(message, ParseMessage::NestedRawLoop),
         );
-        rejected(".endrawloop", "outside");
+        rejected(".endrawloop", |message| {
+            matches!(
+                message,
+                ParseMessage::EndRawOutsideRaw
+                    | ParseMessage::EndRawLoopOutsideRawLoop
+                    | ParseMessage::WorkAreaOutsideMemory
+            )
+        });
     }
 
     #[test]
@@ -2159,9 +2199,19 @@ mod tests {
             ".raw\n\
                   nop[e] nop\n\
                   .endraw",
-            "E/M/D/T",
+            |message| {
+                matches!(
+                    message,
+                    ParseMessage::LabelBits | ParseMessage::InstructionBits
+                )
+            },
         );
-        rejected("add[m] b,a,a", "E/M/D/T");
+        rejected("add[m] b,a,a", |message| {
+            matches!(
+                message,
+                ParseMessage::LabelBits | ParseMessage::InstructionBits
+            )
+        });
         let program = fragment("add[dt] b,a,a\n");
         assert_eq!(instructions(&program)[0].modifiers, 12);
     }
@@ -2181,9 +2231,15 @@ mod tests {
                 names: vec!["VF03-vf31".into(), "vf02".into()]
             })
         );
-        rejected(".init_vf 3", "physical register");
-        rejected(".init_vi vi00", "not allocable");
-        rejected(".init_vi vi16", "physical register");
+        rejected(".init_vf 3", |message| {
+            matches!(message, ParseMessage::NotAllocablePhysical { .. })
+        });
+        rejected(".init_vi vi00", |message| {
+            matches!(message, ParseMessage::RegisterNotAllocable { .. })
+        });
+        rejected(".init_vi vi16", |message| {
+            matches!(message, ParseMessage::NotAllocablePhysical { .. })
+        });
         // Reversed ranges are accepted by the original, which swaps bounds.
         fragment(".init_vf vf31-vf03");
     }
@@ -2204,16 +2260,33 @@ mod tests {
                 size_text: "1".into(),
             })
         );
-        rejected(".vu_work_area vu0,255,2", "outside");
-        rejected(".vu_work_area core,0,1", "not implemented");
+        rejected(".vu_work_area vu0,255,2", |message| {
+            matches!(
+                message,
+                ParseMessage::EndRawOutsideRaw
+                    | ParseMessage::EndRawLoopOutsideRawLoop
+                    | ParseMessage::WorkAreaOutsideMemory
+            )
+        });
+        rejected(".vu_work_area core,0,1", |message| {
+            matches!(message, ParseMessage::CoreWorkArea)
+        });
     }
 
     #[test]
     fn only_binary_directive_spellings_are_accepted() {
-        rejected(".name_vf temp", "unknown directive");
-        rejected(".vcl", "unknown directive");
-        rejected(".syntax modern", "expects");
-        rejected(".raw reordered", "bad option");
+        rejected(".name_vf temp", |message| {
+            matches!(message, ParseMessage::UnknownDirective { .. })
+        });
+        rejected(".vcl", |message| {
+            matches!(message, ParseMessage::UnknownDirective { .. })
+        });
+        rejected(".syntax modern", |message| {
+            matches!(message, ParseMessage::BadSyntax)
+        });
+        rejected(".raw reordered", |message| {
+            matches!(message, ParseMessage::BadRawOption { .. })
+        });
         fragment(
             ".NaMe FOO\n\
                   .global FOO\n\
@@ -2234,7 +2307,7 @@ mod tests {
         rejected(
             ".hide a\n\
                   .endshow",
-            "scope mode mismatch",
+            |message| matches!(message, ParseMessage::VisibilityMismatch),
         );
         // Closing an absent scope is only a warning in the binary.
         fragment(".endshow");
@@ -2258,15 +2331,24 @@ mod tests {
 
     #[test]
     fn malformed_operand_lists_do_not_panic() {
-        rejected(",add b,a,a", ParseMessage::UnexpectedComma);
-        rejected("add b,,a,a", ParseMessage::UnexpectedComma);
-        rejected("add b,a", "missing operand");
-        rejected("in_vf x(no_such_register)", "not physical");
-        rejected(
-            "add toolong-name,a,a",
-            "can't use '-' in the name of a register",
-        );
-        rejected("add mul,a,a", "reserved");
+        rejected(",add b,a,a", |message| {
+            *message == ParseMessage::UnexpectedComma
+        });
+        rejected("add b,,a,a", |message| {
+            *message == ParseMessage::UnexpectedComma
+        });
+        rejected("add b,a", |message| {
+            matches!(message, ParseMessage::MissingOperand { .. })
+        });
+        rejected("in_vf x(no_such_register)", |message| {
+            matches!(message, ParseMessage::ForcedRegisterNotPhysical { .. })
+        });
+        rejected("add toolong-name,a,a", |message| {
+            matches!(message, ParseMessage::InvalidRegisterCharacter { .. })
+        });
+        rejected("add mul,a,a", |message| {
+            matches!(message, ParseMessage::ReservedRegisterName { .. })
+        });
     }
 
     #[test]
@@ -2279,7 +2361,9 @@ mod tests {
         assert!(instructions[0].optional);
         assert_eq!(instructions[0].loop_id, 2);
         assert_eq!(instructions[1].loop_id, 0x1024);
-        rejected("33..add b,a,a", "larger than 32");
+        rejected("33..add b,a,a", |message| {
+            matches!(message, ParseMessage::LoopIdTooLarge)
+        });
     }
 
     #[test]

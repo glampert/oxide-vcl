@@ -1,9 +1,7 @@
 //! Immediates that do not parse, or parse but cannot be evaluated. vcl
-//! 1.4beta7 rejects them while decoding the instruction, with "failed to
-//! parse immediate '...'" or "failed to evaluate tree for '...' to type
-//! EXP_DATATYPE_UINT" and then "failed to decode an immediate" (observed,
-//! `expr-power`, `expr-logical-or`). The port reports them while parsing, on
-//! their line: vcl mode with those two lines, oxide mode with what is wrong.
+//! 1.4beta7 rejects them while decoding the instruction (observed,
+//! `expr-power`, `expr-logical-or`); the port reports them while parsing,
+//! on their line, saying what is wrong, in both modes.
 
 use vcl::diagnostics::{Message, ParseMessage};
 use vcl_cli as cli;
@@ -35,49 +33,12 @@ fn error(line: &str, mode: vcl::Mode) -> (usize, Message, String) {
     (
         errors[0].line,
         diagnostic.message.clone(),
-        diagnostic.text(mode),
+        diagnostic.text(),
     )
 }
 
 #[test]
-fn vcl_mode_reports_the_original_lines() {
-    for (line, text) in [
-        (
-            "iaddiu b,a,2**3",
-            "failed to evaluate tree for '2**3' to type EXP_DATATYPE_UINT\n\
-             ERROR: failed to decode an immediate",
-        ),
-        (
-            "iaddi b,a,1||0",
-            "failed to evaluate tree for '1||0' to type EXP_DATATYPE_SINT",
-        ),
-        (
-            "loi ~1.5",
-            "failed to evaluate tree for '~1.5' to type EXP_DATATYPE_FLOAT",
-        ),
-        (
-            "lq fB,2**3(a)",
-            "failed to evaluate tree for '2**3' to type EXP_DATATYPE_SINT",
-        ),
-        (
-            "iaddiu b,a,(1))",
-            "failed to parse immediate '(1))'\n\
-             ERROR: failed to decode an immediate",
-        ),
-        ("loi sin(1)", "failed to parse immediate 'sin(1)'"),
-    ] {
-        let (number, message, found) = error(line, vcl::Mode::Vcl);
-        assert_eq!(number, 7, "{line}");
-        assert!(
-            matches!(message, Message::Parse(ParseMessage::BadImmediate { .. })),
-            "{line}: {message:?}"
-        );
-        assert!(found.starts_with(text), "{line}: {found}");
-    }
-}
-
-#[test]
-fn oxide_mode_says_what_is_wrong() {
+fn the_error_says_what_is_wrong() {
     for (line, text) in [
         (
             "iaddiu b,a,2**3",
@@ -113,9 +74,15 @@ fn oxide_mode_says_what_is_wrong() {
         ),
         ("lq fB,2**3(a)", "lq's offset '2**3' cannot be computed"),
     ] {
-        let (number, _, found) = error(line, vcl::Mode::Oxide);
-        assert_eq!(number, 7, "{line}");
-        assert!(found.contains(text), "{line}: {found}");
+        for mode in [vcl::Mode::Vcl, vcl::Mode::Oxide] {
+            let (number, message, found) = error(line, mode);
+            assert_eq!(number, 7, "{line}");
+            assert!(
+                matches!(message, Message::Parse(ParseMessage::BadImmediate { .. })),
+                "{line}: {message:?}"
+            );
+            assert!(found.contains(text), "{line} {mode}: {found}");
+        }
     }
 }
 

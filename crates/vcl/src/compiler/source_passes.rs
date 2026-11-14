@@ -309,13 +309,12 @@ fn coalesce_producer(
     if escaping.contains(&id) {
         users.push(User::EscapingOutput);
     }
-    if std::env::var_os("VCL_COALESCE_TRACE").is_some() {
-        crate::trace!(
-            "coalesce {id} {} line {} users {users:?}",
-            result.instructions[id].instruction.mnemonic,
-            result.instructions[id].line
-        );
-    }
+    crate::trace_if!(
+        coalesce_trace,
+        "coalesce {id} {} line {} users {users:?}",
+        result.instructions[id].instruction.mnemonic,
+        result.instructions[id].line
+    );
 
     let Some(plan) = induction::plan(producer, &users).map_err(|e| internal(0, e))? else {
         return Ok(false);
@@ -948,7 +947,7 @@ fn trace_missing_web_read(
         register,
         component,
     }) = plan
-        && std::env::var_os("VCL_WEB_DEBUG").is_some()
+        && crate::debug::switches().web_debug
     {
         let located = &region.instructions[*operation];
         crate::trace!(

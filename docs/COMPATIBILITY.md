@@ -90,21 +90,23 @@ where the known boundary lies.
   stream boundaries is incomplete ([FINAL_REDUCTION.md](FINAL_REDUCTION.md)).
 - Some special emitter hooks and memory-alias ordering refinements are
   missing.
-- Generated labels, diagnostic formatting, statistics, preprocessing flags and
-  label-header output follow the recovered paths only in part
-  ([OUTPUT_FORMAT.md](OUTPUT_FORMAT.md)). In vcl mode the listing carries
-  vcl's banners, table comments, register statistics and `-c` comments, but
-  not its loop optimizer report; the bracketed numbers of a table comment
-  and some stall notes can differ, as can diagnostics.
+- Generated labels, statistics, preprocessing flags and label-header output
+  follow the recovered paths only in part
+  ([OUTPUT_FORMAT.md](OUTPUT_FORMAT.md)). The listing carries vcl's
+  banners, table comments, register statistics and `-c` comments, but not
+  its loop optimizer report; the bracketed numbers of a table comment and
+  some stall notes can differ.
+- Diagnostics are oxide-vcl's own in both modes (`file(line): severity:
+  message`, the source line and a fix), not vcl 1.4beta7's text; vcl's
+  start-up, progress and abort lines (`OS_Init`, `Opt::Linear`, `vcl's outta
+  here`) and its notices that only confirm an option (`-C`, `-f`, `-K`,
+  `-M`, `-e`) are not printed. vcl mode keeps vcl's exit statuses.
 - Some valid programs remain outside complete compiler coverage.
 - Immediate expressions: vcl 1.4beta7 accepts some that the port rejects,
   and keeps them as written: a missing left operand (`*3`, `2+*3`, `**3`)
   and empty parentheses after an operand (`pi()`, `foo()()`; `2()` is 2).
-  For an immediate it rejects, vcl also prints the instruction with the bad
-  operand marked and its expected format (`USER: couldn't decode
-  instruction`), which the port leaves out. vcl reads a trailing operator
-  (`3*`) as an evaluation failure, the port as a syntax error, so their
-  first lines can differ.
+  vcl reads a trailing operator (`3*`) as an evaluation failure, the port
+  as a syntax error.
 
 ## Comparing outputs
 

@@ -1,20 +1,17 @@
 //! Diagnostics and output: every message the compiler and the `oxide-vcl`
 //! driver print, and the writer that prints them.
 //!
-//! A message is a typed value ([`Message`]), not text. It is rendered when it
-//! is printed, in one of two [`Mode`]s:
-//!
-//! - [`Mode::Vcl`] (the default) keeps vcl 1.4beta7's wording and layout,
-//!   which the tests assert;
-//! - [`Mode::Oxide`] words every message its own way (`oxide.rs`), prints
-//!   it as `file(line): severity: text` with the source line, a caret under
-//!   the token it is about and a suggested fix, and ends a failed run with a
-//!   count instead of vcl's abort line.
+//! A message is a typed value ([`Message`]), not text. Its wording
+//! (`oxide.rs`) is a sentence, the token it is about and a suggested fix,
+//! and [`Reporter`] prints it as `file(line): severity: text` with the
+//! source line, a caret under the token and the fix, whatever the compile
+//! [`Mode`]. vcl 1.4beta7's own message texts are not reproduced: what the
+//! port matches is the code it produces.
 //!
 //! [`Reporter`] owns standard output and standard error. The driver writes
 //! everything through it: notices, warnings, errors, the help screen and the
-//! assembly. Developer traces (the `VCL_*_TRACE` environment switches) go
-//! through [`trace!`](crate::trace).
+//! assembly. Developer traces go through [`trace!`](crate::trace) and
+//! [`trace_if!`](crate::trace_if), switched on by [`crate::debug`].
 
 use std::fmt;
 use std::io::{self, Write};
@@ -24,14 +21,14 @@ use crate::allocator::allocation::AllocationError;
 mod oxide;
 pub use oxide::Wording;
 
-/// Which compiler this is: vcl 1.4beta7 exactly, or oxide-vcl with its own
-/// fixes, optimizations and messages.
+/// Which compiler this is: vcl 1.4beta7's behaviour, or oxide-vcl's with
+/// its fixes and optimizations. It does not change how messages are printed.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub enum Mode {
-    /// vcl 1.4beta7's behaviour and messages (the default).
+    /// vcl 1.4beta7's behaviour (the default).
     #[default]
     Vcl,
-    /// oxide-vcl's fixes, optimizations and messages (`--mode=oxide`).
+    /// oxide-vcl's fixes and optimizations (`--mode=oxide`).
     Oxide,
 }
 
@@ -102,45 +99,25 @@ impl Diagnostic {
         self
     }
 
-    /// The message text in `mode`, without prefix or line.
-    pub fn text(&self, mode: Mode) -> String {
-        self.message.text(mode)
-    }
-
-    /// The severity the message is printed with in `mode`.
-    pub fn severity_in(&self, mode: Mode) -> Severity {
-        match mode {
-            Mode::Vcl => self.severity,
-            Mode::Oxide => oxide::severity(&self.message, self.severity),
-        }
-    }
-
-    /// The prefix the line starts with in `mode` (`ERROR: ` and so on).
-    pub fn prefix(&self, mode: Mode) -> &'static str {
-        match mode {
-            Mode::Vcl | Mode::Oxide => self.message.vcl_prefix().unwrap_or(match self.severity {
-                Severity::Info => "INFO: ",
-                Severity::Warning => "WARNING: ",
-                Severity::Error => "ERROR: ",
-            }),
-        }
+    /// The message text, without location.
+    pub fn text(&self) -> String {
+        self.message.text()
     }
 
     /// The text with its source line: `line N: text`, or the text alone
     /// when there is no line.
-    pub fn located(&self, mode: Mode) -> String {
+    pub fn located(&self) -> String {
         if self.line == 0 {
-            self.text(mode)
+            self.text()
         } else {
-            format!("line {}: {}", self.line, self.text(mode))
+            format!("line {}: {}", self.line, self.text())
         }
     }
 }
 
-/// Renders in vcl mode: `line N: text`, or the text alone without a line.
 impl fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.located(Mode::Vcl))
+        f.write_str(&self.located())
     }
 }
 
@@ -156,48 +133,20 @@ pub enum Message {
 }
 
 impl Message {
-    /// The message text in `mode`.
-    pub fn text(&self, mode: Mode) -> String {
-        match mode {
-            Mode::Vcl => self.vcl_text(),
-            Mode::Oxide => self.oxide_text(),
-        }
-    }
-
-    /// vcl 1.4beta7's wording, which the port reproduces.
-    pub fn vcl_text(&self) -> String {
-        match self {
-            Message::Cli(message) => message.vcl_text(),
-            Message::Driver(message) => message.vcl_text(),
-            Message::Parse(message) => message.vcl_text(),
-            Message::Compile(message) => message.vcl_text(),
-        }
-    }
-
-    /// oxide-vcl's wording.
-    pub fn oxide_text(&self) -> String {
+    /// The message's one-line text.
+    pub fn text(&self) -> String {
         self.wording().text
     }
 
-    /// oxide-vcl's wording with the token it is about and a suggested fix.
+    /// The text with the token it is about and a suggested fix.
     pub fn wording(&self) -> Wording {
         oxide::wording(self)
-    }
-
-    /// A prefix other than the severity's, as vcl prints it (`USER: `, or
-    /// none at all).
-    fn vcl_prefix(&self) -> Option<&'static str> {
-        match self {
-            Message::Cli(CliMessage::BadGaspOption { .. }) => Some("USER: "),
-            Message::Cli(CliMessage::TooManyArguments | CliMessage::SameInputAndOutput) => Some(""),
-            _ => None,
-        }
     }
 }
 
 impl fmt::Display for Message {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.vcl_text())
+        f.write_str(&self.text())
     }
 }
 
@@ -213,6 +162,11 @@ macro_rules! message_from {
                 matches!(self, Message::$variant(message) if message == other)
             }
         }
+        impl fmt::Display for $kind {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(&Message::$variant(self.clone()).text())
+            }
+        }
     )*};
 }
 message_from!(
@@ -222,28 +176,17 @@ message_from!(
     Compile(CompileMessage)
 );
 
-/// Command-line notices and errors (observed from vcl 1.4beta7, `cli-*`
-/// probes).
+/// Command-line notices and errors.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CliMessage {
-    /// `-a`
+    /// `-a`, which has no effect.
     AlwaysOn,
-    /// `-C`
-    SizeReductionDisabled,
-    /// `-f`
-    AlignmentDisabled,
-    /// `-K`
-    KeepTemporaries,
-    /// `-M`
-    TimidMemory,
-    /// `-P`
+    /// `-P`, deprecated.
     PruneDeprecated,
-    /// `-S`
+    /// `-S`, which has no effect.
     StaggeredMemory,
-    /// `-Z`
+    /// `-Z`, deprecated.
     ImmediateFixupsDeprecated,
-    /// `-e`
-    EndBitDisabled,
     /// `-g` followed by anything but `+`.
     BadGaspOption { argument: String },
     /// An unknown switch.
@@ -256,39 +199,6 @@ pub enum CliMessage {
     TooManyArguments,
     /// `-o` naming the input file.
     SameInputAndOutput,
-}
-
-impl CliMessage {
-    pub fn vcl_text(&self) -> String {
-        match self {
-            CliMessage::AlwaysOn => "-a option is now on always".into(),
-            CliMessage::SizeReductionDisabled => "disabling code size reduction pass..".into(),
-            CliMessage::AlignmentDisabled => "will skip align emit".into(),
-            CliMessage::KeepTemporaries => {
-                "keep temporary files in /tmp enabled (/tmp/vclin. etc".into()
-            }
-            CliMessage::TimidMemory => "timid memory access mode enabled".into(),
-            CliMessage::PruneDeprecated => {
-                " prune disabled (not) this options was deprecated, and now is disabled".into()
-            }
-            CliMessage::StaggeredMemory => "stagger ram access...".into(),
-            CliMessage::ImmediateFixupsDeprecated => {
-                " disabled immediate fixups - this option is now deprecated and removed".into()
-            }
-            CliMessage::EndBitDisabled => "disabling [e] bit setting".into(),
-            CliMessage::BadGaspOption { argument } => {
-                format!("bad command line option '{argument}' .. only -g+ or -g allowed")
-            }
-            // vcl has no long options: `--mode=...` is an unknown switch to it.
-            CliMessage::BadArgument { argument }
-            | CliMessage::BadMode { argument }
-            | CliMessage::BadFix { argument, .. } => {
-                format!("bad args '{argument}', try -h for help")
-            }
-            CliMessage::TooManyArguments => "bad args (-o now specifies output file..)".into(),
-            CliMessage::SameInputAndOutput => "can't have infile==outfile".into(),
-        }
-    }
 }
 
 /// The driver's own failures and notes: files, standard streams and the
@@ -334,59 +244,8 @@ pub enum DriverMessage {
     WriteStandardOutput {
         error: String,
     },
-    /// vcl's start-up line, printed before the copy-detector failure.
-    OsInit,
-    /// The copy-detector failure's follow-up lines.
-    MovesNotDetected,
-    BasicProcessingFailed,
-    /// The last line of a failed run, on standard output.
-    Abort,
     /// `--warnings-as-errors` failing a run that printed warnings.
     WarningsAsErrors,
-}
-
-impl DriverMessage {
-    pub fn vcl_text(&self) -> String {
-        match self {
-            DriverMessage::OpenInput { path, error } => {
-                format!("failed to open file '{path}': {error}")
-            }
-            DriverMessage::ReadInput { error } => error.clone(),
-            DriverMessage::NotUtf8 => "source is not valid UTF-8".into(),
-            DriverMessage::WriteTemporary { path, error } => {
-                format!("failed to write '{path}': {error}")
-            }
-            DriverMessage::CreateTemporary { path, error } => {
-                format!("failed to create '{path}': {error}")
-            }
-            DriverMessage::ReadTemporary { path, error } => {
-                format!("failed to read '{path}': {error}")
-            }
-            DriverMessage::StartPreprocessor { program, error } => {
-                format!("failed to start {program}: {error}")
-            }
-            DriverMessage::PreprocessorFailed { program, status } => {
-                format!("{program} failed: {status}")
-            }
-            DriverMessage::KeptTemporaries { input, output } => {
-                format!("kept {input} and {output}")
-            }
-            DriverMessage::WriteOutput { path, error } => {
-                format!("failed to write '{path}': {error}")
-            }
-            DriverMessage::WriteStandardOutput { error } => error.clone(),
-            DriverMessage::OsInit => "OS_Init(Linux)".into(),
-            DriverMessage::MovesNotDetected => "failed to detect moves!".into(),
-            DriverMessage::BasicProcessingFailed => {
-                "failed to do basic operation processing".into()
-            }
-            DriverMessage::Abort => "something went wrong, vcl's outta here.".into(),
-            // oxide-vcl's own option, so its own message.
-            DriverMessage::WarningsAsErrors => {
-                "warnings treated as errors (--warnings-as-errors)".into()
-            }
-        }
-    }
 }
 
 /// Source errors found while parsing.
@@ -508,122 +367,6 @@ pub enum ParseMessage {
     NoExit,
 }
 
-impl ParseMessage {
-    pub fn vcl_text(&self) -> String {
-        use ParseMessage::*;
-        match self {
-            NonAscii => "source contains a non-ASCII character".into(),
-            UnexpectedContinuation => "unexpected line continuation".into(),
-            UnexpectedComma => "unexpected comma".into(),
-            TooManyTokens => "too many tokens on a line (maximum 200)".into(),
-            EmptyLabel => "empty label".into(),
-            LabelBits => "invalid E/M/D/T bits on a label".into(),
-            MultipleSynthetics => "only one synthetic instruction is allowed on a line".into(),
-            MultipleInstructions => "more than one instruction on a line in VCL mode".into(),
-            RawPairRequired => "raw mode requires two instructions on each instruction line".into(),
-            MissingDirectiveArgument { directive } => format!("missing argument to {directive}"),
-            BadRawOption { value } => format!("bad option '{value}' to raw directive"),
-            BadSyntax => ".syntax expects 'new' or 'old'".into(),
-            RawInRawLoop => "raw directive inside a raw loop".into(),
-            EndRawOutsideRaw => "endraw directive outside raw mode".into(),
-            EndRawInRawLoop => "endraw directive inside a raw loop".into(),
-            NestedRawLoop => "nested raw loops are invalid".into(),
-            EndRawLoopOutsideRawLoop => "endrawloop directive outside a raw loop".into(),
-            CoreWorkArea => "core work areas are not implemented in the original binary".into(),
-            WorkAreaDevice => "work area device must be core, vu0 or vu1".into(),
-            WorkAreaOutsideMemory => "work area is outside device memory".into(),
-            UniqueTooLong => "unique name too long".into(),
-            UnknownDirective { name } => format!("unknown directive '{name}'"),
-            RegisterRangeDashes { range } => {
-                format!("too many '-' characters in register range '{range}'")
-            }
-            NotAllocablePhysical { register } => {
-                format!("not an allocable physical register: '{register}'")
-            }
-            RegisterNotAllocable { register } => format!("register '{register}' is not allocable"),
-            UnknownInstruction { opcode } => format!("unknown instruction '{opcode}'"),
-            InvalidInstructionMask => "invalid instruction component mask".into(),
-            LoopIdTooLarge => "instruction loop ID is larger than 32".into(),
-            InstructionBits => "invalid E/M/D/T bits for instruction context".into(),
-            RawOnlyInstruction { name } => {
-                format!("instruction '{name}' is supported only in raw mode")
-            }
-            MaskNotAccepted { name } => {
-                format!("instruction '{name}' does not accept a component mask")
-            }
-            XyzMaskRequired => "XYZ instruction requires mask xyz".into(),
-            EmptyMask => "empty instruction mask".into(),
-            OperandTooLong => "gathered operand exceeds 1023 characters".into(),
-            MissingOperand { position, name } => format!("missing operand {position} for '{name}'"),
-            ScalarNotThird => {
-                "a scalar can only be the third operand in a generalized instruction".into()
-            }
-            VectorMasksDiffer => "vector operand component masks do not match".into(),
-            CannotDerive { name } => format!("cannot derive instruction '{name}'"),
-            SingleComponentRequired => "instruction requires a single component".into(),
-            MultipleTaggedOperands => "only one tagged operand is allowed per instruction".into(),
-            AccNotFirst => "ACC can only be the first vector operand".into(),
-            MalformedMemoryOperand { operand } => {
-                format!("failed to decode memory operand '{operand}'")
-            }
-            // vcl 1.4beta7 adds a line naming the instruction and its
-            // expected format; the port prints the first two.
-            BadImmediate {
-                expression,
-                type_name,
-                ..
-            } => match type_name {
-                Some(type_name) => format!(
-                    "failed to evaluate tree for '{expression}' to type {type_name}\n\
-                     ERROR: failed to decode an immediate"
-                ),
-                None => format!(
-                    "failed to parse immediate '{expression}'\n\
-                     ERROR: failed to decode an immediate"
-                ),
-            },
-            PostincrementRequired => "postincrement operand requires (register++)".into(),
-            PredecrementRequired => "predecrement operand requires (--register)".into(),
-            InvalidMemoryMask => "invalid memory component mask".into(),
-            MemoryMaskRequired => "memory component mask is required".into(),
-            MemoryMaskDiffers => "memory and instruction component masks differ".into(),
-            GeneralizedScalarComponent => {
-                "generalized scalar requires one selected component".into()
-            }
-            DuplicateComponent => "duplicate operand component selection".into(),
-            InvalidOperandMask => "invalid operand component mask".into(),
-            ScalarComponentRequired => "scalar operand requires one selected component".into(),
-            FieldSelectionsDiffer => "instruction and operand field selections differ".into(),
-            OperandMustBe { expected } => format!("operand must be {expected}"),
-            ForcedRegisterNotPhysical { register } => {
-                format!("forced register '{register}' is not physical")
-            }
-            EmptyRegisterName => "empty register name".into(),
-            RegisterNameTooLong { name } => format!("register name '{name}' is too long"),
-            InvalidRegisterCharacter { character, name } => {
-                format!("can't use '{character}' in the name of a register : '{name}'")
-            }
-            ReservedRegisterName { name } => {
-                format!("instruction name '{name}' is reserved as a register name")
-            }
-            DuplicateLabel { name } => format!("duplicate label '{name}'"),
-            VisibilityMismatch => "visibility scope mode mismatch".into(),
-            SyntheticContext => "synthetic instruction in invalid enter/exit context".into(),
-            LoopSizeInRaw => "loop-size synthetic is invalid in raw mode".into(),
-            InstructionInEnterExit => "ordinary instruction inside an enter/exit block".into(),
-            UnterminatedEnterExit => "unterminated enter/exit block".into(),
-            NoEnter => "source contains no enter block".into(),
-            NoExit => "source contains no exit block".into(),
-        }
-    }
-}
-
-impl fmt::Display for ParseMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.vcl_text())
-    }
-}
-
 /// Errors and warnings found while compiling a parsed program.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompileMessage {
@@ -712,6 +455,8 @@ pub enum CompileMessage {
         vector: bool,
         register: String,
     },
+    /// A work area in vcl mode, which vcl 1.4beta7 rejects.
+    WorkAreaNeedsOxideMode,
     // Spilling to a work area (oxide mode only; vcl has no counterpart).
     /// A value did not fit in the registers and lives in the work area.
     RegisterSpilled {
@@ -768,176 +513,10 @@ pub enum CompileMessage {
     Internal(String),
 }
 
-impl CompileMessage {
-    pub fn vcl_text(&self) -> String {
-        use CompileMessage::*;
-        match self {
-            ReservedName { name, kind } => format!("can't use {name} as a name for one of the {kind}"),
-            InvalidPhysicalRegister { name } => format!("invalid physical register {name}"),
-            InvalidComponentMask => "invalid component mask".into(),
-            UnmappableBase { name } => {
-                format!("can't figure out which base register to map {name} to")
-            }
-            ConflictingBases { first, second } => format!(
-                "regweb:: set map - can't map to different base registers.. try to map both {first} and {second}"
-            ),
-            BindingChanged { name, from, to } => {
-                format!("changing binding for {name} from {from} to {to}")
-            }
-            UsedBeforeSet {
-                register,
-                component,
-            } => format!("{register}.{component} used before set"),
-            OperandPoolUnsupported => "operand register pool is not implemented for this target".into(),
-            ExplicitMacWrite => "explicit mac register - but I'm writing ASTATUS here??".into(),
-            MoveDestinationUnbound => "move destination is not bound".into(),
-            ZeroCopyDestination => "found a move to a const zero register".into(),
-            LoopCsKnownCount => {
-                "for --LoopCS, the minimum known count (arg 1) must be must be >0".into()
-            }
-            LoopCsSafeCount => {
-                "for --LoopCS, the minimum safe count (arg 2) must be must be >=0".into()
-            }
-            LoopAbsCount => "failed to get immediate field 0 (extra loop count) while processing --LoopAbs. value must be >=2".into(),
-            LoopExtraCount => "failed to get immediate field 0 (extra loop count) while processing --LoopExtra. value must be >=0".into(),
-            MissingLoopHint => "missing loop hint operand".into(),
-            LoopHintNotConstant => "loop hint must be a numeric constant".into(),
-            LoopPeriodRange => "loop period exceeds supported schedule range".into(),
-            UnknownSynthetic => "unknown synthetic instruction".into(),
-            ContWithEndMode => "CONT directive encountered - but end mode isn't null".into(),
-            // oxide-vcl's own message: vcl reads the name the same way silently.
-            FieldLettersInName {
-                token,
-                name,
-                fields,
-            } => format!(
-                "'{token}' is read as register '{name}' with field {fields}: old syntax takes a name's trailing x, y, z and w as fields; rename it, or write '{name}.{fields}' if the field is meant"
-            ),
-            RawBranchDelay => "raw branch requires one explicit delay pair".into(),
-            RawBranchDelayBeforeBoundary => {
-                "raw branch requires one explicit delay pair before a boundary".into()
-            }
-            BranchInRawDelaySlot => "branch inside a raw branch delay slot".into(),
-            WrongRawPipe => "instruction is in the wrong raw issue pipe".into(),
-            StagedRawLoopBranch => {
-                "staged raw loop requires a terminating conditional self branch".into()
-            }
-            StagedRawLoopTarget => "staged raw loop branch must target its own stream".into(),
-            LoopIdOnNop => "loop id set on a nop".into(),
-            InvalidStagedRawPair => "invalid staged raw pair".into(),
-            RawLoopPeriodRange => "raw loop period exceeds supported range".into(),
-            InvalidRawLoopStage => "invalid raw loop stage".into(),
-            MaxLoopIdZero => "max loop id 0 in loop".into(),
-            RawLoopWithoutBranch => "raw loop has no branch".into(),
-            TooManyLoops => "too many loop constructs".into(),
-            DuplicateStreamLabel { label } => format!("duplicate label {label}"),
-            PipesWriteSameRegister => {
-                "invalid combination: both issue pipes write the same register".into()
-            }
-            UnknownBranchTarget { target } => format!("unknown branch target {target}"),
-            UnknownBranchTag { tag } => format!("unknown indirect branch tag {tag}"),
-            DuplicateBranchTag => "addNewRef - already present".into(),
-            UntaggedIndirectBranch => "indirect branches require explicit target tags".into(),
-            Allocation(failure) => failure.to_string(),
-            AllocationPoolEmpty { vector } => format!(
-                "vcl failed to allocate a register of type {}, but there's no registers of this type available for it to use.. maybe adding a .init_.. directive would help",
-                register_kind(*vector)
-            ),
-            AllocationPoolFull { vector, register } => {
-                let directive = if *vector { ".init_vf" } else { ".init_vi" };
-                format!(
-                    "vcl failed to allocate a register of type {} for '{register}': every allowed register is in use; {directive} or {directive}_all allows more",
-                    register_kind(*vector)
-                )
-            }
-            RegisterSpilled {
-                name,
-                device,
-                address,
-                ..
-            } => format!("spilled {name} to {device} memory at {address}"),
-            WorkAreaFull {
-                vector,
-                register,
-                size,
-            } => format!(
-                "failed to allocate a register of type {} for '{register}': the {size} work area slots are full",
-                register_kind(*vector)
-            ),
-            WorkAreaNumber { token } => format!("work area value {token} is not a number"),
-            ImmediateOutOfField {
-                instruction,
-                value,
-                low,
-                high,
-            } => format!("immediate {value} of {instruction} is outside its field ({low} to {high})"),
-            FlagMaskTruncated {
-                instruction,
-                value,
-                bits,
-            } => format!(
-                "{instruction} mask {value} has bits past the flag's {bits} bits; they are ignored"
-            ),
-            ImmediateUnchecked {
-                instruction,
-                value,
-                bits,
-            } => format!(
-                "symbolic immediate {value} of {instruction} is not checked against its {bits}-bit field"
-            ),
-            ProgramTooLarge { rows } => {
-                format!("program is {rows} instructions; VU1 micro memory holds 2048")
-            }
-            LoiFunction { expression, detail } => {
-                format!("failed to evaluate '{expression}': {detail}")
-            }
-            Internal(detail) => detail.clone(),
-        }
-    }
-
-    /// Warnings that carry their line in the text in vcl's layout.
-    fn vcl_line_in_text(&self) -> bool {
-        matches!(
-            self,
-            CompileMessage::LoopCsKnownCount
-                | CompileMessage::LoopCsSafeCount
-                | CompileMessage::LoopAbsCount
-                | CompileMessage::FieldLettersInName { .. }
-                | CompileMessage::FlagMaskTruncated { .. }
-                | CompileMessage::ImmediateUnchecked { .. }
-        )
-    }
-}
-
-fn register_kind(vector: bool) -> &'static str {
-    if vector {
-        "VU User floating point"
-    } else {
-        "VU User integer"
-    }
-}
-
-impl fmt::Display for CompileMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.vcl_text())
-    }
-}
-
-/// How compile errors name their location.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ErrorStyle<'a> {
-    /// `line N: message` (vcl's default).
-    Lines,
-    /// `file(line): error: message` (`-p`).
-    Microsoft { file: &'a str },
-}
-
-/// The writer for everything the driver prints. In [`Mode::Vcl`] each method
-/// reproduces vcl 1.4beta7's layout byte for byte as the port prints it; in
-/// [`Mode::Oxide`] every diagnostic is `location: severity: text` with its
-/// source line and a suggested fix (see [`Reporter::set_source`]).
+/// The writer for everything the driver prints. Every diagnostic is
+/// `location: severity: text` with its source line and a suggested fix (see
+/// [`Reporter::set_source`]).
 pub struct Reporter<O: Write = io::Stdout, E: Write = io::Stderr> {
-    mode: Mode,
     out: O,
     err: E,
     source: Option<Source>,
@@ -946,7 +525,7 @@ pub struct Reporter<O: Write = io::Stdout, E: Write = io::Stderr> {
     warnings: usize,
 }
 
-/// The program being compiled, for oxide mode's locations and source lines.
+/// The program being compiled, for locations and source lines.
 struct Source {
     file: String,
     lines: Vec<String>,
@@ -954,15 +533,14 @@ struct Source {
 
 impl Reporter {
     /// A reporter on the process's standard output and standard error.
-    pub fn stdio(mode: Mode) -> Self {
-        Self::new(mode, io::stdout(), io::stderr())
+    pub fn stdio() -> Self {
+        Self::new(io::stdout(), io::stderr())
     }
 }
 
 impl<O: Write, E: Write> Reporter<O, E> {
-    pub fn new(mode: Mode, out: O, err: E) -> Self {
+    pub fn new(out: O, err: E) -> Self {
         Self {
-            mode,
             out,
             err,
             source: None,
@@ -972,16 +550,8 @@ impl<O: Write, E: Write> Reporter<O, E> {
         }
     }
 
-    pub fn mode(&self) -> Mode {
-        self.mode
-    }
-
-    pub fn set_mode(&mut self, mode: Mode) {
-        self.mode = mode;
-    }
-
     /// The source file's name and the text the compiler reads (after
-    /// preprocessing), which oxide mode quotes under each diagnostic.
+    /// preprocessing), quoted under each diagnostic.
     pub fn set_source(&mut self, file: &str, text: &str) {
         self.source = Some(Source {
             file: file.to_string(),
@@ -989,7 +559,7 @@ impl<O: Write, E: Write> Reporter<O, E> {
         });
     }
 
-    /// `--warnings-as-errors`: oxide mode prints each warning as an error.
+    /// `--warnings-as-errors`: each warning is printed as an error.
     pub fn set_warnings_as_errors(&mut self, enabled: bool) {
         self.warnings_as_errors = enabled;
     }
@@ -1005,108 +575,24 @@ impl<O: Write, E: Write> Reporter<O, E> {
         (self.out, self.err)
     }
 
-    /// A notice or warning on standard error: `PREFIX: text`.
-    pub fn notice(&mut self, diagnostic: &Diagnostic) {
-        if self.mode == Mode::Oxide {
-            self.render(diagnostic);
-            return;
-        }
-        if diagnostic.severity == Severity::Warning {
-            self.warnings += 1;
-        }
-        let line = match &diagnostic.message {
-            Message::Compile(message) if diagnostic.line != 0 && message.vcl_line_in_text() => {
-                diagnostic.located(self.mode)
-            }
-            _ => diagnostic.text(self.mode),
-        };
-        self.stderr(format_args!("{}{line}\n", diagnostic.prefix(self.mode)));
+    /// A note or warning, or an error that stops the run without a count
+    /// (a command line or a file the driver cannot use).
+    pub fn report(&mut self, diagnostic: &Diagnostic) {
+        self.render(diagnostic);
     }
 
-    /// A command-line error, after its notices: the message and then the
-    /// abort line on standard output.
-    pub fn command_line_error(&mut self, diagnostic: &Diagnostic) {
-        if self.mode == Mode::Oxide {
-            self.render(diagnostic);
-            return;
+    /// Compile errors, each in full, then the count.
+    pub fn compile_errors(&mut self, errors: &[Diagnostic]) {
+        for error in errors {
+            self.render(error);
         }
-        // The port ends the message with a blank line.
-        self.stderr(format_args!(
-            "{}{}\n\n",
-            diagnostic.prefix(self.mode),
-            diagnostic.text(self.mode)
-        ));
-        self.abort();
-    }
-
-    /// A failure that stops the run: the error, then the abort line.
-    pub fn failure(&mut self, diagnostic: &Diagnostic) {
-        if self.mode == Mode::Oxide {
-            self.render(diagnostic);
-            return;
-        }
-        self.stderr(format_args!(
-            "{}{}\n",
-            diagnostic.prefix(self.mode),
-            diagnostic.located(self.mode)
-        ));
-        self.abort();
-    }
-
-    /// Compile errors, one per line under a single `ERROR: ` prefix, then
-    /// the abort line. Oxide mode prints each in full, then the count.
-    pub fn compile_errors(&mut self, errors: &[Diagnostic], style: ErrorStyle<'_>) {
-        if self.mode == Mode::Oxide {
-            for error in errors {
-                self.render(error);
-            }
-            self.summary();
-            return;
-        }
-        let lines: Vec<String> = errors
-            .iter()
-            .map(|error| match style {
-                ErrorStyle::Lines => error.located(self.mode),
-                ErrorStyle::Microsoft { file } => {
-                    format!("{file}({}): error: {}", error.line, error.text(self.mode))
-                }
-            })
-            .collect();
-        self.stderr(format_args!("ERROR: {}\n", lines.join("\n")));
-        self.abort();
+        self.summary();
     }
 
     /// `--warnings-as-errors` failing a run whose only problems were
     /// warnings, already printed.
     pub fn warnings_failed(&mut self) {
-        if self.mode == Mode::Oxide {
-            self.summary();
-        } else {
-            self.failure(&Diagnostic::error(DriverMessage::WarningsAsErrors));
-        }
-    }
-
-    /// vcl's copy-detector failure, which exits with status 0: the start-up
-    /// line, the error and its two follow-up errors.
-    pub fn copy_detection_failure(&mut self, error: &Diagnostic) {
-        let mode = self.mode;
-        let lines = [
-            Diagnostic::info(DriverMessage::OsInit),
-            Diagnostic::error(error.message.clone()),
-            Diagnostic::error(DriverMessage::MovesNotDetected),
-            Diagnostic::error(DriverMessage::BasicProcessingFailed),
-        ];
-        for line in &lines {
-            self.stderr(format_args!("{}{}\n", line.prefix(mode), line.text(mode)));
-        }
-    }
-
-    /// The last line of a failed run, on standard output.
-    pub fn abort(&mut self) {
-        let abort = Diagnostic::error(DriverMessage::Abort);
-        let text = format!("{}{}\n", abort.prefix(self.mode), abort.text(self.mode));
-        let _ = self.out.write_all(text.as_bytes());
-        let _ = self.out.flush();
+        self.summary();
     }
 
     /// The version line (`-v`), on standard output whatever `-q` says.
@@ -1120,24 +606,20 @@ impl<O: Write, E: Write> Reporter<O, E> {
         self.stderr(format_args!("{text}"));
     }
 
-    /// The assembly listing, on standard output. In vcl mode it sits between
-    /// vcl's `VCL CODE` banner and five closing separators, which an `-o`
-    /// file does not get (observed from vcl 1.4beta7, `cli-output-file`).
+    /// The assembly listing, on standard output, between vcl's `VCL CODE`
+    /// banner and five closing separators, which an `-o` file does not get
+    /// (observed from vcl 1.4beta7, `cli-output-file`).
     pub fn assembly(&mut self, text: &str) -> io::Result<()> {
         const SEPARATOR: &str = ";-------------------------\n";
-        if self.mode == Mode::Vcl {
-            let banner =
-                format!("{SEPARATOR}{SEPARATOR};-----VCL CODE------------\n{SEPARATOR}{SEPARATOR}");
-            self.out.write_all(banner.as_bytes())?;
-        }
+        let banner =
+            format!("{SEPARATOR}{SEPARATOR};-----VCL CODE------------\n{SEPARATOR}{SEPARATOR}");
+        self.out.write_all(banner.as_bytes())?;
         self.out.write_all(text.as_bytes())?;
-        if self.mode == Mode::Vcl {
-            self.out.write_all(SEPARATOR.repeat(5).as_bytes())?;
-        }
+        self.out.write_all(SEPARATOR.repeat(5).as_bytes())?;
         self.out.flush()
     }
 
-    /// One diagnostic in oxide layout:
+    /// One diagnostic:
     ///
     /// ```text
     /// prog.vcl(7): error: unknown instruction 'ad'
@@ -1149,7 +631,7 @@ impl<O: Write, E: Write> Reporter<O, E> {
     /// Source diagnostics are located by file and line (the file alone when
     /// there is no line); command-line and driver ones by `oxide-vcl`.
     fn render(&mut self, diagnostic: &Diagnostic) {
-        let mut severity = diagnostic.severity_in(Mode::Oxide);
+        let mut severity = diagnostic.severity;
         let mut suffix = "";
         if severity == Severity::Warning {
             self.warnings += 1;
@@ -1208,7 +690,7 @@ impl<O: Write, E: Write> Reporter<O, E> {
         self.stderr(format_args!("{text}"));
     }
 
-    /// Oxide mode's last line of a failed compile.
+    /// The last line of a failed compile.
     fn summary(&mut self) {
         let plural = |count: usize, word: &str| {
             format!("{count} {word}{}", if count == 1 { "" } else { "s" })
@@ -1270,8 +752,9 @@ fn find_token(line: &str, token: &str) -> Option<(usize, usize)> {
 }
 
 /// Print a developer trace line on standard error. Traces are switched on by
-/// `VCL_*` environment variables at each call site; they are not part of
-/// either mode's output.
+/// `VCL_*` environment variables ([`crate::debug`]); see also
+/// [`trace_if!`](crate::trace_if). They are not part of the compiler's
+/// output.
 #[macro_export]
 macro_rules! trace {
     ($($argument:tt)*) => {
@@ -1292,14 +775,17 @@ pub fn trace_line(text: fmt::Arguments<'_>) {
 mod tests {
     use super::*;
 
-    fn capture(report: impl FnOnce(&mut Reporter<Vec<u8>, Vec<u8>>)) -> (String, String) {
-        let mut reporter = Reporter::new(Mode::Vcl, Vec::new(), Vec::new());
+    fn capture(
+        warnings_as_errors: bool,
+        report: impl FnOnce(&mut Reporter<Vec<u8>, Vec<u8>>),
+    ) -> String {
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.set_source("prog.vcl", "--enter\n\tad res, src, src\n--endenter\n");
+        reporter.set_warnings_as_errors(warnings_as_errors);
         report(&mut reporter);
         let (out, err) = reporter.into_inner();
-        (
-            String::from_utf8(out).unwrap(),
-            String::from_utf8(err).unwrap(),
-        )
+        assert!(out.is_empty(), "diagnostics print nothing on stdout");
+        String::from_utf8(err).unwrap()
     }
 
     #[test]
@@ -1312,120 +798,12 @@ mod tests {
     }
 
     #[test]
-    fn notices_use_their_severity_prefix() {
-        let (out, err) = capture(|reporter| {
-            reporter.notice(&Diagnostic::info(CliMessage::AlwaysOn));
-            reporter.notice(&Diagnostic::warning(CliMessage::TimidMemory));
-        });
-        assert_eq!(out, "");
-        assert_eq!(
-            err,
-            "INFO: -a option is now on always\nWARNING: timid memory access mode enabled\n"
-        );
-    }
-
-    #[test]
-    fn loop_hint_warnings_carry_their_line_in_the_text() {
-        let (_, err) = capture(|reporter| {
-            reporter.notice(&Diagnostic::warning(CompileMessage::LoopCsKnownCount).at(7));
-            reporter.notice(
-                &Diagnostic::warning(CompileMessage::BindingChanged {
-                    name: "a".into(),
-                    from: "VF01".into(),
-                    to: "VF02".into(),
-                })
-                .at(9),
-            );
-        });
-        assert_eq!(
-            err,
-            "WARNING: line 7: for --LoopCS, the minimum known count (arg 1) must be must be >0\n\
-             WARNING: changing binding for a from VF01 to VF02\n"
-        );
-    }
-
-    #[test]
-    fn command_line_errors_keep_their_prefixes() {
-        let (out, err) = capture(|reporter| {
-            reporter.command_line_error(&Diagnostic::error(CliMessage::BadGaspOption {
-                argument: "-gbad".into(),
-            }));
-            reporter.command_line_error(&Diagnostic::error(CliMessage::SameInputAndOutput));
-        });
-        assert_eq!(
-            err,
-            "USER: bad command line option '-gbad' .. only -g+ or -g allowed\n\n\
-             can't have infile==outfile\n\n"
-        );
-        assert_eq!(
-            out,
-            "ERROR: something went wrong, vcl's outta here.\n".repeat(2)
-        );
-    }
-
-    #[test]
-    fn compile_errors_share_one_prefix() {
-        let errors = [
-            Diagnostic::error(ParseMessage::UnknownInstruction {
-                opcode: "frob".into(),
-            })
-            .at(5),
-            Diagnostic::error(ParseMessage::UnknownDirective {
-                name: ".bogus".into(),
-            })
-            .at(6),
-        ];
-        let (out, err) = capture(|reporter| reporter.compile_errors(&errors, ErrorStyle::Lines));
-        assert_eq!(
-            err,
-            "ERROR: line 5: unknown instruction 'frob'\nline 6: unknown directive '.bogus'\n"
-        );
-        assert_eq!(out, "ERROR: something went wrong, vcl's outta here.\n");
-        let (_, err) = capture(|reporter| {
-            reporter.compile_errors(&errors[..1], ErrorStyle::Microsoft { file: "a.vcl" })
-        });
-        assert_eq!(err, "ERROR: a.vcl(5): error: unknown instruction 'frob'\n");
-    }
-
-    #[test]
-    fn copy_detection_failure_prints_vcl_follow_up_lines() {
-        let error = Diagnostic::error(CompileMessage::ZeroCopyDestination).at(3);
-        let (out, err) = capture(|reporter| reporter.copy_detection_failure(&error));
-        assert_eq!(out, "");
-        assert_eq!(
-            err,
-            "INFO: OS_Init(Linux)\n\
-             ERROR: found a move to a const zero register\n\
-             ERROR: failed to detect moves!\n\
-             ERROR: failed to do basic operation processing\n"
-        );
-    }
-
-    fn capture_oxide(
-        warnings_as_errors: bool,
-        report: impl FnOnce(&mut Reporter<Vec<u8>, Vec<u8>>),
-    ) -> String {
-        let mut reporter = Reporter::new(Mode::Oxide, Vec::new(), Vec::new());
-        reporter.set_source("prog.vcl", "--enter\n\tad res, src, src\n--endenter\n");
-        reporter.set_warnings_as_errors(warnings_as_errors);
-        report(&mut reporter);
-        let (out, err) = reporter.into_inner();
-        assert!(
-            out.is_empty(),
-            "oxide mode prints nothing on stdout for diagnostics"
-        );
-        String::from_utf8(err).unwrap()
-    }
-
-    #[test]
-    fn oxide_errors_quote_the_line_and_underline_the_token() {
+    fn errors_quote_the_line_and_underline_the_token() {
         let error = Diagnostic::error(ParseMessage::UnknownInstruction {
             opcode: "ad".into(),
         })
         .at(2);
-        let err = capture_oxide(false, |reporter| {
-            reporter.compile_errors(&[error], ErrorStyle::Lines)
-        });
+        let err = capture(false, |reporter| reporter.compile_errors(&[error]));
         assert_eq!(
             err,
             "prog.vcl(2): error: unknown instruction 'ad'\n   \
@@ -1437,10 +815,10 @@ mod tests {
     }
 
     #[test]
-    fn oxide_locates_by_file_alone_without_a_line() {
-        let err = capture_oxide(false, |reporter| {
-            reporter.notice(&Diagnostic::warning(ParseMessage::NoExit));
-            reporter.notice(&Diagnostic::info(CliMessage::AlwaysOn));
+    fn diagnostics_without_a_line_name_the_file_or_the_driver() {
+        let err = capture(false, |reporter| {
+            reporter.report(&Diagnostic::warning(ParseMessage::NoExit));
+            reporter.report(&Diagnostic::info(CliMessage::AlwaysOn));
         });
         assert_eq!(
             err,
@@ -1451,10 +829,10 @@ mod tests {
     }
 
     #[test]
-    fn warnings_as_errors_promote_in_oxide_and_count() {
+    fn warnings_as_errors_promote_and_count() {
         let warning = Diagnostic::warning(CliMessage::PruneDeprecated);
-        let err = capture_oxide(true, |reporter| {
-            reporter.notice(&warning);
+        let err = capture(true, |reporter| {
+            reporter.report(&warning);
             assert_eq!(reporter.warnings(), 1);
             reporter.warnings_failed();
         });
@@ -1465,35 +843,29 @@ mod tests {
              oxide-vcl: 1 error; no output written\n"
         );
         // Without the flag, warnings are counted beside the errors.
-        let err = capture_oxide(false, |reporter| {
-            reporter.notice(&warning);
-            reporter.compile_errors(
-                &[Diagnostic::error(ParseMessage::EmptyLabel).at(9)],
-                ErrorStyle::Lines,
-            );
+        let err = capture(false, |reporter| {
+            reporter.report(&warning);
+            reporter.compile_errors(&[Diagnostic::error(ParseMessage::EmptyLabel).at(9)]);
         });
         assert!(
             err.ends_with(
                 "prog.vcl(9): error: a label with no name\n\
-                           oxide-vcl: 1 error, 1 warning; no output written\n"
+                 oxide-vcl: 1 error, 1 warning; no output written\n"
             ),
             "{err}"
         );
     }
 
     #[test]
-    fn vcl_mode_fails_warnings_with_its_own_error() {
-        let (out, err) = capture(|reporter| {
-            reporter.set_warnings_as_errors(true);
-            reporter.notice(&Diagnostic::warning(CliMessage::PruneDeprecated));
-            reporter.warnings_failed();
-        });
-        assert_eq!(
-            err,
-            "WARNING:  prune disabled (not) this options was deprecated, and now is disabled\n\
-             ERROR: warnings treated as errors (--warnings-as-errors)\n"
-        );
-        assert_eq!(out, "ERROR: something went wrong, vcl's outta here.\n");
+    fn the_listing_sits_between_vcls_banners() {
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.assembly("\t\t.vu\n").unwrap();
+        let (out, err) = reporter.into_inner();
+        let out = String::from_utf8(out).unwrap();
+        assert!(err.is_empty());
+        assert!(out.starts_with(";-------------------------\n"));
+        assert!(out.contains(";-----VCL CODE------------\n"));
+        assert!(out.ends_with(&";-------------------------\n".repeat(5)));
     }
 
     #[test]
@@ -1507,17 +879,12 @@ mod tests {
 
     #[test]
     fn messages_compare_with_their_group() {
-        let message = Message::from(CompileMessage::UsedBeforeSet {
+        let used = CompileMessage::UsedBeforeSet {
             register: "base".into(),
             component: "x".into(),
-        });
-        assert_eq!(message.to_string(), "base.x used before set");
-        assert!(
-            message
-                == CompileMessage::UsedBeforeSet {
-                    register: "base".into(),
-                    component: "x".into()
-                }
-        );
+        };
+        let message = Message::from(used.clone());
+        assert_eq!(message.to_string(), message.wording().text);
+        assert!(message == used);
     }
 }

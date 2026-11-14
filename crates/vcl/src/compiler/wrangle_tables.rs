@@ -271,7 +271,7 @@ pub(super) fn build_wrangle_table_span(
     };
     // ACC/I producer links and ACC chain starts.
     link_accumulators(&mut problem);
-    if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
+    if crate::debug::switches().wrangle_problem {
         builder.trace_problem(&problem, &keys);
     }
     builder.add_affine_statistics(&mut problem, &affine);
@@ -930,7 +930,7 @@ impl<'a> TableBuilder<'a> {
                     continue;
                 }
                 let alias = flagged || self.memory_alias(i, j, kind, other, &ea);
-                if std::env::var_os("VCL_ALIAS_TRACE").is_some() && kind == STORE {
+                if crate::debug::switches().alias_trace && kind == STORE {
                     crate::trace!(
                         "alias {i} {:?} vs {j} {:?} -> {alias} timid {}",
                         ea,

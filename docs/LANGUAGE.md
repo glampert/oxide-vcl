@@ -360,11 +360,9 @@ The parser checks each evaluated immediate and memory displacement as it
 reads the instruction (`check_immediate` in `crates/vcl/src/parser/mod.rs`),
 as vcl 1.4beta7 does while decoding it: an expression that does not parse,
 or whose numbers cannot be evaluated to the operand's type, is
-`ParseMessage::BadImmediate`. `ExpressionError::kind` tells the two apart;
-vcl mode prints the original's `failed to parse immediate` or `failed to
-evaluate tree for ... to type ...` line and `failed to decode an
-immediate`, and oxide mode the error's own description. Symbolic
-expressions are left to the assembler.
+`ParseMessage::BadImmediate`, which says what is wrong;
+`ExpressionError::kind` tells the two apart. Symbolic expressions are left
+to the assembler.
 Signed targets print in decimal and others as eight-digit hexadecimal.
 Effective-address displacements print numeric integers in decimal, keep
 unresolved expressions, and print floats with `%1.9e`. A displacement may

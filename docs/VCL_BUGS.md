@@ -35,8 +35,7 @@ Ground rules:
   unknown name is rejected the same way.
 - **Fixes are not optimizations.** They change output only where the
   original's output is wrong, or where it rejects a valid program; the one
-  exception is noted under F2. Each
-  keeps vcl's messages unless oxide mode is on too. In the library a fix
+  exception is noted under F2. In the library a fix
   is `vcl::Fix`, chosen in `Options::fixes`; `Options::fixes(fix)` tells
   whether it applies.
 

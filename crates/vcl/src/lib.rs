@@ -23,6 +23,7 @@
 pub mod allocator;
 pub mod analysis;
 pub mod compiler;
+pub mod debug;
 pub mod diagnostics;
 pub mod emit;
 pub mod isa;

@@ -1,10 +1,8 @@
-//! oxide-vcl's own wording for every message (`--mode=oxide`): a clearer
-//! sentence, the token in the source line it is about (for the caret
-//! underline) and, where there is one, a suggested fix.
-//!
-//! None of this is vcl 1.4beta7's text; vcl mode never uses it.
+//! The wording of every message: a sentence, the token in the source line it
+//! is about (for the caret underline) and, where there is one, a suggested
+//! fix. None of this is vcl 1.4beta7's text.
 
-use super::{CliMessage, CompileMessage, DriverMessage, Message, ParseMessage, Severity};
+use super::{CliMessage, CompileMessage, DriverMessage, Message, ParseMessage};
 use crate::allocator::allocation::AllocationError;
 
 /// A message in oxide wording.
@@ -56,32 +54,15 @@ pub fn wording(message: &Message) -> Wording {
     }
 }
 
-/// The severity a message has in oxide mode, where it differs from the one
-/// it was raised with.
-pub fn severity(message: &Message, raised: Severity) -> Severity {
-    match message {
-        // vcl prints `-M` as a warning, but it only confirms the option.
-        Message::Cli(CliMessage::TimidMemory) => Severity::Info,
-        _ => raised,
-    }
-}
-
 fn cli(message: &CliMessage) -> Wording {
     use CliMessage::*;
     match message {
         AlwaysOn => Wording::new("-a has no effect: what it enabled is always on"),
-        SizeReductionDisabled => Wording::new("-C: the code size reduction pass is off"),
-        AlignmentDisabled => Wording::new("-f: .align directives are left out of the listing"),
-        KeepTemporaries => Wording::new("-K: the preprocessors' temporary files are kept"),
-        TimidMemory => Wording::new(
-            "-M: timid memory access: loads and stores that may touch the same fields keep their source order",
-        ),
         PruneDeprecated => Wording::new("-P is deprecated and has no effect")
             .help("remove it from the command line"),
         StaggeredMemory => Wording::new("-S (staggered memory access in loops) has no effect"),
         ImmediateFixupsDeprecated => Wording::new("-Z is deprecated and has no effect")
             .help("remove it from the command line"),
-        EndBitDisabled => Wording::new("-e: no instruction gets the [E] bit"),
         BadGaspOption { argument } => Wording::new(format!("unknown option '{argument}'"))
             .help("use -g to run gasp first, or -g+ for gasp with its alternate syntax"),
         BadArgument { argument } => {
@@ -211,10 +192,6 @@ fn driver(message: &DriverMessage) -> Wording {
             io_text(error)
         )),
         WarningsAsErrors => Wording::new("warnings are errors (--warnings-as-errors)"),
-        // vcl's own start-up and abort lines; oxide mode does not print them.
-        OsInit | MovesNotDetected | BasicProcessingFailed | Abort => {
-            Wording::new(message.vcl_text())
-        }
     }
 }
 
@@ -619,6 +596,11 @@ fn compile(message: &CompileMessage) -> Wording {
             family(*vector)
         ))
         .subject(name.clone()),
+        WorkAreaNeedsOxideMode => Wording::new(
+            "a work area needs --mode=oxide: vcl 1.4beta7 rejects every .vu_work_area",
+        )
+        .subject(".vu_work_area")
+        .help("compile with --mode=oxide to spill registers that do not fit into the area"),
         WorkAreaFull {
             vector,
             register,
@@ -757,20 +739,11 @@ mod tests {
     }
 
     #[test]
-    fn oxide_wording_differs_from_vcl_and_names_its_subject() {
+    fn wording_names_its_subject() {
         let message = Message::from(ParseMessage::DuplicateLabel { name: "top".into() });
-        assert_ne!(message.oxide_text(), message.vcl_text());
         assert_eq!(message.wording().subject.as_deref(), Some("top"));
         let internal = wording(&CompileMessage::Internal("phase failed".into()).into());
         assert!(internal.text.starts_with("internal compiler error: "));
         assert!(internal.help.unwrap().contains("bug in oxide-vcl"));
-    }
-
-    #[test]
-    fn timid_memory_is_a_note_in_oxide_mode() {
-        let message = Message::from(CliMessage::TimidMemory);
-        assert_eq!(severity(&message, Severity::Warning), Severity::Info);
-        let other = Message::from(CliMessage::PruneDeprecated);
-        assert_eq!(severity(&other, Severity::Warning), Severity::Warning);
     }
 }

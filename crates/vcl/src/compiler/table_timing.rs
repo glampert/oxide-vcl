@@ -95,7 +95,7 @@ impl<'a> TimingContext<'a> {
             exit_users,
             owner,
             hazard_reads: {
-                if std::env::var_os("VCL_HAZARD").is_some() {
+                if crate::debug::switches().hazard {
                     for (kind, set) in [
                         ("read", &analysis.hazard_reads),
                         ("write", &analysis.hazard_writes),
@@ -356,13 +356,12 @@ impl<'a> TimingContext<'a> {
             let value = self.latency(*setter, register) + self.offset(id, register)
                 - (distance + to_end)
                 - 1;
-            if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                crate::trace!(
-                    "  read {id} {} in {block} setter {setter} {} block {setter_block} to_end {to_end} distance {distance} value {value}",
-                    self.region.instructions[id].instruction.mnemonic,
-                    self.region.instructions[*setter].instruction.mnemonic
-                );
-            }
+            crate::trace_if!(
+                timing_debug,
+                "  read {id} {} in {block} setter {setter} {} block {setter_block} to_end {to_end} distance {distance} value {value}",
+                self.region.instructions[id].instruction.mnemonic,
+                self.region.instructions[*setter].instruction.mnemonic
+            );
             minimum = minimum.max(value);
         }
         minimum
@@ -382,12 +381,11 @@ impl<'a> TimingContext<'a> {
         let id = table.live[index];
         let block = scope.block;
         let register = table.operand_registers[index][o];
-        if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-            crate::trace!(
-                "timing write {id} reg {register} part {part} users {:?}",
-                self.users.get(&(id, register, part))
-            );
-        }
+        crate::trace_if!(
+            timing_debug,
+            "timing write {id} reg {register} part {part} users {:?}",
+            self.users.get(&(id, register, part))
+        );
         let Some(users) = self.users.get(&(id, register, part)) else {
             return end;
         };
@@ -400,9 +398,7 @@ impl<'a> TimingContext<'a> {
                 continue;
             }
             let Some((row, _)) = (scope.placed)(user) else {
-                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    crate::trace!("  user {user} block {user_block} not placed");
-                }
+                crate::trace_if!(timing_debug, "  user {user} block {user_block} not placed");
                 continue;
             };
             let Some(distance) = self.distance(scope.lengths, block, user_block) else {
@@ -411,11 +407,10 @@ impl<'a> TimingContext<'a> {
             let value = self.latency(id, register) + self.offset(user, register)
                 - (distance + row as i32)
                 - 1;
-            if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                crate::trace!(
-                    "  user {user} block {user_block} row {row} distance {distance} value {value}"
-                );
-            }
+            crate::trace_if!(
+                timing_debug,
+                "  user {user} block {user_block} row {row} distance {distance} value {value}"
+            );
             end = end.max(value);
         }
         end

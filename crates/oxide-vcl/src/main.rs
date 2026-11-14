@@ -1,14 +1,13 @@
 //! `oxide-vcl`: the command-line driver. It parses the original's command line,
 //! runs the optional preprocessors, compiles with the `vcl` crate and writes
-//! the results, keeping the original's diagnostics and exit statuses.
+//! the results, keeping the original's exit statuses in vcl mode.
 //!
-//! Everything it prints goes through [`vcl::diagnostics::Reporter`], in the
-//! mode `--mode=` selects (vcl when absent).
+//! Everything it prints goes through [`vcl::diagnostics::Reporter`].
 
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::Command;
-use vcl::diagnostics::{Diagnostic, DriverMessage, ErrorStyle, Reporter};
+use vcl::diagnostics::{Diagnostic, DriverMessage, Reporter};
 use vcl_cli::{self as cli, Arguments};
 
 /// The original's preprocessing stages, in the order it runs them: the C
@@ -90,7 +89,7 @@ fn run_stage(
     })();
     if arguments.keep_temps {
         if !arguments.quiet {
-            reporter.notice(&Diagnostic::info(DriverMessage::KeptTemporaries {
+            reporter.report(&Diagnostic::info(DriverMessage::KeptTemporaries {
                 input: display(&input),
                 output: display(&output),
             }));
@@ -120,11 +119,7 @@ impl From<DriverMessage> for RunError {
 
 /// The input's name in diagnostics.
 fn input_name(arguments: &Arguments) -> &str {
-    match (&arguments.input, arguments.mode()) {
-        (Some(path), _) => path,
-        (None, vcl::Mode::Vcl) => "_stdin_",
-        (None, vcl::Mode::Oxide) => "<stdin>",
-    }
+    arguments.input.as_deref().unwrap_or("<stdin>")
 }
 
 fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
@@ -148,7 +143,7 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
     let filename = arguments.input.as_deref().unwrap_or("_stdin_");
     let output = vcl::compile(&source, filename, &arguments.compile).map_err(RunError::Compile)?;
     for warning in &output.warnings {
-        reporter.notice(warning);
+        reporter.report(warning);
     }
     // Warnings from the command line count too.
     if arguments.warnings_as_errors && reporter.warnings() > 0 {
@@ -236,23 +231,21 @@ fn write_all_or_nothing(files: &[(&str, &[u8])]) -> Result<(), DriverMessage> {
 }
 
 fn main() {
-    let mut reporter = Reporter::stdio(vcl::Mode::default());
+    let mut reporter = Reporter::stdio();
     let arguments = match cli::parse(std::env::args().skip(1)) {
         Ok(arguments) => arguments,
         Err(error) => {
-            reporter.set_mode(error.mode);
             for notice in &error.notices {
-                reporter.notice(notice);
+                reporter.report(notice);
             }
-            reporter.command_line_error(&error.diagnostic);
+            reporter.report(&error.diagnostic);
             std::process::exit(i32::from(error.exit_status()));
         }
     };
-    reporter.set_mode(arguments.mode());
     reporter.set_warnings_as_errors(arguments.warnings_as_errors);
 
     for notice in &arguments.notices {
-        reporter.notice(notice);
+        reporter.report(notice);
     }
 
     if arguments.version {
@@ -280,18 +273,11 @@ fn main() {
             if arguments.mode() == vcl::Mode::Vcl
                 && let Some(error) = errors.iter().find(|error| error.exit_status() == 0)
             {
-                reporter.copy_detection_failure(&error.diagnostic());
+                reporter.report(&error.diagnostic());
                 return;
             }
             let diagnostics: Vec<Diagnostic> = errors.iter().map(|e| e.diagnostic()).collect();
-            let style = if arguments.ms_diagnostics {
-                ErrorStyle::Microsoft {
-                    file: input_name(&arguments),
-                }
-            } else {
-                ErrorStyle::Lines
-            };
-            reporter.compile_errors(&diagnostics, style);
+            reporter.compile_errors(&diagnostics);
             std::process::exit(failure_status);
         }
         Err(RunError::Warnings) => {
@@ -299,7 +285,7 @@ fn main() {
             std::process::exit(failure_status);
         }
         Err(RunError::Driver(message)) => {
-            reporter.failure(&Diagnostic::error(message));
+            reporter.report(&Diagnostic::error(message));
             std::process::exit(failure_status);
         }
     }

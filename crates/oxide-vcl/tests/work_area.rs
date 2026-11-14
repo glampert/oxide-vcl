@@ -182,10 +182,9 @@ fn vcl_mode_rejects_every_work_area() {
         ".vu_work_area vu1,0x3e8,8\n",
     ] {
         let message = rejection(vcl(VECTOR_BODY, header));
-        assert_eq!(
-            message.vcl_text(),
-            "init work area - failed to get vu mem pool",
-            "{header}"
+        assert!(
+            message == CompileMessage::WorkAreaNeedsOxideMode,
+            "{header}: {message:?}"
         );
     }
 }

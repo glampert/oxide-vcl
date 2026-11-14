@@ -91,16 +91,19 @@ fn vcl_mode_compiles_like_vcl_and_warns_once_per_name() {
 }
 
 #[test]
-fn vcl_mode_warning_text() {
-    let compiled = vcl::compile(&output("caty"), "f.vcl", &options(Mode::Vcl)).unwrap();
-    let mut reporter = vcl::diagnostics::Reporter::new(Mode::Vcl, Vec::new(), Vec::new());
-    reporter.notice(&compiled.warnings[0]);
+fn the_warning_is_printed_on_its_line() {
+    let source = output("caty");
+    let compiled = vcl::compile(&source, "f.vcl", &options(Mode::Vcl)).unwrap();
+    let mut reporter = vcl::diagnostics::Reporter::new(Vec::new(), Vec::new());
+    reporter.set_source("f.vcl", &source);
+    reporter.report(&compiled.warnings[0]);
     let (_, err) = reporter.into_inner();
-    assert_eq!(
-        String::from_utf8(err).unwrap(),
-        "WARNING: line 5: 'caty' is read as register 'cat' with field y: old syntax takes a \
-         name's trailing x, y, z and w as fields; rename it, or write 'cat.y' if the field is \
-         meant\n"
+    let err = String::from_utf8(err).unwrap();
+    assert!(
+        err.starts_with(
+            "f.vcl(5): warning: 'caty' is read as register 'cat' with field selection .y"
+        ),
+        "{err}"
     );
 }
 
@@ -185,7 +188,9 @@ fn glued_interface_letters_keep_every_field() {
                   add.xyz res, src, src\n--exit\nout_vf resxyz(vf02)\n--endexit\n";
     let errors = vcl::compile(source, "f.vcl", &options(Mode::Vcl)).unwrap_err();
     assert!(
-        errors[0].to_string().contains("res.w used before set"),
+        errors[0]
+            .to_string()
+            .contains("'res.w' is read before anything writes it"),
         "{errors:?}"
     );
 }
@@ -270,7 +275,9 @@ fn new_syntax_glued_broadcast_is_a_name() {
                   --endenter\nadd res, src, scalex\n--exit\nout_vf res(vf03)\n--endexit\n";
     let errors = vcl::compile(source, "f.vcl", &options(Mode::Vcl)).unwrap_err();
     assert!(
-        errors[0].to_string().contains("scalex.x used before set"),
+        errors[0]
+            .to_string()
+            .contains("'scalex.x' is read before anything writes it"),
         "{errors:?}"
     );
 }
@@ -313,7 +320,7 @@ fn dotted_interface_names_are_rejected() {
             assert_eq!(errors[0].line, line, "{name}");
             assert_eq!(
                 errors[0].to_string(),
-                format!("line {line}: can't use '.' in the name of a register : '{name}'")
+                format!("line {line}: '.' can't be used in a register name")
             );
         }
     }
@@ -333,7 +340,9 @@ fn a_name_does_not_cross_syntaxes() {
                   --exit\nout_vf res(vf02)\n--endexit\n";
     let errors = vcl::compile(source, "f.vcl", &options(Mode::Vcl)).unwrap_err();
     assert!(
-        errors[0].to_string().contains("caty.x used before set"),
+        errors[0]
+            .to_string()
+            .contains("'caty.x' is read before anything writes it"),
         "{errors:?}"
     );
 }

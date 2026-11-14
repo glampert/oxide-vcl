@@ -1,9 +1,9 @@
 //! The driver's exact output: what reaches standard output and standard
 //! error, the exit status and the files written, for notices, warnings and
-//! each kind of failure. vcl mode keeps the port's layout of vcl 1.4beta7's
-//! messages; oxide mode has its own (`file(line): severity: text`, the
-//! source line, a suggested fix, a count, status 1, or 2 for a bad command
-//! line).
+//! each kind of failure. Both modes print the same diagnostics
+//! (`file(line): severity: text`, the source line, a suggested fix and a
+//! count); vcl mode keeps vcl 1.4beta7's exit status 255, oxide mode exits
+//! with 1, or 2 for a bad command line.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -82,86 +82,67 @@ const FIELD_LETTERS: &str = ".init_vf_all\n\
                              out_vf copy(vf05)\n\
                              --endexit\n";
 
-const ABORT: &str = "ERROR: something went wrong, vcl's outta here.\n";
+/// The status of a failed run: vcl's 255 in vcl mode, 1 (or 2 for a bad
+/// command line) in oxide mode.
+fn failure_status(mode: &str, command_line: bool) -> i32 {
+    match (mode, command_line) {
+        ("--mode=vcl", _) => 255,
+        (_, true) => 2,
+        _ => 1,
+    }
+}
 
-fn in_oxide<'a>(arguments: &[&'a str]) -> Vec<&'a str> {
-    std::iter::once("--mode=oxide")
-        .chain(arguments.iter().copied())
-        .collect()
+const MODES: [&str; 2] = ["--mode=vcl", "--mode=oxide"];
+
+#[test]
+fn notices_say_only_what_matters() {
+    // -M and -C only confirm themselves, and print nothing.
+    for mode in MODES {
+        let run = run(
+            "notices",
+            &[mode, "-a", "-M", "-C", "good.vcl"],
+            &[("good.vcl", GOOD)],
+        );
+        assert_eq!(run.status, 0);
+        assert_eq!(
+            run.stderr,
+            "oxide-vcl: note: -a has no effect: what it enabled is always on\n"
+        );
+        assert!(run.stdout.contains(".vu"), "{}", run.stdout);
+    }
 }
 
 #[test]
-fn notices_print_in_argument_order() {
-    let arguments = ["-a", "-M", "-C", "good.vcl"];
+fn command_line_errors_name_the_problem() {
     let files = [("good.vcl", GOOD)];
-    let vcl = run("notices", &arguments, &files);
-    assert_eq!(vcl.status, 0);
-    assert_eq!(
-        vcl.stderr,
-        "INFO: -a option is now on always\n\
-         WARNING: timid memory access mode enabled\n\
-         INFO: disabling code size reduction pass..\n"
-    );
-    assert!(vcl.stdout.contains(".vu"), "{}", vcl.stdout);
-    // Oxide mode words them as notes; -M only confirms the option.
-    let oxide = run("notices-oxide", &in_oxide(&arguments), &files);
-    assert_eq!(oxide.status, 0);
-    assert_eq!(
-        oxide.stderr,
-        "oxide-vcl: note: -a has no effect: what it enabled is always on\n\
-         oxide-vcl: note: -M: timid memory access: loads and stores that may touch the same \
-         fields keep their source order\n\
-         oxide-vcl: note: -C: the code size reduction pass is off\n"
-    );
-    assert!(oxide.stdout.contains(".vu"), "{}", oxide.stdout);
-}
-
-#[test]
-fn command_line_errors_end_with_the_abort_line() {
-    let files = [("good.vcl", GOOD)];
-    let vcl = run("bad-arg", &["-M", "-x", "good.vcl"], &files);
-    assert_eq!(vcl.status, 255);
-    assert_eq!(
-        vcl.stderr,
-        "WARNING: timid memory access mode enabled\n\
-         ERROR: bad args '-x', try -h for help\n\n"
-    );
-    assert_eq!(vcl.stdout, ABORT);
-    let vcl = run("same-file", &["-ogood.vcl", "good.vcl"], &files);
-    assert_eq!(vcl.status, 255);
-    assert_eq!(vcl.stderr, "can't have infile==outfile\n\n");
-    assert_eq!(vcl.stdout, ABORT);
-}
-
-#[test]
-fn oxide_command_line_errors_exit_with_status_2() {
-    let files = [("good.vcl", GOOD)];
-    let bad = run("bad-arg-oxide", &in_oxide(&["-x", "good.vcl"]), &files);
-    assert_eq!(bad.status, 2);
-    assert_eq!(bad.stdout, "");
-    assert!(
-        bad.stderr
-            .starts_with("oxide-vcl: error: unknown option '-x'\n  = help: "),
-        "{}",
-        bad.stderr
-    );
-    let same = run(
-        "same-file-oxide",
-        &in_oxide(&["-ogood.vcl", "good.vcl"]),
-        &files,
-    );
-    assert_eq!(same.status, 2);
-    assert!(
-        same.stderr
-            .starts_with("oxide-vcl: error: the output file (-o) is the input file\n")
-    );
-    assert_eq!(same.file("good.vcl"), Some(GOOD));
+    for mode in MODES {
+        let bad = run("bad-arg", &[mode, "-x", "good.vcl"], &files);
+        assert_eq!(bad.status, failure_status(mode, true));
+        assert_eq!(bad.stdout, "");
+        assert!(
+            bad.stderr
+                .starts_with("oxide-vcl: error: unknown option '-x'\n  = help: "),
+            "{}",
+            bad.stderr
+        );
+        let same = run("same-file", &[mode, "-ogood.vcl", "good.vcl"], &files);
+        assert_eq!(same.status, failure_status(mode, true));
+        assert!(
+            same.stderr
+                .starts_with("oxide-vcl: error: the output file (-o) is the input file\n")
+        );
+        assert_eq!(same.file("good.vcl"), Some(GOOD));
+        let unknown = run("bad-mode", &["--mode=fast", "good.vcl"], &files);
+        assert!(
+            unknown
+                .stderr
+                .starts_with("oxide-vcl: error: unknown mode 'fast'\n"),
+            "{}",
+            unknown.stderr
+        );
+    }
     // A near miss of a long option is suggested.
-    let typo = run(
-        "typo-oxide",
-        &in_oxide(&["--warning-as-errors", "good.vcl"]),
-        &files,
-    );
+    let typo = run("typo", &["--warning-as-errors", "good.vcl"], &files);
     assert_eq!(
         typo.stderr,
         "oxide-vcl: error: unknown option '--warning-as-errors'\n  \
@@ -181,41 +162,7 @@ fn oxide_command_line_errors_exit_with_status_2() {
 }
 
 #[test]
-fn an_unknown_mode_is_an_unknown_switch() {
-    let run = run(
-        "bad-mode",
-        &["--mode=fast", "good.vcl"],
-        &[("good.vcl", GOOD)],
-    );
-    assert_eq!(run.status, 255);
-    assert_eq!(
-        run.stderr,
-        "ERROR: bad args '--mode=fast', try -h for help\n\n"
-    );
-    assert_eq!(run.stdout, ABORT);
-}
-
-#[test]
-fn compile_errors_share_one_prefix() {
-    let files = [("bad.vcl", BAD)];
-    let vcl = run("errors", &["bad.vcl"], &files);
-    assert_eq!(vcl.status, 255);
-    assert_eq!(
-        vcl.stderr,
-        "ERROR: line 4: unknown instruction 'frob'\n\
-         line 5: unknown directive '.bogus'\n"
-    );
-    assert_eq!(vcl.stdout, ABORT);
-    let vcl = run("errors-ms", &["-p", "bad.vcl"], &files);
-    assert_eq!(
-        vcl.stderr,
-        "ERROR: bad.vcl(4): error: unknown instruction 'frob'\n\
-         bad.vcl(5): error: unknown directive '.bogus'\n"
-    );
-}
-
-#[test]
-fn oxide_compile_errors_quote_the_source() {
+fn compile_errors_quote_the_source() {
     let files = [("bad.vcl", BAD)];
     let expected = "bad.vcl(4): error: unknown instruction 'frob'\n   \
                     4 | frob vf01\n     \
@@ -224,22 +171,19 @@ fn oxide_compile_errors_quote_the_source() {
                     5 | .bogus\n     \
                     | ^^^^^^\n\
                     oxide-vcl: 2 errors; no output written\n";
-    for (name, arguments) in [("errors-oxide", ["bad.vcl"]), ("errors-oxide-ms", ["-p"])] {
-        let arguments: Vec<&str> = arguments
-            .iter()
-            .copied()
-            .chain((name == "errors-oxide-ms").then_some("bad.vcl"))
-            .collect();
-        let oxide = run(name, &in_oxide(&arguments), &files);
-        assert_eq!(oxide.status, 1);
-        assert_eq!(oxide.stdout, "");
-        assert_eq!(oxide.stderr, expected, "{name}");
+    for mode in MODES {
+        // -p is accepted and changes nothing.
+        for arguments in [vec![mode, "bad.vcl"], vec![mode, "-p", "bad.vcl"]] {
+            let run = run("errors", &arguments, &files);
+            assert_eq!(run.status, failure_status(mode, false));
+            assert_eq!(run.stdout, "");
+            assert_eq!(run.stderr, expected, "{arguments:?}");
+        }
     }
     // A misspelt instruction gets a suggestion; standard input is <stdin>.
     let typo = ".init_vf_all\n--enter\nin_vf src(vf01)\n--endenter\n\
                 \tad res, src, src\n--exit\nout_vf res(vf02)\n--endexit\n";
     let output = Command::new(env!("CARGO_BIN_EXE_oxide-vcl"))
-        .arg("--mode=oxide")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -250,7 +194,7 @@ fn oxide_compile_errors_quote_the_source() {
             child.wait_with_output()
         })
         .unwrap();
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(255));
     assert_eq!(
         String::from_utf8(output.stderr).unwrap(),
         "<stdin>(5): error: unknown instruction 'ad'\n   \
@@ -263,26 +207,18 @@ fn oxide_compile_errors_quote_the_source() {
 
 #[test]
 fn driver_failures_name_the_file() {
-    let vcl = run("missing", &["missing.vcl"], &[]);
-    assert_eq!(vcl.status, 255);
-    assert!(
-        vcl.stderr
-            .starts_with("ERROR: failed to open file 'missing.vcl': "),
-        "{}",
-        vcl.stderr
-    );
-    assert_eq!(vcl.stdout, ABORT);
-    let oxide = run("missing-oxide", &in_oxide(&["missing.vcl"]), &[]);
-    assert_eq!(oxide.status, 1);
-    assert_eq!(oxide.stdout, "");
-    assert!(
-        oxide
-            .stderr
-            .starts_with("oxide-vcl: error: can't read input file 'missing.vcl': "),
-        "{}",
-        oxide.stderr
-    );
-    assert!(!oxide.stderr.contains("os error"), "{}", oxide.stderr);
+    for mode in MODES {
+        let run = run("missing", &[mode, "missing.vcl"], &[]);
+        assert_eq!(run.status, failure_status(mode, false));
+        assert_eq!(run.stdout, "");
+        assert!(
+            run.stderr
+                .starts_with("oxide-vcl: error: can't read input file 'missing.vcl': "),
+            "{}",
+            run.stderr
+        );
+        assert!(!run.stderr.contains("os error"), "{}", run.stderr);
+    }
 }
 
 #[test]
@@ -299,20 +235,16 @@ fn loop_hint_warnings_carry_their_line() {
                   --exit\n\
                   --endexit\n";
     let files = [("loop.vcl", source)];
-    let vcl = run("warnings", &["-q", "loop.vcl"], &files);
-    assert_eq!(vcl.status, 0);
-    assert_eq!(
-        vcl.stderr,
-        "WARNING: line 7: for --LoopCS, the minimum known count (arg 1) must be must be >0\n"
-    );
-    let oxide = run("warnings-oxide", &in_oxide(&["-q", "loop.vcl"]), &files);
-    assert_eq!(oxide.status, 0);
-    assert_eq!(
-        oxide.stderr,
-        "loop.vcl(7): warning: --LoopCS: the minimum known count (argument 1) must be at least 1\n   \
-         7 | --LoopCS 0, 0\n"
-    );
-    assert!(oxide.stdout.contains(".vu"));
+    for mode in MODES {
+        let run = run("warnings", &[mode, "-q", "loop.vcl"], &files);
+        assert_eq!(run.status, 0);
+        assert_eq!(
+            run.stderr,
+            "loop.vcl(7): warning: --LoopCS: the minimum known count (argument 1) must be at least 1\n   \
+             7 | --LoopCS 0, 0\n"
+        );
+        assert!(run.stdout.contains(".vu"));
+    }
 }
 
 /// vcl's copy detector rejects a copy into VI00 but exits with status 0
@@ -334,31 +266,23 @@ fn a_copy_into_the_constant_register_fails_in_oxide_mode() {
                  --endexit\n";
     for (name, source, line) in [("raw", raw, 8), ("bound", bound, 6)] {
         let files = [("copy.vcl", source)];
+        let error = format!(
+            "copy.vcl({line}): error: this copy writes to the constant register (vf00 or vi00)\n"
+        );
         let vcl = run(
             &format!("copy-zero-{name}"),
             &["-oout.vsm", "copy.vcl"],
             &files,
         );
         assert_eq!(vcl.status, 0, "{name}");
-        assert!(
-            vcl.stderr
-                .contains("ERROR: found a move to a const zero register\n"),
-            "{name}: {}",
-            vcl.stderr
-        );
+        assert!(vcl.stderr.starts_with(&error), "{name}: {}", vcl.stderr);
         let oxide = run(
             &format!("copy-zero-{name}-oxide"),
-            &in_oxide(&["-oout.vsm", "copy.vcl"]),
+            &["--mode=oxide", "-oout.vsm", "copy.vcl"],
             &files,
         );
         assert_eq!(oxide.status, 1, "{name}");
-        assert!(
-            oxide.stderr.starts_with(&format!(
-                "copy.vcl({line}): error: this copy writes to the constant register (vf00 or vi00)\n"
-            )),
-            "{name}: {}",
-            oxide.stderr
-        );
+        assert!(oxide.stderr.starts_with(&error), "{name}: {}", oxide.stderr);
         for run in [vcl, oxide] {
             assert_eq!(run.file("out.vsm"), None, "{name}");
         }
@@ -378,15 +302,16 @@ fn warnings_as_errors_fail_the_run_in_both_modes() {
     assert_eq!(vcl.status, 255);
     assert!(
         vcl.stderr
-            .starts_with("WARNING: line 5: 'copy' is read as register 'cop'")
-    );
-    assert!(
-        vcl.stderr
-            .ends_with("\nERROR: warnings treated as errors (--warnings-as-errors)\n"),
+            .starts_with("field.vcl(5): error: 'copy' is read as register 'cop'"),
         "{}",
         vcl.stderr
     );
-    assert_eq!(vcl.stdout, ABORT);
+    assert!(
+        vcl.stderr
+            .ends_with("oxide-vcl: 1 error; no output written\n"),
+        "{}",
+        vcl.stderr
+    );
 
     // Oxide mode rejects field letters outright; a command-line warning
     // shows the promotion.
@@ -395,7 +320,13 @@ fn warnings_as_errors_fail_the_run_in_both_modes() {
     let files = [("good.vcl", source)];
     let oxide = run(
         "werror-oxide",
-        &in_oxide(&["-P", "--warnings-as-errors", "-oout.vsm", "good.vcl"]),
+        &[
+            "--mode=oxide",
+            "-P",
+            "--warnings-as-errors",
+            "-oout.vsm",
+            "good.vcl",
+        ],
         &files,
     );
     assert_eq!(oxide.status, 1);
@@ -407,7 +338,7 @@ fn warnings_as_errors_fail_the_run_in_both_modes() {
     );
     let warned = run(
         "werror-oxide-off",
-        &in_oxide(&["-P", "-oout.vsm", "good.vcl"]),
+        &["--mode=oxide", "-P", "-oout.vsm", "good.vcl"],
         &files,
     );
     assert_eq!(warned.status, 0);
@@ -441,7 +372,7 @@ fn a_failed_run_leaves_the_outputs_alone() {
                   add res, first, first\n--exit\nout_vf res(vf05)\n--endexit\n";
     let good = run(
         "outputs-oxide",
-        &in_oxide(&["-oout.vsm", "-jout.h", "good.vcl"]),
+        &["--mode=oxide", "-oout.vsm", "-jout.h", "good.vcl"],
         &[("good.vcl", source)],
     );
     assert_eq!(good.status, 0);
@@ -451,7 +382,7 @@ fn a_failed_run_leaves_the_outputs_alone() {
     // A header that can't be written keeps the listing from being written.
     let unwritable = run(
         "outputs-oxide-unwritable",
-        &in_oxide(&["-oout.vsm", "-jmissing/out.h", "good.vcl"]),
+        &["--mode=oxide", "-oout.vsm", "-jmissing/out.h", "good.vcl"],
         &[("good.vcl", source)],
     );
     assert_eq!(unwritable.status, 1);

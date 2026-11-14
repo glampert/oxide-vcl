@@ -178,10 +178,10 @@ Any other write into such a web is removed: see
 builds the webs once after its second copy pass (`spell_zero_webs`) to make
 both checks.
 
-The library returns a typed compilation error. The CLI reproduces the status zero,
-empty stdout and exact stderr for the retained invocation; these are literal
-compatibility diagnostics, not a claim that the executable runs on Linux. Ordinary
-compiler errors keep their usual status handling.
+The library returns a typed compilation error. In vcl mode the CLI keeps the
+status zero and empty stdout, and prints the error in its own layout; oxide
+mode fails the run (status 1). Ordinary compiler errors keep their usual
+status handling.
 
 The differential comparator classifies `ERROR:` plus absent assembly at status zero
 as `diagnostic_failure`, for both vcl and candidate observations, distinct from

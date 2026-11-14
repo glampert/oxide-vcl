@@ -354,10 +354,10 @@ fn legacy_e_switch_masks_empty_upper_slots_but_keeps_occupied_upper_flags() {
 fn continuation_cannot_overwrite_an_exit_end_kind() {
     let source = &evidence::text("inputs/flow-cont-invalid-end.vcl");
     let errors = vcl::compile(source, "flow.vcl", &vcl::Options::default()).unwrap_err();
-    assert!(
-        errors.iter().any(|error| error.message.to_string()
-            == "synthetic instruction in invalid enter/exit context")
-    );
+    assert!(errors.iter().any(|error| matches!(
+        error.message,
+        vcl::Message::Parse(vcl::diagnostics::ParseMessage::SyntheticContext)
+    )));
 }
 
 #[test]
@@ -442,7 +442,7 @@ fn scalar_memory_base_must_still_be_defined() {
     assert!(
         errors
             .iter()
-            .any(|error| error.message.to_string() == "base.x used before set")
+            .any(|error| error.message.to_string() == "'base.x' is read before anything writes it")
     );
 }
 
@@ -875,7 +875,7 @@ fn zero_copy_destination_is_a_library_error_but_preserves_legacy_cli_status_zero
         errors[0]
             .message
             .to_string()
-            .contains("const zero register")
+            .contains("the constant register")
     );
     let run = std::process::Command::new(env!("CARGO_BIN_EXE_oxide-vcl"))
         .args(["-t1", "-uCOPY"])
@@ -884,7 +884,10 @@ fn zero_copy_destination_is_a_library_error_but_preserves_legacy_cli_status_zero
         .unwrap();
     assert_eq!(run.status.code(), Some(0));
     assert_eq!(run.stdout, std::fs::read(root.join("stdout.bin")).unwrap());
-    assert_eq!(run.stderr, std::fs::read(root.join("stderr.bin")).unwrap());
+    assert!(
+        String::from_utf8_lossy(&run.stderr)
+            .contains("error: this copy writes to the constant register")
+    );
 }
 
 /// Probes from the local corpus work (docs/LOCAL_CORPUS.md): branches
@@ -1120,14 +1123,14 @@ fn invalid_loop_hints_warn_and_compile() {
     assert!(
         count_zero.warnings[0]
             .to_string()
-            .contains("minimum known count (arg 1)")
+            .contains("minimum known count (argument 1)")
     );
     assert!(!pipelined(&count_zero.assembly), "{}", count_zero.assembly);
     let safe_negative = compile("--LoopCS 4,-1").unwrap();
     assert!(
         safe_negative.warnings[0]
             .to_string()
-            .contains("minimum safe count (arg 2)")
+            .contains("minimum safe count (argument 2)")
     );
     assert!(pipelined(&safe_negative.assembly));
     let abs_two = compile(
@@ -1138,7 +1141,7 @@ fn invalid_loop_hints_warn_and_compile() {
     assert!(
         abs_two.warnings[0]
             .to_string()
-            .contains("--LoopAbs. value must be >=2")
+            .contains("--LoopAbs: the extra loop count must be at least 2")
     );
     assert_eq!(
         abs_two.assembly,
@@ -1154,12 +1157,12 @@ fn invalid_loop_hints_warn_and_compile() {
         extra[0]
             .message
             .to_string()
-            .contains("--LoopExtra. value must be >=0")
+            .contains("--LoopExtra: the extra loop count must be 0 or more")
     );
 }
 
-/// Running out of registers names the register type and the directive that
-/// gives more (the empty-pool message is the original's).
+/// Running out of registers names the register type (the directive that
+/// gives more is in the message's help).
 #[test]
 fn allocation_failures_say_which_directive_helps() {
     let message = |source: &str| {
@@ -1177,11 +1180,7 @@ fn allocation_failures_say_which_directive_helps() {
          out_vi b(vi02)\n\
          --endexit\n",
     );
-    assert_eq!(
-        empty,
-        "vcl failed to allocate a register of type VU User integer, but there's no registers \
-         of this type available for it to use.. maybe adding a .init_.. directive would help"
-    );
+    assert_eq!(empty, "no VI register is available to allocate");
     let small = message(
         ".init_vf vf10\n\
          --enter\n\
@@ -1194,10 +1193,7 @@ fn allocation_failures_say_which_directive_helps() {
          out_vf b(vf02)\n\
          --endexit\n",
     );
-    assert!(
-        small.contains("VU User floating point for 'u'") && small.contains(".init_vf_all"),
-        "{small}"
-    );
+    assert!(small.contains("out of VF registers for 'u'"), "{small}");
 }
 
 /// The retained runs of the original reject what the port rejects.

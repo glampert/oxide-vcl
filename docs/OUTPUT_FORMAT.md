@@ -104,16 +104,13 @@ markers.
 
 ## Listing comments in the port
 
-In vcl mode (the default) the port prints vcl's comments; `--mode=oxide`
-keeps its own shorter listing (`; oxide-vcl {VERSION} produced this code`, no
-banners, table comments or statistics). `-c` prints vcl's layout in both
-modes: each row as a comment with source register names, then the row.
+The port prints vcl's comments in both modes. `-c` adds vcl's layout: each
+row as a comment with source register names, then the row.
 
 - Standard output is wrapped in the five-line `VCL CODE` banner and five
   closing separators; an `-o` file is not (`cli-output-file`).
-- The listing opens with `; =====` and the emitter line. Where vcl names
-  itself (`vcl 1.4beta7 produced this code:`) the port names itself and its
-  version, the one line it deliberately does not reproduce.
+- The listing opens with `; =====` and the emitter line, which names the
+  port and its version: `; oxide-vcl {VERSION} produced this code`.
 - Each emitted stream starts with its table comment,
   `; _LNOPT_w=[ strategy ] printed [a b] walked   [name]`, or `_LPOPT_w` for
   a loop kernel from the loop optimizer. The strategy is the one whose table

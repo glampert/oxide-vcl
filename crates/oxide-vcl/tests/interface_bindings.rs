@@ -2,7 +2,7 @@
 //! `local/evidence/oracle/binding-*`.
 //!
 //! The original decoder keeps one current base binding per name.
-//! A mapped `in_vi`/`out_vi` operand replaces it (warning "changing binding
+//! A mapped `in_vi`/`out_vi` operand replaces it (vcl warns "changing binding
 //! for t from VI02 to VI03"), and an unmapped one takes it, across regions
 //! too. Each interface operand keeps the base it saw, and `regweb` rejects a
 //! web that reaches two different bases. So `in_vi t(vi02)`, a redefinition
@@ -84,12 +84,19 @@ fn interface_bindings_match_the_original() {
             Err(error) => {
                 assert!(!accepted(&name), "{name}: port rejects it: {error}");
                 let stderr = read(&name, "stderr.bin");
-                let reason = [
-                    "can't map to different base registers",
-                    "can't figure out which base register to map",
+                // The original's reason, and the port's wording of it.
+                let (_, reason) = [
+                    (
+                        "can't map to different base registers",
+                        "one value must live in both",
+                    ),
+                    (
+                        "can't figure out which base register to map",
+                        "has no register to bind to",
+                    ),
                 ]
                 .into_iter()
-                .find(|reason| stderr.contains(reason))
+                .find(|(original, _)| stderr.contains(original))
                 .unwrap_or_else(|| panic!("{name}: unexpected original error"));
                 assert!(error.contains(reason), "{name}: {error}");
             }
@@ -114,7 +121,7 @@ fn a_redefined_input_leaves_in_another_register() {
             .iter()
             .map(|warning| warning.message.to_string())
             .collect::<Vec<_>>(),
-        ["changing binding for t from VI02 to VI03"]
+        ["'t' was bound to VI02 and is now bound to VI03"]
     );
 }
 
@@ -129,20 +136,10 @@ fn rebinding_warns_like_the_original() {
             .map(|warning| warning.message.to_string())
             .collect::<Vec<_>>(),
         [
-            "changing binding for t from VI02 to VI03",
-            "changing binding for t from VI03 to VI02",
+            "'t' was bound to VI02 and is now bound to VI03",
+            "'t' was bound to VI03 and is now bound to VI02",
         ]
     );
-    for line in read("binding-two-inputs", "stderr.bin").lines() {
-        if let Some(warning) = line.strip_prefix("WARN: ") {
-            assert!(
-                compiled
-                    .warnings
-                    .iter()
-                    .any(|ours| ours.message.to_string() == warning)
-            );
-        }
-    }
 }
 
 /// A web bound to VF00 is VF00: a write into it is removed and its reader
@@ -197,6 +194,6 @@ fn a_web_bound_to_vf00_is_vf00() {
         errors[0]
             .message
             .to_string()
-            .contains("const zero register")
+            .contains("the constant register")
     );
 }

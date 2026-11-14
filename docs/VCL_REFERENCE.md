@@ -119,18 +119,18 @@ Physical names may be used directly; they are never renamed.
 Because names are case-insensitive, a symbolic name may not be spelled like a
 hardware register or resource: `acc`, `i`, `q`, `p`, `r`, `clip`, `clipa`,
 `mac`, `ext`, `tt_np` and the `stat_*` status names are refused for vector
-registers (`can't use r as a name for one of the VU User floating point`), and
+registers (`'r' is a hardware register and can't name a VF register`), and
 all but `i`, `q`, `p` and `r` for integer registers. An ILW, ISW, ILWR or
-ISWR memory operand must also be long enough: `ilw.w n, 3(p)` gives `failed
-to decode memory operand '3(p)'` whatever the base is named, because
+ISWR memory operand must also be long enough: `ilw.w n, 3(p)` gives `'3(p)'
+is not a memory operand` whatever the base is named, because
 `off(reg)` needs 5 characters there and `(reg)` 4, counting a field mask
 after the `)` but not a `:tag`. `10(p)`, `3(ptr)` and `3(p)w` work, and so
 does `3(p)` with `--fix=operands` ([Fixes](#fixes)). In the classic syntax a vector
 register name's trailing `x`, `y`, `z` and `w` are read as fields, in
 instructions and in `in_vf`/`out_vf` alike: `sticky` is register `stick` with
 field y, and `copy` is `cop`. vcl compiles this silently and `oxide-vcl`
-compiles it the same way with a warning, `WARNING: line N: 'copy' is read as
-register 'cop' with field y: ...`; with `--mode=oxide` it is an error. Avoid
+compiles it the same way with a warning, `file(N): warning: 'copy' is read as
+register 'cop' with field selection .y`; with `--mode=oxide` it is an error. Avoid
 names ending in one of these letters, and single-letter names `x`, `y`, `z`
 and `w`. Tags must not be
 instruction names either: in `lq v, 0(src):frame:b` the `b` is read as the
@@ -277,12 +277,9 @@ exponent are floats. `loi` reads `0x...` as float bits, so `loi 0x3f800000`
 loads 1.0. `**` and `||` are recognised but fail when both sides are numbers.
 
 An immediate that does not parse, or parses into numbers that cannot be
-computed (`2**3`, `~1.5`, `1/0`), is an error on its line. vcl prints
-`failed to parse immediate '...'` or `failed to evaluate tree for '...' to
-type EXP_DATATYPE_UINT` (`SINT`, `FLOAT`), then `failed to decode an
-immediate`; `--mode=oxide` says what is wrong, for example `'3*' is not a
-valid immediate for iaddiu: the expression ends after '*', which needs a
-value after it`.
+computed (`2**3`, `~1.5`, `1/0`), is an error on its line that says what is
+wrong, for example `'3*' is not a valid immediate for iaddiu: the expression
+ends after '*', which needs a value after it`.
 
 An expression that names a symbol is kept as written for the assembler:
 
@@ -381,8 +378,9 @@ in_hw_i I                   ; the I register holds a value on entry
 
 `in_vf a, vf01` is not another spelling of `in_vf a(vf01)`; it is rejected.
 A program needs at least one `--enter`, and at least one `--exit`,
-`--exitm` or `--cont` (`source contains no exit block`). Reading a register that
-is neither an input nor written first is an error: `VF02.x used before set`.
+`--exitm` or `--cont` (`the program has no --exit block`). Reading a register that
+is neither an input nor written first is an error: `'VF02.x' is read before
+anything writes it`.
 
 ### `--exit` ... `--endexit`
 
@@ -749,7 +747,8 @@ out_vf  c(vf02)
 Without the scope, the macro's `add` would overwrite the caller's `t`. VCL
 renames each local name with the scope's number, counting scopes from the
 start of the file, so `t` in the first scope is `1t` (visible with `-s`, and
-in messages such as `1a.x used before set`). Two scopes never share a local,
+in messages such as `'1a.x' is read before anything writes it`). Two scopes
+never share a local,
 which keeps two expansions of one macro apart. Further rules:
 
 - Scopes nest. A name is resolved from the innermost scope outward: the first
@@ -842,11 +841,10 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-C` | Skip the code size reduction pass. |
 | `-M` | Timid memory access mode: keep every pair of loads and stores that touch overlapping fields in program order, except in software-pipelined loops (see [Memory order and tags](#memory-order-and-tags)). |
 | `-q` | Quiet: print only warnings and errors. |
-| `-p` | Microsoft-style errors: `file(line): error: message`. |
 | `-h`, `--help` | Print the help screen. |
 | `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
-| `--mode=vcl` | Behave and report exactly as vcl 1.4beta7. The default. |
-| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its own diagnostics and exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and future optimizations. |
+| `--mode=vcl` | Generate the code vcl 1.4beta7 generates, with its exit statuses. The default. |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and future optimizations. |
 | `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 
@@ -857,7 +855,8 @@ previous stage's output; any combination may be given.
 vcl 1.4beta7 has no long options and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
-time limit; `oxide-vcl` has none), `-S`, `-D`, `-Q` and `-a`. `-P` and `-Z` only
+time limit; `oxide-vcl` has none), `-S`, `-D`, `-Q`, `-a` and `-p` (Microsoft-style
+errors, now the only style). `-P` and `-Z` only
 print a deprecation warning.
 
 ### Fixes
@@ -879,7 +878,7 @@ name with `--fix=`; `--mode=oxide` enables all of them.
 
 ```sh
 oxide-vcl --fix=end -oskin.vsm skin.vcl       # vcl's output, with the E bit fix
-oxide-vcl --fix=all -oskin.vsm skin.vcl       # every fix, vcl's messages
+oxide-vcl --fix=all -oskin.vsm skin.vcl       # every fix, vcl's exit statuses
 ```
 
 ### Examples
@@ -894,18 +893,10 @@ cat skin.vcl | oxide-vcl -q > skin.vsm        # filter mode
 
 ### Exit status and messages
 
-In vcl mode (the default) `oxide-vcl` reports as vcl does. It exits 0 on
-success and 255 on failure. Errors print as `ERROR: line N: message` on
-standard error (`ERROR: file(N): error: message` with `-p`), followed by
-`ERROR: something went wrong, vcl's outta here.` on standard output.
-Warnings print as `WARNING: ...` and informational messages as `INFO: ...`;
-`-q` hides the latter. One failure keeps vcl's status 0: a copy into the
-constant register VI00 or VF00 prints its error but exits 0.
-
-`--mode=oxide` has its own messages, all on standard error, in the
-`file(line): severity: message` form that editors and IDEs read, with the
-source line, a caret under the token at fault and, where there is one, a
-suggested fix:
+Messages go to standard error in the `file(line): severity: message` form
+that editors and IDEs read, with the source line, a caret under the token at
+fault and, where there is one, a suggested fix. Both modes print them the
+same way; they are oxide-vcl's own, not vcl 1.4beta7's text.
 
 ```text
 skin.vcl(12): error: unknown instruction 'ad'
@@ -918,15 +909,18 @@ oxide-vcl: 1 error; no output written
 Messages without a source line start with the file name, or with
 `oxide-vcl:` for the command line and files. Severities are `error`,
 `warning` and `note` (`-q` hides notes). A failed compile ends with the
-number of errors. Oxide mode exits 0 on success, 1 when the program fails to
-compile, a file can't be read or written, or a warning fails the run, and 2
-for a bad command line. A copy into the constant register is an error (1).
+number of errors.
+
+The exit status follows the mode. vcl mode exits 0 on success and 255 on
+any failure, as vcl does, with one exception it keeps: a copy into the
+constant register VI00 or VF00 prints its error but exits 0. Oxide mode
+exits 0 on success, 1 when the program fails to compile, a file can't be read
+or written, or a warning fails the run, and 2 for a bad command line; a copy
+into the constant register is an error (1).
 
 `--warnings-as-errors` fails a run that prints any warning, after printing
-every warning and error. In oxide mode each warning prints as an error,
-marked `[--warnings-as-errors]`; vcl mode prints the warnings unchanged, then
-`ERROR: warnings treated as errors (--warnings-as-errors)` and vcl's abort
-line, with status 255.
+every warning and error: each warning prints as an error, marked
+`[--warnings-as-errors]`.
 
 A failed run never writes its output: there is no assembly on standard
 output, and no `-o` listing or `-j` header, and a file from an earlier run is

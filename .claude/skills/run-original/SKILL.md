@@ -50,7 +50,8 @@ with real timing.
   whitespace when comparing listings (`tools/corpus_status.py` does this).
 - The original's stderr names its strategies and time-outs (`lpgen[...]`,
   `WARN: time out..`, `Opt::Loop name period/bound`) and its errors (`USER:`,
-  `ERROR:`). Its messages are worth matching verbatim in the port.
+  `ERROR:`). They show why the original rejected a program; the port words
+  its own messages and does not reproduce vcl's.
 - A status of 255 with `USER:` lines is a rejection; check that the program is
   valid before reading meaning into it (hardware-name collisions and field
   letters in names are common mistakes).

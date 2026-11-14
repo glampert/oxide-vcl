@@ -491,7 +491,7 @@ pub(super) fn lpgen_schedule(
     let mut rewrite = LpgenRewrite::new(context, &table, &outcome, base);
     rewrite.collapse_noop_moves();
     rewrite.retarget_sources(&live, sources)?;
-    if std::env::var_os("VCL_LPGEN_BODY").is_some() {
+    if crate::debug::switches().lpgen_body {
         rewrite.trace_body(block_id, sources);
     }
 
@@ -637,20 +637,16 @@ fn lpgen_optimize_loop(
         first,
         (first + 16).min(256),
         hints.safe as i32,
-        std::env::var("VCL_LPGEN_BUDGET")
-            .ok()
-            .and_then(|budget| budget.parse().ok())
-            .unwrap_or(20_000),
+        crate::debug::switches().lpgen_budget.unwrap_or(20_000),
         Some(&table.pools),
     )?;
-    if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
-        crate::trace!(
-            "lpgen {block_id} result {:?} period {} max lid {}",
-            outcome.strategy,
-            outcome.period,
-            outcome.max_iteration
-        );
-    }
+    crate::trace_if!(
+        lpgen_trace,
+        "lpgen {block_id} result {:?} period {} max lid {}",
+        outcome.strategy,
+        outcome.period,
+        outcome.max_iteration
+    );
     Some(outcome)
 }
 
@@ -1044,7 +1040,7 @@ pub(super) fn expand_software_loops(
     // The original optimizes normal loops after webs and external
     // assignment, and expands that region.
     // When the lpgen port schedules a loop, expand the webbed region.
-    let lpgen = normal_loops && std::env::var_os("VCL_OLD_LOOPS").is_none();
+    let lpgen = normal_loops && !crate::debug::switches().old_loops;
     let mut plans = BTreeMap::new();
     let mut webbed = None;
     if lpgen && source.blocks.iter().any(|b| b.loop_hints.minimum.is_some()) {

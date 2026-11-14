@@ -73,7 +73,10 @@ fn a_hidden_name_is_a_new_register_inside_the_scope() {
          --endexit\n",
     )
     .unwrap_err();
-    assert!(error.contains("1a.x used before set"), "{error}");
+    assert!(
+        error.contains("'1a.x' is read before anything writes it"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -98,7 +101,10 @@ fn a_local_name_does_not_exist_outside_its_scope() {
              --endexit\n"
         ))
         .unwrap_err();
-        assert!(error.contains("t.x used before set"), "{scope}: {error}");
+        assert!(
+            error.contains("'t.x' is read before anything writes it"),
+            "{scope}: {error}"
+        );
     }
 }
 
@@ -122,7 +128,10 @@ fn each_scope_gets_its_own_number() {
          --endexit\n",
     )
     .unwrap_err();
-    assert!(error.contains("2t.x used before set"), "{error}");
+    assert!(
+        error.contains("'2t.x' is read before anything writes it"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -163,7 +172,10 @@ fn nested_scopes_resolve_from_the_inside_out() {
     )
     .unwrap_err();
     // After `.endhide`, `u` is the `.show` scope's own local again.
-    assert!(error.contains("1u.x used before set"), "{error}");
+    assert!(
+        error.contains("'1u.x' is read before anything writes it"),
+        "{error}"
+    );
 }
 
 #[test]

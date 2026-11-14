@@ -45,8 +45,6 @@ pub struct Arguments {
     pub quiet: bool,
     /// Fail the run when it prints a warning (`--warnings-as-errors`).
     pub warnings_as_errors: bool,
-    /// `file(line): error: message` diagnostics (`-p`).
-    pub ms_diagnostics: bool,
     /// Run the C preprocessor first (`-G`).
     pub preprocess_cpp: bool,
     /// Run gasp (`-g`).
@@ -84,8 +82,6 @@ impl Arguments {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CliError {
     pub diagnostic: Box<Diagnostic>,
-    /// Some failures occur only after OS_Init has already logged its message.
-    pub os_initialized: bool,
     pub output: Option<String>,
     pub quiet: bool,
     pub mode: vcl::Mode,
@@ -93,10 +89,9 @@ pub struct CliError {
 }
 
 impl CliError {
-    fn new(message: CliMessage, initialized: bool, options: Arguments) -> Self {
+    fn new(message: CliMessage, options: Arguments) -> Self {
         Self {
             diagnostic: Box::new(Diagnostic::error(message)),
-            os_initialized: initialized,
             output: options.output,
             quiet: options.quiet,
             mode: options.compile.mode,
@@ -182,7 +177,6 @@ where
                     CliMessage::BadMode {
                         argument: argument.clone(),
                     },
-                    false,
                     options,
                 ));
             };
@@ -200,7 +194,6 @@ where
                             argument: argument.clone(),
                             name,
                         },
-                        false,
                         options,
                     ));
                 }
@@ -219,30 +212,18 @@ where
         match selector {
             b'I' => options.preprocessor_arguments.push(argument.clone()),
             b'A' | b'a' => options.info(CliMessage::AlwaysOn),
-            b'C' => {
-                options.compile.disable_size_reduction = true;
-                options.info(CliMessage::SizeReductionDisabled);
-            }
+            b'C' => options.compile.disable_size_reduction = true,
             // Register dumps during external allocation: not produced.
             b'D' => {}
-            b'F' | b'f' => {
-                options.compile.disable_alignment = true;
-                options.info(CliMessage::AlignmentDisabled);
-            }
+            b'F' | b'f' => options.compile.disable_alignment = true,
             b'G' => options.preprocess_cpp = true,
             b'H' | b'h' => {
                 options.help = true;
                 return Ok(options);
             }
             b'o' => options.output = Some(value.to_owned()),
-            b'K' => {
-                options.keep_temps = true;
-                options.info(CliMessage::KeepTemporaries);
-            }
-            b'M' => {
-                options.compile.timid_memory = true;
-                options.warn(CliMessage::TimidMemory);
-            }
+            b'K' => options.keep_temps = true,
+            b'M' => options.compile.timid_memory = true,
             b'P' => options.warn(CliMessage::PruneDeprecated),
             // Undocumented in the original, with no observed effect.
             b'Q' => {}
@@ -257,10 +238,7 @@ where
                 options.compile.disable_loops = true;
             }
             b'L' => options.compile.disable_loops = true,
-            b'e' => {
-                options.compile.disable_end_bit = true;
-                options.info(CliMessage::EndBitDisabled);
-            }
+            b'e' => options.compile.disable_end_bit = true,
             b'g' => match value.as_bytes().first() {
                 None => options.preprocess_gasp = true,
                 Some(b'+') => options.preprocess_gasp_alternate = true,
@@ -269,7 +247,6 @@ where
                         CliMessage::BadGaspOption {
                             argument: argument.clone(),
                         },
-                        false,
                         options,
                     ));
                 }
@@ -277,7 +254,9 @@ where
             b'j' => options.header = Some(value.to_owned()),
             b'm' => options.compile.mpg = Some(strtol_decimal_i32(value)),
             b'n' => options.compile.new_syntax = true,
-            b'p' => options.ms_diagnostics = true,
+            // Microsoft-style `file(line): error:` diagnostics are the only
+            // layout now: accepted and ignored.
+            b'p' => {}
             b'q' => options.quiet = true,
             b's' => options.compile.symbolic = true,
             // The optimizer here has no time limit, so the value is unused.
@@ -288,7 +267,6 @@ where
                     CliMessage::BadArgument {
                         argument: argument.clone(),
                     },
-                    false,
                     options,
                 ));
             }
@@ -296,11 +274,11 @@ where
         index += 1;
     }
     if arguments.len() - index > 1 {
-        return Err(CliError::new(CliMessage::TooManyArguments, true, options));
+        return Err(CliError::new(CliMessage::TooManyArguments, options));
     }
     options.input = arguments.get(index).cloned();
     if options.input.is_some() && options.input == options.output {
-        return Err(CliError::new(CliMessage::SameInputAndOutput, true, options));
+        return Err(CliError::new(CliMessage::SameInputAndOutput, options));
     }
     Ok(options)
 }
@@ -380,8 +358,7 @@ mod tests {
                     argument: "--mode=sce".into()
                 }
         );
-        // vcl has no long options, so its wording is the unknown-switch one.
-        assert_eq!(error.to_string(), "bad args '--mode=sce', try -h for help");
+        assert_eq!(error.to_string(), "unknown mode 'sce'");
         assert_eq!(error.exit_status(), 255);
     }
 
@@ -427,20 +404,12 @@ mod tests {
                     },
                 "{argument}"
             );
-            assert_eq!(
-                error.to_string(),
-                format!("bad args '{argument}', try -h for help")
-            );
+            assert!(error.to_string().contains("fix"), "{argument}");
             assert_eq!(error.exit_status(), 255);
         }
         let error = parse(["--mode=oxide", "--fix=alias-warn"]).unwrap_err();
         assert_eq!(error.exit_status(), 2);
-        assert!(
-            error
-                .diagnostic
-                .text(vcl::Mode::Oxide)
-                .contains("unknown fix 'alias-warn'")
-        );
+        assert!(error.diagnostic.text().contains("unknown fix 'alias-warn'"));
     }
 
     #[test]
@@ -508,11 +477,7 @@ mod tests {
         );
         let error = parse(["file.vcl", "-q"]).unwrap_err();
         assert!(*error.message() == CliMessage::TooManyArguments);
-        assert!(error.os_initialized);
-        assert_eq!(
-            error.to_string(),
-            "bad args (-o now specifies output file..)"
-        );
+        assert_eq!(error.to_string(), "more than one input file");
     }
 
     #[test]
@@ -576,7 +541,8 @@ mod tests {
 
     #[test]
     fn quiet_applies_in_argument_order_and_keeps_warnings() {
-        let early = parse(["-a", "-q", "-f", "-P", "-Z"]).unwrap();
+        // -f confirms nothing; -a's note comes before -q, -S's after.
+        let early = parse(["-a", "-q", "-f", "-S", "-P", "-Z"]).unwrap();
         assert_eq!(early.notices.len(), 3);
         assert_eq!(early.notices[0].severity, Severity::Info);
         assert!(
@@ -592,7 +558,6 @@ mod tests {
         let error = parse(["-ofile.vcl", "file.vcl"]).unwrap_err();
         assert!(*error.message() == CliMessage::SameInputAndOutput);
         assert_eq!(error.output.as_deref(), Some("file.vcl"));
-        assert!(error.os_initialized);
     }
 
     #[test]

@@ -1404,8 +1404,9 @@ impl<'a> Table<'a> {
         }
         let ready = i32::from(self.locks[input].latency) + p.ready;
         if period > 0
-            && std::env::var("VCL_INPUT_TRACE")
-                .is_ok_and(|v| v.parse().ok() == self.locks[input].instruction())
+            && crate::debug::switches()
+                .input_trace
+                .is_some_and(|traced| Some(traced) == self.locks[input].instruction())
         {
             crate::trace!(
                 "    check input {input} at {line}: producer {producer} {:?} write {} ready {} end {} write_f {} end_f {} users {} pending {} mode {}",
@@ -1456,9 +1457,9 @@ impl<'a> Table<'a> {
                     if self.overlap(start, new_end, v.write_f, v.end_f) {
                         // Wrangler A may resolve the overlap with a move.
                         if !self.overlap_moves || period == 0 || !movable {
-                            if std::env::var("VCL_INPUT_TRACE")
-                                .is_ok_and(|t| t.parse().ok() == self.locks[input].instruction())
-                            {
+                            if crate::debug::switches().input_trace.is_some_and(|traced| {
+                                Some(traced) == self.locks[input].instruction()
+                            }) {
                                 crate::trace!(
                                     "    overlap input {input} range {start}..{new_end} with {other} {:?} {}..{} ext {:?} movable {movable}",
                                     v.instruction(),
@@ -1930,9 +1931,7 @@ impl<'a> Table<'a> {
                     },
                     &mut next,
                 );
-                if self.period > 0
-                    && std::env::var("VCL_LINE_TRACE").is_ok_and(|v| v.parse() == Ok(index))
-                {
+                if self.period > 0 && crate::debug::switches().line_trace == Some(index) {
                     crate::trace!(
                         "  line {index} at {} pipe {} -> {result:#x} next {next}",
                         *line,
@@ -2131,7 +2130,7 @@ impl<'a> Table<'a> {
             let mut line = insn.minimum_position;
             let forced = self.forced_ready(index);
             if forced < 0 {
-                if std::env::var("VCL_FORCED_TRACE").is_ok_and(|v| v.parse() == Ok(index)) {
+                if crate::debug::switches().forced_trace == Some(index) {
                     crate::trace!(
                         "forced {index} waits on {:?}",
                         self.insn(index)
@@ -2208,7 +2207,7 @@ impl<'a> Table<'a> {
             let mut found = line;
             let mut pipe = 0;
             let fits = self.find_line(index, &mut found, &mut pipe);
-            if std::env::var_os("VCL_CAND_TRACE").is_some() && self.period > 0 {
+            if crate::debug::switches().cand_trace && self.period > 0 {
                 crate::trace!("cand {index} from {line} -> {fits} at {found}");
             }
             if fits {
@@ -2263,29 +2262,28 @@ impl<'a> Table<'a> {
                 }
             })
             .collect();
-        if std::env::var_os("VCL_WRANGLE_CANDIDATES").is_some() {
-            crate::trace!(
-                "rank block {} {:?} cursor {} candidates {:?}",
-                trace_block(),
-                strategy,
-                self.cursor,
-                candidates
-                    .iter()
-                    .map(|c| (
-                        c.operation,
-                        c.metrics.height,
-                        c.metrics.height_links,
-                        c.metrics.depth,
-                        c.metrics.depth_links,
-                        c.metrics.fan_out,
-                        c.metrics.consumer_weight,
-                        c.penalty,
-                        c.delay,
-                        c.earliest
-                    ))
-                    .collect::<Vec<_>>()
-            );
-        }
+        crate::trace_if!(
+            wrangle_candidates,
+            "rank block {} {:?} cursor {} candidates {:?}",
+            trace_block(),
+            strategy,
+            self.cursor,
+            candidates
+                .iter()
+                .map(|c| (
+                    c.operation,
+                    c.metrics.height,
+                    c.metrics.height_links,
+                    c.metrics.depth,
+                    c.metrics.depth_links,
+                    c.metrics.fan_out,
+                    c.metrics.consumer_weight,
+                    c.penalty,
+                    c.delay,
+                    c.earliest
+                ))
+                .collect::<Vec<_>>()
+        );
         let proposal =
             schedule::select_candidate(&candidates, strategy, self.cursor.max(0) as u16)?;
         let mut line = i32::from(proposal.cycle);
@@ -2307,7 +2305,7 @@ impl<'a> Table<'a> {
         self.slots[index].line = position.line;
         self.slots[index].pipe = position.pipe;
         let row = self.fold(position.line).0;
-        if self.period > 0 && std::env::var_os("VCL_LPGEN_STEPS").is_some() {
+        if self.period > 0 && crate::debug::switches().lpgen_steps {
             crate::trace!(
                 "  insert {index} {} at {} pipe {}",
                 self.problem.names.get(index).map_or("?", String::as_str),
@@ -2328,7 +2326,7 @@ impl<'a> Table<'a> {
 
     fn undo(&mut self, index: usize) {
         self.work.undos += 1;
-        if self.period > 0 && std::env::var_os("VCL_LPGEN_STEPS").is_some() {
+        if self.period > 0 && crate::debug::switches().lpgen_steps {
             crate::trace!("  undo {index}");
         }
         self.undo_log.push(index);
@@ -2433,14 +2431,13 @@ impl<'a> Table<'a> {
     fn choose_move_pipe(&mut self, index: usize, preferred: u8) -> bool {
         let period = self.period;
         let mut pipe = preferred;
-        if std::env::var_os("VCL_PLACE_TRACE").is_some() {
-            crate::trace!(
-                "  movepipe {index} pipes {} preferred {preferred} counts {:?} ac {}",
-                self.insn(index).pipes,
-                self.issue_counts,
-                self.move_flag_ac
-            );
-        }
+        crate::trace_if!(
+            place_trace,
+            "  movepipe {index} pipes {} preferred {preferred} counts {:?} ac {}",
+            self.insn(index).pipes,
+            self.issue_counts,
+            self.move_flag_ac
+        );
         if self.insn(index).pipes == 3 {
             let [_, upper, lower] = self.issue_counts;
             pipe = if upper == period {
@@ -3155,7 +3152,7 @@ impl<'a> Table<'a> {
             let mut next = line;
             result = self.check(index, Position { line, pipe }, &mut next);
         }
-        if self.period > 0 && std::env::var_os("VCL_PLACE_TRACE").is_some() {
+        if self.period > 0 && crate::debug::switches().place_trace {
             crate::trace!(
                 "  place step {} {index} at {line} pipe {pipe} check {result:#x} abort {:?}",
                 trace.len(),
@@ -3181,13 +3178,12 @@ impl<'a> Table<'a> {
     /// producers: `Restart` when one was queued, otherwise `Failed`.
     fn placement_after_move(&mut self, index: usize, line: i32) -> Placement {
         let generated = self.generate_move(index, line);
-        if std::env::var_os("VCL_PLACE_TRACE").is_some() {
-            crate::trace!(
-                "  genmove {index} -> {generated} ac {} ad {}",
-                self.move_flag_ac,
-                self.move_flag_ad
-            );
-        }
+        crate::trace_if!(
+            place_trace,
+            "  genmove {index} -> {generated} ac {} ad {}",
+            self.move_flag_ac,
+            self.move_flag_ad
+        );
 
         match generated {
             0 => return Placement::Restart,
@@ -3345,7 +3341,7 @@ impl<'a> Table<'a> {
             (write, ready, end) = self.concatenate(entry, producer);
             skip_external = true;
         }
-        if period > 0 && std::env::var("VCL_INPUT_TRACE").is_ok_and(|v| v.parse() == Ok(index)) {
+        if period > 0 && crate::debug::switches().input_trace == Some(index) {
             crate::trace!(
                 "    input {input} of {index} at {line}: producer {producer} {:?} write {write} ready {ready} end {end} latency {latency} users {} external {}",
                 self.locks[producer].instruction(),
@@ -3471,14 +3467,13 @@ impl<'a> Table<'a> {
                 return 0;
             }
             if self.locks[external].line < line {
-                if std::env::var_os("VCL_MOVE_TRACE").is_some() {
-                    crate::trace!(
-                        "    external {:?} line {} self {}",
-                        self.locks[external].owner,
-                        self.locks[external].line,
-                        external == output
-                    );
-                }
+                crate::trace_if!(
+                    move_trace,
+                    "    external {:?} line {} self {}",
+                    self.locks[external].owner,
+                    self.locks[external].line,
+                    external == output
+                );
                 return 0x200000;
             }
         }
@@ -3711,11 +3706,10 @@ impl<'a> Table<'a> {
                         latest = latest.min(at + period).min(self.insn(setter).move_target);
                         first_fit = false;
                     }
-                    if std::env::var_os("VCL_DRAG_TRACE").is_some() {
-                        crate::trace!(
-                            "  drag-setters {index} line {line} window {window} depth {depth}: setter {setter} at {at} start {start} latest {latest}"
-                        );
-                    }
+                    crate::trace_if!(
+                        drag_trace,
+                        "  drag-setters {index} line {line} window {window} depth {depth}: setter {setter} at {at} start {start} latest {latest}"
+                    );
                     if at >= start || latest < start {
                         continue;
                     }
@@ -3750,15 +3744,14 @@ impl<'a> Table<'a> {
     }
 
     fn relocate(&mut self, index: usize, position: Position) {
-        if std::env::var_os("VCL_MOVE_TRACE").is_some() {
-            crate::trace!(
-                "move {index} {} {} -> {} {}",
-                self.problem.names.get(index).map_or("?", String::as_str),
-                self.slots[index].line,
-                position.line,
-                position.pipe
-            );
-        }
+        crate::trace_if!(
+            move_trace,
+            "move {index} {} {} -> {} {}",
+            self.problem.names.get(index).map_or("?", String::as_str),
+            self.slots[index].line,
+            position.line,
+            position.pipe
+        );
         let old = &self.slots[index];
         let old_row = self.fold(old.line).0;
         self.rows[old_row as usize][usize::from(old.pipe)] = None;
@@ -3830,12 +3823,11 @@ impl<'a> Table<'a> {
             return false;
         };
 
-        if std::env::var_os("VCL_EXTENT_TRACE").is_some() {
-            crate::trace!(
-                "extent {index} {line} -> {} first_use {first_use}",
-                position.line
-            );
-        }
+        crate::trace_if!(
+            extent_trace,
+            "extent {index} {line} -> {} first_use {first_use}",
+            position.line
+        );
         self.relocate(index, position);
         true
     }
@@ -4187,12 +4179,11 @@ impl<'a> Table<'a> {
                     self.relocate(index, Position { line, pipe });
                     return true;
                 }
-                if std::env::var_os("VCL_MOVE_TRACE").is_some() {
-                    crate::trace!(
-                        "  try {index} {} at {line} {pipe}: {result:#x}",
-                        self.problem.names.get(index).map_or("?", String::as_str)
-                    );
-                }
+                crate::trace_if!(
+                    move_trace,
+                    "  try {index} {} at {line} {pipe}: {result:#x}",
+                    self.problem.names.get(index).map_or("?", String::as_str)
+                );
             }
             line += step;
         }
@@ -4244,17 +4235,21 @@ impl<'a> Table<'a> {
                     let line = self.slots[index].line;
                     let earliest = self.earliest_line(index);
                     if earliest < line && self.local_move(index, earliest, line, 1) {
-                        if std::env::var_os("VCL_RAW_MOVES").is_some() {
-                            crate::trace!("  pull {index} {line} -> {}", self.slots[index].line);
-                        }
+                        crate::trace_if!(
+                            raw_moves,
+                            "  pull {index} {line} -> {}",
+                            self.slots[index].line
+                        );
                         moved += 1;
                     }
                     let reach = self.insn(index).end_distance + self.slots[index].line;
                     last = last.max(reach);
                     if self.end <= last {
-                        if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-                            crate::trace!("  pull-up reach {index} {reach} end {}", self.end);
-                        }
+                        crate::trace_if!(
+                            wrangle_problem,
+                            "  pull-up reach {index} {reach} end {}",
+                            self.end
+                        );
                         return None;
                     }
                 }
@@ -4273,12 +4268,11 @@ impl<'a> Table<'a> {
             while line < self.end {
                 let pipe = self.slots[branch].pipe;
                 let mut ok = false;
-                if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-                    crate::trace!(
-                        "  pull-up branch {branch} at {line}: {:#x}",
-                        self.can_move(branch, Position { line, pipe })
-                    );
-                }
+                crate::trace_if!(
+                    wrangle_problem,
+                    "  pull-up branch {branch} at {line}: {:#x}",
+                    self.can_move(branch, Position { line, pipe })
+                );
                 if self.can_move(branch, Position { line, pipe }) == 0 {
                     self.relocate(branch, Position { line, pipe });
                     let next = line + 1;
@@ -4304,16 +4298,12 @@ impl<'a> Table<'a> {
                 }
             }
             if !placed {
-                if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-                    crate::trace!("  pull-up branch not placed");
-                }
+                crate::trace_if!(wrangle_problem, "  pull-up branch not placed");
                 return None;
             }
         }
         if old_end < last + 1 {
-            if std::env::var_os("VCL_WRANGLE_PROBLEM").is_some() {
-                crate::trace!("  pull-up end {old_end} < {}", last + 1);
-            }
+            crate::trace_if!(wrangle_problem, "  pull-up end {old_end} < {}", last + 1);
             return None;
         }
         self.end = last + 1;
@@ -4370,17 +4360,18 @@ impl<'a> Table<'a> {
     fn drag_one(&mut self, index: usize) -> bool {
         let line = self.slots[index].line;
         let bound = self.drag_bound(index, line);
-        if std::env::var_os("VCL_DRAG_TRACE").is_some() {
-            crate::trace!(
-                "  drag {index} {} line {line} bound {bound}",
-                self.problem.names.get(index).map_or("?", String::as_str)
-            );
-        }
+        crate::trace_if!(
+            drag_trace,
+            "  drag {index} {} line {line} bound {bound}",
+            self.problem.names.get(index).map_or("?", String::as_str)
+        );
 
         if line < bound && self.local_move(index, bound, line, -1) {
-            if std::env::var_os("VCL_RAW_MOVES").is_some() {
-                crate::trace!("  drag {index} {line} -> {}", self.slots[index].line);
-            }
+            crate::trace_if!(
+                raw_moves,
+                "  drag {index} {line} -> {}",
+                self.slots[index].line
+            );
             return true;
         }
         false
@@ -4405,19 +4396,18 @@ impl<'a> Table<'a> {
                     if l.user_count != 0 {
                         b = l.first_use - i32::from(l.latency);
                     }
-                    if std::env::var_os("VCL_DRAG_TRACE").is_some() {
-                        crate::trace!(
-                            "    out reg {} part {part} users {} first {} latency {} users {:?}",
-                            operand.register,
-                            l.user_count,
-                            l.first_use,
-                            l.latency,
-                            l.users
-                                .iter()
-                                .map(|&u| (self.locks[u].owner, self.locks[u].line))
-                                .collect::<Vec<_>>()
-                        );
-                    }
+                    crate::trace_if!(
+                        drag_trace,
+                        "    out reg {} part {part} users {} first {} latency {} users {:?}",
+                        operand.register,
+                        l.user_count,
+                        l.first_use,
+                        l.latency,
+                        l.users
+                            .iter()
+                            .map(|&u| (self.locks[u].owner, self.locks[u].line))
+                            .collect::<Vec<_>>()
+                    );
                 }
                 bound = bound.min(b);
             }
@@ -5295,7 +5285,7 @@ impl<'a> Table<'a> {
                     }
                     cost += parts as i64 - i64::from(((w | used) & 0x7f).count_ones());
                 }
-                if std::env::var_os("VCL_ALLOC_COSTS").is_some() {
+                if crate::debug::switches().alloc_costs {
                     let used: Vec<String> = (0..length)
                         .filter(|&r| occupied[r][physical] != 0)
                         .map(|r| format!("{r}:{:x}", occupied[r][physical]))
@@ -5318,7 +5308,7 @@ impl<'a> Table<'a> {
                 }
             }
             let physical = choice?;
-            if std::env::var_os("VCL_ALLOC_TRACE").is_some() {
+            if crate::debug::switches().alloc_trace {
                 let rows: Vec<String> = want
                     .iter()
                     .enumerate()
@@ -5397,7 +5387,7 @@ pub fn optimize_loop(
         for strategy in Strategy::ALL.into_iter().rev() {
             let mut table = Table::new_loop(problem, &statics, period, known_safe);
             let result = table.wrangle(strategy, budget);
-            if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
+            if crate::debug::switches().lpgen_trace {
                 let (status, trace) = match &result {
                     Ok(trace) => ("ok", trace.clone()),
                     Err(failure) => (
@@ -5440,17 +5430,16 @@ pub fn optimize_loop(
                 let vf = table.allocate(1, &pools.vf_allowed, &pools.vf_through);
                 let vi = table.allocate(2, &pools.vi_allowed, &pools.vi_through);
                 let (Some(vf), Some(vi)) = (vf, vi) else {
-                    if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
-                        crate::trace!(
-                            "lpgen {} period {period} {strategy:?} allocation failed",
-                            trace_block()
-                        );
-                    }
+                    crate::trace_if!(
+                        lpgen_trace,
+                        "lpgen {} period {period} {strategy:?} allocation failed",
+                        trace_block()
+                    );
                     continue;
                 };
                 allocation.extend(vf);
                 allocation.extend(vi);
-                if std::env::var_os("VCL_LPGEN_TRACE").is_some() {
+                if crate::debug::switches().lpgen_trace {
                     let physical = |register: usize| {
                         let info = &table.problem.registers[register];
                         info.physical
@@ -5544,21 +5533,20 @@ pub fn optimize(
         let trace = match table.wrangle(strategy, budget) {
             Ok(trace) => trace,
             Err(failure) => {
-                if std::env::var_os("VCL_WRANGLE_TRACE").is_some() {
-                    crate::trace!(
-                        "wrangle strategy {} {:?} failed {failure:?} done {:?} todo {:?}",
-                        trace_block(),
-                        strategy,
-                        table.done,
-                        table.todo
-                    );
-                }
+                crate::trace_if!(
+                    wrangle_trace,
+                    "wrangle strategy {} {:?} failed {failure:?} done {:?} todo {:?}",
+                    trace_block(),
+                    strategy,
+                    table.done,
+                    table.todo
+                );
                 continue;
             }
         };
         table.reduce_extents();
         table.fiddle_branch_delay();
-        if std::env::var_os("VCL_WRANGLE_TRACE").is_some() {
+        if crate::debug::switches().wrangle_trace {
             crate::trace!(
                 "wrangle strategy {} {:?} length {} trace {:?}",
                 trace_block(),
@@ -5578,13 +5566,12 @@ pub fn optimize(
                     allocation.extend(vi);
                 }
                 _ => {
-                    if std::env::var_os("VCL_WRANGLE_TRACE").is_some() {
-                        crate::trace!(
-                            "wrangle strategy {} {:?} allocation failed",
-                            trace_block(),
-                            strategy
-                        );
-                    }
+                    crate::trace_if!(
+                        wrangle_trace,
+                        "wrangle strategy {} {:?} allocation failed",
+                        trace_block(),
+                        strategy
+                    );
                     continue;
                 }
             }

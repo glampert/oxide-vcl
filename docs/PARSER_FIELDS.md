@@ -56,8 +56,8 @@ mod bits`).
 
 A name read this way is almost always a misspelling. In vcl mode the port
 compiles it as vcl does and warns once per name, at its first line
-(`'copy' is read as register 'cop' with field y: ...`); in oxide mode it is an
-error. Selections that are clearly meant do not warn: a broadcast (`scalex`),
+(`'copy' is read as register 'cop' with field selection .y`); in oxide mode
+it is an error. Selections that are clearly meant do not warn: a broadcast (`scalex`),
 a dotted suffix (`res.xyz`) and a physical register (`vf03xyz`)
 (`crates/oxide-vcl/tests/field_letters.rs`).
 

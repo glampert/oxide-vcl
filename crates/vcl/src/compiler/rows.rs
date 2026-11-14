@@ -378,9 +378,7 @@ impl RowContext<'_> {
             Err(failure) => {
                 // The replay is a conservative model (stall annotations and
                 // validation only); the original layout stands without it.
-                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    crate::trace!("plan replay failed: {failure:?}");
-                }
+                crate::trace_if!(timing_debug, "plan replay failed: {failure:?}");
                 let count = kept.len();
                 FinishedRows {
                     rows: kept,
@@ -412,13 +410,11 @@ impl RowContext<'_> {
         let replay = match timing::replay(&timed, operations, &[]) {
             Ok(replay) => replay,
             Err(failure) if kernel => {
-                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
-                    crate::trace!("kernel replay failed: {failure:?}");
-                }
+                crate::trace_if!(timing_debug, "kernel replay failed: {failure:?}");
                 identity_replay(timed.len())
             }
             Err(failure) => {
-                if std::env::var_os("VCL_TIMING_DEBUG").is_some() {
+                if crate::debug::switches().timing_debug {
                     self.trace_read_mismatch(&failure);
                 }
                 return Err(internal(0, failure));

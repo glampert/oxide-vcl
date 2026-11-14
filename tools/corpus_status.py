@@ -30,10 +30,17 @@ def corpus_input(path):
     return data
 
 
+# vcl's last line of a failed run, on standard output; the port prints its
+# diagnostics on standard error only.
+ABORT_LINE = "ERROR: something went wrong, vcl's outta here."
+
+
 def normalize(data):
     text = data.decode(errors="replace") if isinstance(data, bytes) else data
     lines = []
     for line in text.splitlines():
+        if line.strip() == ABORT_LINE:
+            continue
         line = re.sub(r"\s+", " ", line.split(";", 1)[0]).strip()
         if line:
             lines.append(line)
