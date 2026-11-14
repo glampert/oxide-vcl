@@ -301,3 +301,40 @@ cargo test --release --test listing_equivalence cycle_report -- --ignored --noca
 row before the quotient lands is a difference, which the logical
 configuration does not see.
 
+## Renderer scenes
+
+Random states run code paths at random rates: a renderer's clipper, rare in
+a real frame, runs on most random states. `crates/oxide-vcl/tests/support/scenes.rs`
+builds the VU1 memory the corpus renderers' hosts leave before MSCAL, from
+the layouts they document, with geometry whose result is known:
+
+- doom3-bfg-ps2's `world_strips` and `world_lm` (commit adc427d): the frame
+  constants of `MakeFrameConstants` and `math::PerspectiveProjection`, and a
+  cooked batch as `src/tools/assets/world.h` lays it out (header, index
+  stream, s16 positions and UVs and RGBA bytes under STCYCL 4,1, then the
+  batch state). Scenes: a wall ahead, all inside the guard band (the strip
+  path); the floor under the eye, across the near plane (the list path and
+  the clipper); a wall at a grazing angle; `world_lm` also lit, with its
+  lightmap pass.
+- quake2-ps2's `textured_triangles` and `particles` (commit 12f2f9a), as
+  `vu1.h` lays them out: a wall and a floor of DrawVertex triangles, a
+  keyframed box model in view and one across the near plane (lerped,
+  shaded and backface culled on VU1), and a particle burst with a third of
+  its particles outside the guard band.
+
+`crates/oxide-vcl/tests/scenes.rs` runs the original's recorded listing on
+each scene in the timed model and requires it to draw what the scene
+predicts: every drawing packet's primitives with ADC clear, counted against
+a reference Sutherland-Hodgman clipper on the programs' planes (and, for
+the model, the programs' backface determinant), with no drawn vertex
+outside the GS's coordinate space. Oxide mode's listings, with and without
+optimizations, must then leave the same memory and send the same packets.
+`scene_profile`, an ignored test, prints where each scene's cycles go:
+
+```sh
+VCL_PROFILE=<case> cargo test --release --test scenes scene_profile -- --ignored --nocapture
+```
+
+The scenes are synthetic: they follow the hosts' memory layouts, not
+recorded frames, so how often each path runs is a model of a frame.
+

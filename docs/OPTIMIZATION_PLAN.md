@@ -158,6 +158,31 @@ such loops:
 `sprite` shows the pattern most clearly: `lqi` → 4 FMAC → `div` → `mulq` →
 `ftoi4` → `sqi` is one serial chain, and every link stalls.
 
+### Renderer scenes
+
+The renderer scenes of docs/TESTING.md run doom3's and quake2's programs on
+the memory their hosts send. Cycles in oxide mode, and where they go:
+
+| Program and scene | Cycles (`--opt=none` → all) | Where the optimized cycles go |
+| --- | ---: | --- |
+| doom3 `world_lm`, wall (strip path, nearly every batch) | 3,372 → 2,259 | `lTransform` kernel 46%; the strip emit loop `lStripRoom` 45%, issue-bound |
+| doom3 `world_lm`, floor (clipped) | 47,417 → 46,153 | the five clip passes 55%, a third of it stalls |
+| doom3 `world_strips`, wall | 3,896 → 3,896 | `lTransform` 75%, 952 of its 2,933 cycles stalls |
+| quake2 `textured_triangles`, world wall | 4,783 → 4,782 | the per-triangle blocks of `lTriangleLoop`, 40-50% stalls |
+| quake2 `textured_triangles`, model | 1,858 → 1,857 | `lKeyframes` 51% |
+| quake2 `particles`, burst | 2,435 → 1,189 | the pipelined particle loop |
+
+`world_strips`' transform loop has a `--barrier` in its body, which makes
+it two streams, so neither vcl nor the `loops` optimization pipelines it;
+`world_lm`'s has none. Without that barrier, oxide mode pipelines it and
+the wall scene takes 2,209 cycles (−43%), with the same packets.
+
+What would help these programs next: pipelining loops whose body has a
+rarely taken branch (doom3's strip and lightmap emit loops, which test
+for a full output window), along their usual path; then scheduling across
+the blocks of loops with branches inside (quake2's `lTriangleLoop`, the
+clip passes). O2 and O4 do not apply: their kernels are at their bounds.
+
 ## 3. Opportunities, by expected value
 
 Each item lists its evidence, the most it can gain, a design sketch, and
