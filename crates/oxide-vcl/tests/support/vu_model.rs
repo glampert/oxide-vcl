@@ -352,6 +352,9 @@ pub struct Execution {
     /// Cycles from the first issue to the end of the E delay slot,
     /// stalls included ([`Config::timed`]); the pair count otherwise.
     pub cycles: u64,
+    /// For each pair of the program: how often it issued, and the stall
+    /// cycles before those issues.
+    pub profile: Vec<(u64, u64)>,
 }
 
 /// A non-interlocked result that changes its register or flag later.
@@ -510,6 +513,17 @@ impl Program {
         Ok(Self { pairs, labels })
     }
 
+    /// The labels at each pair, in pair order.
+    pub fn labels(&self) -> Vec<(usize, String)> {
+        let mut labels: Vec<_> = self
+            .labels
+            .iter()
+            .map(|(name, &pc)| (pc, name.clone()))
+            .collect();
+        labels.sort();
+        labels
+    }
+
     /// Runs in [`Config::LOGICAL`] from the first pair.
     pub fn execute(&self, state: State, max_steps: usize) -> Result<Execution> {
         self.run(state, Config::LOGICAL, max_steps)
@@ -522,6 +536,7 @@ impl Program {
             return Err("invalid constant register state".into());
         }
         let mut pipeline = Pipeline::default();
+        let mut profile = vec![(0, 0); self.pairs.len()];
         let mut next_cycle = 0;
         let mut pc = 0;
         let mut delayed_branch = None;
@@ -534,6 +549,7 @@ impl Program {
                         state,
                         steps: step,
                         cycles: next_cycle,
+                        profile,
                     });
                 }
                 return Err(format!("PC {pc} left program before E termination"));
@@ -546,6 +562,8 @@ impl Program {
             } else {
                 next_cycle
             };
+            profile[pc].0 += 1;
+            profile[pc].1 += cycle - next_cycle;
             // SCE §3.4.2: both slots issue together. All reads use preissue
             // values, including a lower MTIR/SQ reading an upper destination.
             let high = self.evaluate(upper, &state, pc, true, config)?;
@@ -576,6 +594,7 @@ impl Program {
                     state,
                     steps: step + 1,
                     cycles: next_cycle,
+                    profile,
                 });
             }
             let next = delayed_branch.take().unwrap_or(pc + 1);

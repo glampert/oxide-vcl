@@ -453,3 +453,46 @@ fn cycle_report() {
         println!("{:56} {}", listing.name, columns.join(" "));
     }
 }
+
+/// Where an optimized program spends its cycles, by the label each row
+/// follows: `VCL_PROFILE=<case> cargo test --release --test
+/// listing_equivalence profile_report -- --ignored --nocapture`.
+#[test]
+#[ignore = "a report, not a check"]
+fn profile_report() {
+    let Ok(name) = std::env::var("VCL_PROFILE") else {
+        return;
+    };
+    let case = cases().into_iter().find(|case| case.name == name).unwrap();
+    let listing = compile(&case, &["--mode=oxide"]).unwrap();
+    let program = Program::parse(&listing).unwrap();
+    let labels = program.labels();
+    let mut totals: std::collections::BTreeMap<String, (u64, u64, u64)> = Default::default();
+    let mut all = 0;
+    for seed in RANDOM_SEEDS..SEEDS {
+        let Ok(execution) = program.run(seeded_state(seed), Config::TIMED, MAX_STEPS) else {
+            continue;
+        };
+        all += execution.cycles;
+        for (pc, &(issues, stalls)) in execution.profile.iter().enumerate() {
+            let label = labels
+                .iter()
+                .rev()
+                .find(|(at, _)| *at <= pc)
+                .map_or("(start)".to_string(), |(_, name)| name.clone());
+            let entry = totals.entry(label).or_default();
+            entry.0 += issues;
+            entry.1 += stalls;
+            entry.2 += issues + stalls;
+        }
+    }
+    let mut rows: Vec<_> = totals.into_iter().collect();
+    rows.sort_by_key(|(_, (_, _, cycles))| std::cmp::Reverse(*cycles));
+    println!("{name}: {all} cycles over the count seeds");
+    for (label, (issues, stalls, cycles)) in rows.iter().take(25) {
+        println!(
+            "{label:48} {cycles:7} cycles {:5.1}%  {issues:7} issues {stalls:6} stalls",
+            100.0 * *cycles as f64 / all as f64
+        );
+    }
+}
