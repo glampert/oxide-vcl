@@ -1,0 +1,124 @@
+INFO: OS_Init(Linux)
+INFO: lpgen[5](limit: number of lower instructions) - 'dumb2' flow loop
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 4 critical at 0 recoverable at 3 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 4 critical at 0 recoverable at 3 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 4 critical at 0 recoverable at 3 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 5 critical at 1 recoverable at 4 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 4 critical at 0 recoverable at 3 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 4 critical at 0 recoverable at 3 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 5 critical at 1 recoverable at 4 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 5 critical at 1 recoverable at 4 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 2 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 1 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 2 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 2 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 2 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at 1 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at 1 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 1 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 1 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 2 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 1 recoverable at 2 minSafe=0..so abort
+  ---> [***{mul}***] {value},{value},{value} 
+INFO: sidefx : loop@ 3 critical at 0 recoverable at 1 minSafe=0..so abort
+WARN: time out..
+INFO: lpgen[5](limit: number of lower instructions) - 'normal2' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'vuta1' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'another' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'normal' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'dUp' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'vuta' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'hDown' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'normal1' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'ldumb' flow loop
+INFO: lpgen[5](limit: number of lower instructions) - 'dumb' flow loop
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+  ---> [***{mul}***] {value},{value},{value} 
+WARN: time out..
+INFO: Opt::Loop             loop  5/5
+INFO: Opt::Linear        __v_FIX_6  1/4
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

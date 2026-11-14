@@ -10,6 +10,30 @@ pub(super) fn compile_region(
     options: &Options,
     output: &mut Compiled,
 ) -> Result<(), CompileError> {
+    if options.optimizes(Optimization::Loops) && !options.disable_loops {
+        let hinted = with_derived_loop_hints(program, region);
+        if hinted.blocks.iter().any(|block| block.loop_hints.derived) {
+            // Pipelined loops grow the program: they must still fit in
+            // VU1 micro memory, or the region is compiled without them.
+            let initial = output.clone();
+            compile_hinted_region(program, &hinted, unique, options, output)?;
+            if output.instruction_pairs <= program_size::MICRO_MEMORY {
+                return Ok(());
+            }
+            *output = initial;
+        }
+    }
+    compile_hinted_region(program, region, unique, options, output)
+}
+
+/// [`compile_region`] with the region's loop hints as they are.
+fn compile_hinted_region(
+    program: &Source,
+    region: &Region,
+    unique: &str,
+    options: &Options,
+    output: &mut Compiled,
+) -> Result<(), CompileError> {
     if !options.disable_loops && region.blocks.iter().any(|block| {
         block.loop_hints.minimum.is_some()
             && matches!(&block.end, End::Branch { target: Some(target), conditional: true, call: false, .. }
@@ -615,7 +639,10 @@ fn exit_like_blocks(
         .reachable
         .iter()
         .copied()
-        .filter(|&id| matches!(region.blocks[id].end, End::Exit { macro_text: None }))
+        .filter(|&id| {
+            matches!(region.blocks[id].end, End::Exit { macro_text: None })
+                && region.blocks[id].operations.is_empty()
+        })
         .collect();
     loop {
         let before = exit_like.len();
@@ -2444,6 +2471,54 @@ fn referenced_labels(
         .chain(program.globals.iter().cloned())
         .map(|label| label.to_ascii_lowercase())
         .collect()
+}
+
+/// The `loops` optimization: each loop vcl 1.4beta7 would pipeline but for a
+/// missing `--LoopCS` gets `--LoopCS 1,0`. Such a loop is one block of
+/// ordinary (not raw) code that ends in a conditional branch to its own
+/// label, so its body runs at least once, and a safe count of 0 lets no
+/// store run past the last iteration: the hint promises only what every
+/// such loop does.
+///
+/// A loop that reads Q, P, R or a flag before writing it is left alone:
+/// vcl 1.4beta7's pipeliner times these values, which are not interlocked,
+/// between iterations but not from before the loop, so its kernel can read
+/// one before it lands (observed from vcl 1.4beta7 with `--LoopCS 1,0` on
+/// `checker-lat-q-loop`, where the first MULQ reads the Q before the DIV's).
+fn with_derived_loop_hints(program: &Source, region: &Region) -> Region {
+    let not_interlocked = |register: usize| {
+        source_passes::hardware_register(&program.registers.named(register).name)
+            .is_some_and(|(_, _, nonblocking, _)| nonblocking != 0)
+    };
+    let mut region = region.clone();
+    for block in &mut region.blocks {
+        let mut written = BTreeSet::new();
+        let mut reads_entry_value = false;
+        for &id in &block.operations {
+            let effects = &region.instructions[id].effects;
+            reads_entry_value |= effects
+                .reads
+                .iter()
+                .any(|read| !written.contains(&read.register) && not_interlocked(read.register));
+            written.extend(effects.writes.iter().map(|write| write.register));
+        }
+        if reads_entry_value {
+            continue;
+        }
+        let self_loop = matches!(&block.end, End::Branch { target: Some(target), conditional: true, call: false, .. }
+            if block.labels.iter().any(|label| label.eq_ignore_ascii_case(target)));
+        let ordinary = !block.operations.is_empty()
+            && block
+                .operations
+                .iter()
+                .all(|&id| region.instructions[id].instruction.mode == ParseMode::Vcl);
+        if self_loop && ordinary && block.loop_hints.minimum.is_none() {
+            block.loop_hints.minimum = Some(1);
+            block.loop_hints.safe = 0;
+            block.loop_hints.derived = true;
+        }
+    }
+    region
 }
 
 /// What the text of a region's tables is printed from.

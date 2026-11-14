@@ -61,6 +61,8 @@ optimizations (--mode=oxide only, which runs them all by default):
   --opt=none     run no optimization
                  exit: end the program on its last instructions, without
                  vcl's empty [E] row and delay slot
+                 loops: software-pipeline loops that have no --LoopCS, as if
+                 they had --LoopCS 1,0
 
 diagnostics (file(line): severity: message, with the source line and a fix):
   -q             quiet mode: prints only warnings and errors

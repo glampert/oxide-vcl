@@ -13,7 +13,7 @@
 use super::*;
 
 /// VU1 micro memory, in instructions.
-const MICRO_MEMORY: usize = 2048;
+pub(super) const MICRO_MEMORY: usize = 2048;
 
 /// The warnings for a compiled listing.
 pub(super) fn check(output: &Compiled) -> Vec<Diagnostic> {

@@ -1,0 +1,61 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; === __LP__ EXPL_FIX_loop__MAIN_LOOP:
+; ===             dumb : optimal=7 clid=0 mlid=16 size=(7) 
+; ===            ldumb : optimal=7 clid=0 mlid=1 size=(7) 
+; ===          normal1 : optimal=7 clid=0 mlid=1 size=(7) 
+; ===            hDown : optimal=7 clid=0 mlid=1 size=(7) 
+; ===             vuta : optimal=7 clid=0 mlid=1 size=(7) 
+; ===              dUp : optimal=7 clid=0 mlid=1 size=(7) 
+; ===           normal : optimal=7 clid=0 mlid=1 size=(7) 
+; ===          another : optimal=7 clid=0 mlid=1 size=(7) 
+; ===            vuta1 : optimal=7 clid=0 mlid=1 size=(7) 
+; ===          normal2 : optimal=7 clid=0 mlid=1 size=(7) 
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.vu
+		.align 4
+EXPL_FIX_loop__ENTRY_POINT:
+loop:
+; _LNOPT_w=[ ] 5 [5 0] 5   [EXPL_FIX_loop__ENTRY_POINT]
+         NOP                                                        lq            VF01,0(VI01)                        
+         NOP                                                        isubiu        VI02,VI02,0x00000001                
+         NOP                                                        NOP                                               
+         NOP                                                        ibeq          VI02,VI00,EXPL_FIX_loop__EPI0       
+         mul           VF01,VF01,VF01                               iaddiu        VI01,VI01,0x00000001                
+EXPL_FIX_loop__MAIN_LOOP:
+; _LPOPT_w=[ ldumb ] 7 [6 5] 7   [EXPL_FIX_loop__MAIN_LOOP]
+         NOP                                                        iaddiu        VI01,VI01,0x00000001                
+         NOP                                                        lq            VF02,-1(VI01)                       
+         NOP                                                        isubiu        VI02,VI02,0x00000001                
+         NOP                                                        NOP                                               
+         NOP                                                        sq            VF01,-2(VI01)                       
+         NOP                                                        ibne          VI02,VI00,EXPL_FIX_loop__MAIN_LOOP  
+         mul           VF01,VF02,VF02                               NOP                                               
+EXPL_FIX_loop__EPI0:
+; _LNOPT_w=[ ] 12 [8 0] 12   [EXPL_FIX_loop__EPI0]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        div           Q,VF01x,VF01w                       
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         mulq[E]       VF04,VF01,Q                                  sq            VF01,-1(VI01)                       
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=24
+; register stats:
+;   3 VU User integer
+;   3 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

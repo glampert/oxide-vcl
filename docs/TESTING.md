@@ -267,15 +267,19 @@ capture and saturating arithmetic.
 ## Listing equivalence
 
 `crates/oxide-vcl/tests/listing_equivalence.rs` compares two listings of
-one program by running both in the timed configuration from four seeded
-states: VF values of mixed sign between 2^-4 and 2^4, VI values from 1 to
-32, TOP below 512, and data memory whose low 16 bits are 12, 24, 36 or 48,
-so that counts and pointers read with ILW are short and loops stepping by
-1, 2, 3, 4 or 6 to a bound end. Two listings are equivalent when, on every
-seed both finish, they leave the same data memory and kick the same GIF
-packets. Listings with the same text are equivalent without running; a run
-that reaches the 200,000-pair limit is retried with eight times the limit
-when the other finished.
+one program by running both in the timed configuration from twelve seeded
+states. Four are random: VF values of mixed sign between 2^-4 and 2^4, VI
+values from 1 to 32, TOP below 512, and data memory whose low 16 bits are
+12, 24, 36 or 48, so that counts and pointers read with ILW are short and
+loops stepping by 1, 2, 3, 4 or 6 to a bound end. Eight are count seeds:
+the low 16 bits of memory and VI01 to VI15 all hold one count, 1, 2, 3, 4,
+5, 6, 9 or 12, which gives a loop counting down by one 1 to 6 iterations
+and one counting down by three 1 to 4, where a pipelined loop's prologue
+exits early. Two listings are equivalent when, on every seed both finish,
+they leave the same data memory and kick the same GIF packets. Listings
+equal apart from comments and spacing are equivalent without running; a
+run that reaches the 200,000-pair limit is retried with eight times the
+limit when the other finished.
 
 Over the public corpus and the probes it requires:
 
@@ -287,7 +291,13 @@ Over the public corpus and the probes it requires:
   symbolic registers or immediates cannot execute (`NOT_EXECUTABLE`).
 
 These three compile the corpus twice and are ignored in debug builds; the
-release suite runs them. A fourth test shows that a schedule reading Q one
+release suite runs them. `cycle_report`, an ignored test, prints the cycles
+each changed program takes with and without optimizations at each count
+seed:
+
+```sh
+cargo test --release --test listing_equivalence cycle_report -- --ignored --nocapture
+``` A fourth test shows that a schedule reading Q one
 row before the quotient lands is a difference, which the logical
 configuration does not see.
 

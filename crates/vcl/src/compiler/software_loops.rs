@@ -630,12 +630,32 @@ fn lpgen_optimize_loop(
     if first > 256 {
         return None;
     }
+    let mut last = (first + 16).min(256);
+    // A derived hint pipelines the loop only for a period shorter than an
+    // iteration of the loop scheduled as straight-line code.
+    if hints.derived {
+        let linear = crate::scheduler::wrangle::optimize(
+            &table.problem,
+            table.lower_bound,
+            Some(&table.pools),
+            &mut |_| true,
+        )?;
+        last = last.min(linear.rows.len() as i32 - 1);
+        crate::trace_if!(
+            lpgen_trace,
+            "lpgen {block_id} derived hint: linear {} rows, periods {first} to {last}",
+            linear.rows.len()
+        );
+        if first > last {
+            return None;
+        }
+    }
 
     crate::scheduler::wrangle::set_trace_block(block_id);
     let outcome = crate::scheduler::wrangle::optimize_loop(
         &table.problem,
         first,
-        (first + 16).min(256),
+        last,
         hints.safe as i32,
         crate::debug::switches().lpgen_budget.unwrap_or(20_000),
         Some(&table.pools),
@@ -785,7 +805,11 @@ impl<'a> LpgenRewrite<'a> {
             if !self.copy(index) || self.outcome.placements[index].line < 0 {
                 continue;
             }
-            let (write, read) = (mv.operands[0].register, mv.operands[1].register);
+            // A copy of VF00 has no source register in the table.
+            let [write, read, ..] = &mv.operands[..] else {
+                continue;
+            };
+            let (write, read) = (write.register, read.register);
             if self.physical(write).is_some() && self.physical(write) == self.physical(read) {
                 collapsed.insert(write, read);
             }

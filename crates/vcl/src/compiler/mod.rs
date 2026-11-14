@@ -231,6 +231,9 @@ struct LoopHints {
     safe: u32,
     extra: u16,
     absolute: Option<u16>,
+    /// Set by the `loops` optimization, not by the source: the loop is
+    /// pipelined only when that makes an iteration shorter.
+    derived: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -227,6 +227,13 @@ an exit successor and becomes an E stream. The explicitly targeted `done:`
 exit still emits its own E/NOP pair. This explains why a single shared exit
 declaration can yield several physical termination sequences.
 
+Only an exit stream without code counts: a stream that falls through
+empty streams into one (the `EXIT_POINT` after a pipelined loop) folds,
+but one that falls into code before the exit does not, and keeps its rows
+ahead of that code (observed from vcl 1.4beta7, `loop-exit-code-after`,
+`loop-exit-store-after` and `loop-exit-q-after`, where the epilogue of a
+`--LoopCS` loop and the code after it share one table that ends in E).
+
 ### E safety and padding
 
 A termination-hazard predicate checks lower-pipe termination hazards. Tidy appends empty rows

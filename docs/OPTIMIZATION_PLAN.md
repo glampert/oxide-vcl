@@ -6,8 +6,9 @@ sets of disassembled VU programs. This chapter asks the next question: where doe
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-One optimization exists, `exit` (part of O9). The measuring and checking
-tools of section 5 exist; section 6 gives the order of the rest.
+Two optimizations exist: `exit` (part of O9) and `loops` (the first step
+of O1). The measuring and checking tools of section 5 exist; section 6
+gives the order of the rest.
 
 The ground rules:
 
@@ -187,6 +188,39 @@ needs from `--LoopCS min,safe` can be derived instead:
 *Risks:* code growth, and loops whose trip count comes in at runtime and
 is often 1 or 2. Default to pipelining only when the kernel at least halves
 the iteration cost or the user asks for it.
+
+*The `loops` optimization* (`--opt=loops`, `with_derived_loop_hints` in
+`crates/vcl/src/compiler/region.rs`) is the first step. vcl 1.4beta7
+already pipelines a loop the design above describes, given
+`--LoopCS count,safe`; what the source has to promise is only the
+minimum trip count and how many iterations' stores may run past the last.
+A loop vcl would pipeline but for the missing hint (one block of ordinary
+code ending in a conditional branch to its own label) always runs its body
+at least once, so `--LoopCS 1,0` promises nothing it does not do, and
+vcl's expansion with a count of 1 keeps the early exits in the prologue:
+no separate guard is needed. The optimization gives such loops that hint,
+with three limits:
+
+- **Profit.** The loop search tries only periods shorter than an iteration
+  of the loop scheduled as straight-line code (`lpgen_optimize_loop`); if
+  none is found, the loop stays as it is.
+- **Size.** A region whose pipelined loops would take the program past the
+  2048 instructions of VU1 micro memory is compiled without them.
+- **Values from before the loop.** vcl's pipeliner times Q, P, R and the
+  MAC, status and clip flags, which are not interlocked, between iterations
+  but not from the code before the loop: with `--LoopCS 1,0` on
+  `loop-entry-q-in-flight`, vcl's kernel reads the quotient of the DIV
+  before the loop one cycle after it issues (observed from vcl 1.4beta7).
+  A loop that reads one of these before writing it is left alone.
+
+In the public corpus it pipelines 7 loops: `vertexLoop` of the four openvcl
+examples (`sprite`, `triangle`, `triangle-gasp`, `triangle_strip`), 27 cycles
+per iteration as straight-line code against a period of 9, and three tyra
+renderers, 30 → 23, 67 → 57 and 70 → 60. The loops of quake2's particles,
+doom3 and the other tyra renderers are hand-pipelined: their first
+iteration reads a Q or flag value from before the loop, so the last limit
+keeps them. Timing those values at the loop's entry, which would also
+repair vcl's defect, is the next step.
 
 ### O2. Reach the bound in kernels the original's search gives up on
 
@@ -465,27 +499,31 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | Phase | Items | Effort | Expected result |
 | --- | --- | --- | --- |
 | 0 | Survey tool, `--opt=` switch, timed model, equivalence harness (section 5) | Medium | Baseline per table and per program; a check that oxide output computes what vcl output computes |
-| 1 | O9 (`exit`: the E row on the last instructions) and O5 step 1: fill branch delay slots and the E delay slot | Small to medium | 141 of 328 empty delay slots and 235 empty exit slots in the public corpus, 773 delay slots in the local corpus |
-| 2 | O1 (pipeline unannotated loops) with O10 (code budget) | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 4× on `sprite` |
+| 1 | O9 (`exit`: the E row on the last instructions) | Small | A row and a cycle off 36 of 52 public programs |
+| 2 | O1 (pipeline unannotated loops) with O10 (code budget): `loops`, then the entry timing of Q, P and flags | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 3× on `sprite` |
 | 3 | O3 step 1 (reschedule loop prologues and epilogues) | Medium | Most of the 1,782 stall cycles in loop parts |
 | 4 | O4 (merge induction variables, post-increment folding) | Medium | One cycle per iteration in lower-bound kernels (`general` `xform_loop` 22 → 21, `fast_nolights` 12 → 11) |
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
-| 7 | O5 steps 2–3 (superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
+| 7 | O5 (delay slots, superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
 
 Why this order:
 
-- **Phase 1 first.** Delay-slot and exit-row filling is a pass over the
-  final, allocated rows: each change is local and easy to check, and it
-  exercises the whole Phase 0 tool chain on a small change. Its gain is
-  modest, about one cycle per filled slot per execution. Moving an
-  instruction past a branch can change when Q or P lands, which is why the
-  model checks landing times first.
-- **O1 is the largest measured runtime gain** and reuses the modulo
-  scheduler and loop expansion; what is new is the exit-test recognition,
-  the trip-count guard with the original loop as fallback, the speculation
-  rule and the size budget. Pipeline a loop only when the kernel at least
-  halves its iteration cost.
+- **Phase 1 first.** Exit-row placement moves no instruction, so each
+  change is local and easy to check, and it exercised the Phase 0 tool
+  chain on a small change.
+- **Delay slots wait for O5's regions.** Moving an instruction into a
+  delay slot saves a cycle only when its own row then empties. In the
+  public corpus only 5 of the 372 branch delay slots with an empty upper
+  slot, and 2 of the 63 E delay slots, have an upper instruction before
+  them whose row would empty and that nothing between reads or overwrites
+  (a static estimate, flags and timing aside): the rows before a branch are
+  tight dependency chains. Filling them needs work from other streams,
+  which is what O5's regions bring.
+- **O1 is the largest measured runtime gain.** vcl's own pipeliner does
+  the work given `--LoopCS 1,0` (O1, the `loops` optimization); what
+  remains is the entry timing of values that are not interlocked, which
+  keeps the hand-pipelined loops out.
 - **O3 before O2 and O4** although they save more per vertex: O3 keeps the
   original's data flow, so its risk is low. It reschedules code that is
   already allocated, so reuse of physical registers limits what it finds.

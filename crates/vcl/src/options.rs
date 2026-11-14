@@ -175,16 +175,20 @@ pub enum Optimization {
     /// The E bit goes on the earliest row that can end the program, and the
     /// empty rows after its delay slot are dropped (`exit`).
     Exit,
+    /// A loop without `--LoopCS` is software-pipelined as if it had
+    /// `--LoopCS 1,0`, which every such loop satisfies (`loops`).
+    Loops,
 }
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 1] = [Optimization::Exit];
+    pub const ALL: [Optimization; 2] = [Optimization::Exit, Optimization::Loops];
 
     /// The optimization's name on the command line.
     pub const fn name(self) -> &'static str {
         match self {
             Optimization::Exit => "exit",
+            Optimization::Loops => "loops",
         }
     }
 

@@ -192,3 +192,165 @@ fn exit_changes_nothing_without_end_bits() {
         assert_eq!(disabled, compile(source, &["-e", "--opt=none"]));
     }
 }
+
+// ----------------------------------------------
+// loops
+// ----------------------------------------------
+
+/// Runs `source`'s listings with and without optimizations from states
+/// with trip counts 1 to 6, and requires the same memory and VF04.
+fn same_results(source: &str) -> (String, String) {
+    let plain = compile(source, &["--opt=none"]);
+    let optimized = compile(source, &[]);
+    for count in 1..=6 {
+        let mut state = source_state();
+        state.vi[2] = count;
+        for (address, qword) in state.memory.iter_mut().enumerate() {
+            *qword =
+                [(address % 7 + 1) as f32, 2.0, 0.5, (address % 3 + 1) as f32].map(f32::to_bits);
+        }
+        let program = |listing: &str| Program::parse(listing).unwrap();
+        let before = program(&plain)
+            .run(state.clone(), Config::TIMED, 4096)
+            .unwrap();
+        let after = program(&optimized).run(state, Config::TIMED, 4096).unwrap();
+        assert_eq!(
+            after.state.memory, before.state.memory,
+            "count {count}\n{optimized}"
+        );
+        assert_eq!(
+            after.state.vf[4], before.state.vf[4],
+            "count {count}\n{optimized}"
+        );
+    }
+    (plain, optimized)
+}
+
+fn pipelined(listing: &str) -> bool {
+    listing.contains("_LPOPT_w")
+}
+
+const SCALE_LOOP: &str = ".init_vf_all\n\
+                          .init_vi_all\n\
+                          --enter\n\
+                          in_vi base(vi01)\n\
+                          in_vi count(vi02)\n\
+                          in_vf scale(vf02)\n\
+                          --endenter\n\
+                          loop:\n\
+                          lq value,0(base)\n\
+                          mul value,value,scale\n\
+                          sq value,0(base)\n\
+                          iaddiu base,base,1\n\
+                          isubiu count,count,1\n\
+                          ibne count,vi00,loop\n\
+                          --exit\n\
+                          --endexit\n";
+
+#[test]
+fn loops_pipelines_a_loop_without_loopcs() {
+    // As if it had `--LoopCS 1,0`: a prologue, a kernel and an epilogue,
+    // with an early exit for a single iteration.
+    let (plain, optimized) = same_results(SCALE_LOOP);
+    assert!(!pipelined(&plain));
+    assert!(pipelined(&optimized), "{optimized}");
+    assert!(optimized.contains("EXPL_OPT_loop__MAIN_LOOP:"));
+    assert!(!pipelined(&compile(SCALE_LOOP, &["--opt=exit"])));
+    assert!(!pipelined(&compile(SCALE_LOOP, &["-L"])));
+    // vcl mode pipelines only with the hint.
+    let options = cli::parse(["-t1", "-uOPT"]).unwrap().compile;
+    let vcl = vcl::compile(SCALE_LOOP, "/work/opt.vcl", &options).unwrap();
+    assert!(!pipelined(&vcl.assembly));
+}
+
+#[test]
+fn loops_keeps_values_the_code_after_the_loop_reads() {
+    // Q from the last iteration's DIV, and the MAC flag of its SUB, read
+    // after the loop.
+    let q_after = ".init_vf_all\n\
+                   .init_vi_all\n\
+                   --enter\n\
+                   in_vi base(vi01)\n\
+                   in_vi count(vi02)\n\
+                   --endenter\n\
+                   loop:\n\
+                   lq value,0(base)\n\
+                   mul value,value,value\n\
+                   div Q,value.x,value.w\n\
+                   sq value,0(base)\n\
+                   iaddiu base,base,1\n\
+                   isubiu count,count,1\n\
+                   ibne count,vi00,loop\n\
+                   mulq result,value,Q\n\
+                   --exit\n\
+                   out_vf result(vf04)\n\
+                   --endexit\n";
+    let (_, optimized) = same_results(q_after);
+    assert!(pipelined(&optimized), "{optimized}");
+    let flags_after = ".init_vf_all\n\
+                       .init_vi_all\n\
+                       --enter\n\
+                       in_vi base(vi01)\n\
+                       in_vi count(vi02)\n\
+                       --endenter\n\
+                       loop:\n\
+                       lq value,0(base)\n\
+                       sub value,value,value\n\
+                       sq value,0(base)\n\
+                       iaddiu base,base,1\n\
+                       isubiu count,count,1\n\
+                       ibne count,vi00,loop\n\
+                       iaddiu mask,vi00,0xffff\n\
+                       fmand flags,mask\n\
+                       isw.x flags,0(vi00)\n\
+                       --exit\n\
+                       --endexit\n";
+    let (_, optimized) = same_results(flags_after);
+    assert!(pipelined(&optimized), "{optimized}");
+}
+
+#[test]
+fn loops_leaves_a_loop_that_reads_q_from_before_it() {
+    // The first MULQ reads the quotient of the DIV before the loop. vcl's
+    // pipeliner would read it before it lands (`loop-entry-q-in-flight`).
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vf a(vf01)\n\
+                  in_vi n(vi02)\n\
+                  in_vi p(vi01)\n\
+                  --endenter\n\
+                  div Q,a.x,a.y\n\
+                  loop:\n\
+                  mulq b,a,Q\n\
+                  sq b,0(p)\n\
+                  iaddiu p,p,1\n\
+                  lq a,0(p)\n\
+                  div Q,a.x,a.y\n\
+                  isubiu n,n,1\n\
+                  ibne n,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let (_, optimized) = same_results(source);
+    assert!(!pipelined(&optimized), "{optimized}");
+}
+
+#[test]
+fn loops_leaves_a_loop_that_pipelining_does_not_shorten() {
+    // Each iteration's IADDI feeds the next: a period of one iteration's
+    // length gains nothing over the loop as it is.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi count(vi02)\n\
+                  --endenter\n\
+                  loop:\n\
+                  iaddiu value,count,10\n\
+                  iaddi count,count,-1\n\
+                  ibne count,vi00,loop\n\
+                  --exit\n\
+                  out_vi value(vi01)\n\
+                  --endexit\n";
+    assert!(!pipelined(&compile(source, &[])));
+    assert_eq!(compile(source, &[]), compile(source, &["--opt=exit"]));
+}

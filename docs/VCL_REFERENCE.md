@@ -894,6 +894,7 @@ and `--opt=NAME,...` exactly those named. vcl mode never optimizes, and
 
 | Optimization | Improves |
 | --- | --- |
+| `loops` | Loops without `--LoopCS`. A loop vcl would software-pipeline if it had the hint is pipelined as if it had `--LoopCS 1,0`, which every such loop satisfies: it runs at least once, and no store runs past its last iteration. A loop stays as it is when pipelining does not shorten its iterations, when the program would no longer fit in VU1 micro memory, or when it reads Q, P, R or a flag set before the loop. `-L` turns it off with the rest of loop pipelining. |
 | `exit` | The end of a program and of each `--cont` stream. vcl puts the E bit and its delay slot on rows after the last instruction, usually both empty. With `exit` the last instruction runs in the delay slot when the hardware allows it there, and otherwise carries the E bit itself; the program is a row and a cycle shorter. An XGKICK before `--barrier` and an exit takes the E bit the same way. No instruction moves, and with `-e` nothing changes. |
 
 ```sh

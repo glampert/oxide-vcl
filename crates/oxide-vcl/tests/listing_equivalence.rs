@@ -16,7 +16,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use vcl_cli as cli;
 use vu_model::{Config, Program, State};
 
-const SEEDS: u64 = 4;
+/// Random states, then one state per trip count in [`COUNTS`].
+const RANDOM_SEEDS: u64 = 4;
+/// What counts and pointers read with ILW, and the incoming VI values,
+/// are in the count seeds: trip counts 1 to 6 of a loop that counts down
+/// by one, and 1 to 4 of one that counts down by three. Pipelined loops
+/// exit early from their prologues at small counts.
+const COUNTS: [u16; 8] = [1, 2, 3, 4, 5, 6, 9, 12];
+const SEEDS: u64 = RANDOM_SEEDS + COUNTS.len() as u64;
 const MAX_STEPS: usize = 200_000;
 
 fn cases() -> Vec<corpus::Case> {
@@ -43,8 +50,12 @@ fn compile(case: &corpus::Case, extra: &[&str]) -> Option<String> {
 /// A random start: VF values of mixed sign and magnitude; data memory
 /// whose low 16 bits are 12, 24, 36 or 48, so that counts and pointers read
 /// with ILW stay short and loops stepping by 1, 2, 3, 4 or 6 to a bound
-/// reach it; small VI, TOP and ITOP values.
+/// reach it; small VI, TOP and ITOP values. A count seed sets those low
+/// bits and VI01 to VI15 to its count instead.
 fn seeded_state(seed: u64) -> State {
+    let count = seed
+        .checked_sub(RANDOM_SEEDS)
+        .map(|index| COUNTS[index as usize]);
     let mut random = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x2545_f491_4f6c_dd1d;
     let mut next = move || {
         random ^= random << 13;
@@ -64,10 +75,13 @@ fn seeded_state(seed: u64) -> State {
         *register = std::array::from_fn(|_| float(&mut next));
     }
     for qword in &mut state.memory {
-        *qword = std::array::from_fn(|_| float(&mut next) | ((next() % 4 + 1) as u32 * 12));
+        *qword = std::array::from_fn(|_| {
+            let low = count.map_or((next() % 4 + 1) as u32 * 12, u32::from);
+            float(&mut next) & !0xffff | low
+        });
     }
     for register in &mut state.vi[1..16] {
-        *register = (next() % 32 + 1) as u16;
+        *register = count.unwrap_or((next() % 32 + 1) as u16);
     }
     state.acc = std::array::from_fn(|_| float(&mut next));
     state.q = float(&mut next);
@@ -108,7 +122,7 @@ fn run(program: &Program, seed: u64, max_steps: usize) -> Run {
 /// How two listings of a program compare.
 #[derive(Debug)]
 enum Verdict {
-    /// The same text.
+    /// The same text, comments and spacing aside.
     Identical,
     /// Both finished from this many seeds and left the same.
     Equivalent(usize),
@@ -119,7 +133,7 @@ enum Verdict {
 }
 
 fn compare(left: &str, right: &str) -> Verdict {
-    if left == right {
+    if corpus::normalized(left) == corpus::normalized(right) {
         return Verdict::Identical;
     }
     let (left, right) = match (Program::parse(left), Program::parse(right)) {
@@ -400,4 +414,41 @@ fn seeded_exact_state() -> State {
     state.memory[1] = [3.0_f32.to_bits(); 4];
     state.q = 0.5_f32.to_bits();
     state
+}
+
+/// Cycles each changed listing takes with and without optimizations, per
+/// count seed: `cargo test --release --test listing_equivalence
+/// cycle_report -- --ignored --nocapture`.
+#[test]
+#[ignore = "a report, not a check"]
+fn cycle_report() {
+    let cycles = |text: &str, seed: u64| {
+        Program::parse(text)
+            .ok()?
+            .run(seeded_state(seed), Config::TIMED, MAX_STEPS)
+            .ok()
+            .map(|execution| execution.cycles)
+    };
+    println!(
+        "{:56} cycles at each count (unoptimized -> optimized)",
+        "program"
+    );
+    for listing in listings() {
+        let (Some(unoptimized), Some(optimized)) = (&listing.unoptimized, &listing.optimized)
+        else {
+            continue;
+        };
+        if corpus::normalized(unoptimized) == corpus::normalized(optimized) {
+            continue;
+        }
+        let columns: Vec<String> = (RANDOM_SEEDS..SEEDS)
+            .map(
+                |seed| match (cycles(unoptimized, seed), cycles(optimized, seed)) {
+                    (Some(a), Some(b)) => format!("{a}->{b}"),
+                    _ => "-".into(),
+                },
+            )
+            .collect();
+        println!("{:56} {}", listing.name, columns.join(" "));
+    }
 }
