@@ -37,6 +37,9 @@ pub struct Options {
     /// Fixes for defects of vcl 1.4beta7 chosen with `--fix=` (oxide mode
     /// enables them all: see [`Options::fixes`]).
     pub fixes: Fixes,
+    /// Optimizations chosen with `--opt=`; `None` is oxide mode's default,
+    /// all of them. vcl mode never optimizes: see [`Options::optimizes`].
+    pub optimizations: Option<Optimizations>,
 }
 
 impl Options {
@@ -51,6 +54,21 @@ impl Options {
         match self.mode {
             crate::Mode::Vcl => self.fixes,
             crate::Mode::Oxide => Fixes::all(),
+        }
+    }
+
+    /// Whether `optimization` runs: only in oxide mode, where `--opt=`
+    /// chooses them and every one runs by default.
+    pub fn optimizes(&self, optimization: Optimization) -> bool {
+        self.enabled_optimizations().contains(optimization)
+    }
+
+    /// The optimizations that run: none in vcl mode; in oxide mode those
+    /// chosen with `--opt=`, or all of them.
+    pub fn enabled_optimizations(&self) -> Optimizations {
+        match self.mode {
+            crate::Mode::Vcl => Optimizations::NONE,
+            crate::Mode::Oxide => self.optimizations.unwrap_or_else(Optimizations::all),
         }
     }
 }
@@ -149,6 +167,65 @@ impl Fixes {
     }
 }
 
+/// A code generation improvement over vcl 1.4beta7
+/// (docs/OPTIMIZATION_PLAN.md), named for `--opt=NAME` so that it can be
+/// turned off on its own. None exists yet: the plan's first phase adds one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum Optimization {}
+
+impl Optimization {
+    /// Every optimization, in the order the help lists them.
+    pub const ALL: [Optimization; 0] = [];
+
+    /// The optimization's name on the command line.
+    pub const fn name(self) -> &'static str {
+        match self {}
+    }
+
+    /// The optimization a command-line name selects.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|optimization| optimization.name() == name)
+    }
+
+    const fn bit(self) -> u32 {
+        match self {}
+    }
+}
+
+/// A set of [`Optimization`]s.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+pub struct Optimizations(u32);
+
+impl Optimizations {
+    /// No optimization (`--opt=none`).
+    pub const NONE: Optimizations = Optimizations(0);
+
+    /// Every optimization (`--opt=all`, and oxide mode's default).
+    pub fn all() -> Self {
+        Optimization::ALL.into_iter().fold(Self::NONE, Self::with)
+    }
+
+    /// This set with `optimization` added.
+    pub const fn with(self, optimization: Optimization) -> Self {
+        Self(self.0 | optimization.bit())
+    }
+
+    /// The optimizations in either set.
+    pub const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    pub const fn contains(self, optimization: Optimization) -> bool {
+        self.0 & optimization.bit() != 0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +250,27 @@ mod tests {
             ..Options::default()
         };
         assert!(oxide.fixes(Fix::End));
+    }
+
+    #[test]
+    fn only_oxide_mode_optimizes() {
+        assert_eq!(Optimization::from_name("all"), None);
+        assert_eq!(Optimization::from_name("none"), None);
+        let all = Optimizations::all();
+        let vcl = Options {
+            optimizations: Some(all),
+            ..Options::default()
+        };
+        assert_eq!(vcl.enabled_optimizations(), Optimizations::NONE);
+        let oxide = Options {
+            mode: crate::Mode::Oxide,
+            ..Options::default()
+        };
+        assert_eq!(oxide.enabled_optimizations(), all);
+        let none = Options {
+            optimizations: Some(Optimizations::NONE),
+            ..oxide
+        };
+        assert!(none.enabled_optimizations().is_empty());
     }
 }

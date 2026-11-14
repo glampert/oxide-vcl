@@ -1,19 +1,21 @@
 # Beyond the original: an optimization plan
 
-The port reproduces the original VCL (vcl 1.4beta7) on every corpus we have: the 49
+The port reproduces the original VCL (vcl 1.4beta7) on every corpus we have: the 52
 public programs, the 769 oracle fixtures it can run, and the two local
 sets of disassembled VU programs. This chapter asks the next question: where does the
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-None of this is implemented. It is a measured plan.
+No optimization is implemented yet. The measuring and checking tools of
+section 5 exist; section 6 gives the order of the rest.
 
 The ground rules:
 
-- **Compatibility stays the default.** Without a new opt-in switch the
-  output stays identical to the original's. The switch could be a long
-  option such as `--improve`; the original rejects unknown long options, so
-  the name cannot collide with existing behaviour.
+- **Compatibility stays the default.** Optimizations run only in oxide
+  mode (`--mode=oxide`); vcl mode's output stays identical to the
+  original's. Each optimization has a name for `--opt=` so that it can be
+  turned off on its own: oxide mode enables them all, `--opt=none` none,
+  and `--opt=NAME,...` exactly those named.
 - **Same results, bit for bit.** Every optimization in the main plan keeps
   the arithmetic each program performs, operation for operation. Rewrites
   that change rounding (for example `sqrt` then `div` into `rsqrt`) are
@@ -61,29 +63,34 @@ every table has a header `; _LNOPT_w=` (straight-line) or `; _LPOPT_w=`
 `STALL_LATENCY ?n` / `STALL_THRUPUT ?n` notes. Loop prologues, epilogues
 and their entry/exit points are `_LNOPT_w` tables with an empty strategy:
 the loop optimizer installs them as they are and never reschedules them.
-The survey scripts are not tracked; section 5 proposes a tool.
+`tools/survey_output.py tests/corpus` prints these counts (section 5). A
+copy is a `move`, or a `max` or `mini` of a register with itself; a delay
+slot is the row after a branch; exit slots are the empty slots from an E
+row to its table's end.
 
-### Public corpus (49 programs)
+### Public corpus (52 programs)
 
 | Kind | Tables | Rows | Stall cycles | Empty rows | Copies | Empty delay slots |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Loop kernels | 43 | 976 | 0 | 36 | 35 | 2 of 43 |
-| Loop prologue/epilogue/entry/exit | 197 | 3,512 | 1,782 | 338 | 123 | — |
-| Other straight-line streams | 407 | 4,420 | 1,052 | 320 | 53 | 80 of 225 |
+| Loop kernels | 43 | 974 | 0 | 34 | 25 | 0 of 43 |
+| Loop prologue/epilogue/entry/exit | 203 | 3,688 | 1,782 | 360 | 106 | 0 of 150 |
+| Other straight-line streams | 616 | 6,026 | 1,413 | 462 | 50 | 141 of 328 |
 
 Further straight-line slack:
 
-- 81 leading empty rows: the original keeps them as readiness debt for
-  values arriving from predecessor streams.
-- 44 exit tables carry 155 empty slots in their E row, delay slot and
+- 187 leading empty rows (81 in loop parts, 106 elsewhere): the original
+  keeps them as readiness debt for values arriving from predecessor
+  streams.
+- 63 exit tables carry 235 empty slots in their E row, delay slot and
   padding.
 
-Across all 49 programs the original logged `time out..` 238 times: those
-searches were cut off by wall-clock limits, not proven optimal.
+Across the 49 programs of the corpus's first survey the original logged
+`time out..` 238 times: those searches were cut off by wall-clock limits,
+not proven optimal.
 
 The two local corpus sets of disassembled VU programs (117 programs, used only for aggregate
 counts here) contain no loop hints, so all of their code is straight-line:
-3,051 tables, 21,680 rows, 1,673 stall cycles, 1,591 copies, and 773 of
+3,051 tables, 21,680 rows, 1,673 stall cycles, 1,368 copies, and 773 of
 2,289 branch delay slots empty.
 
 ### Loop kernels against their bounds
@@ -104,6 +111,20 @@ Native runs of the original reach 47 for quad
 ([LPGEN_PORT.md](LPGEN_PORT.md)), which confirms that these are search
 limits, not infeasible periods.
 
+The port's deterministic search reaches the native result, and a larger
+search does not get further. With its default step budget (20,000) and with
+ten times that (`VCL_LPGEN_BUDGET=200000`), the port finds the same periods:
+
+| Kernel | Period, budget 20,000 | Period, budget 200,000 | Bound |
+| --- | ---: | ---: | ---: |
+| `general_quad` `xform_loop` | 47 (12 s) | 47 (105 s) | 45 |
+| `general_tri` `xform_loop` | 36 (16 s) | 36 (203 s) | 35 |
+| `general_pv_diff_quad` `xform_loop` | 51 (6 s) | 51 (58 s) | 50 |
+
+The compile time grows with the budget and the period does not move: the
+original's list scheduler, given more time, does not find the bound. O2
+needs a different scheduler, not a larger budget.
+
 The resource bound itself is not fixed: several kernels spend bound slots
 on bookkeeping that could be removed.
 
@@ -112,7 +133,7 @@ on bookkeeping that could be removed.
   both `+3`, in `general` `xform_loop`, and `VI02`/`VI03` in
   `fast_nolights`. In the lower-bound kernels (`general` `xform_loop`, 22
   lower ops; `fast_nolights`, 12) one increment is a whole period cycle.
-- **Copies.** 35 copies (`move`, `max A,B,B`) sit in kernels. They come
+- **Copies.** 25 copies (`move`, `max A,B,B`) sit in kernels. They come
   from lifetimes longer than the period and from source moves.
 - **Loop invariants.** `pt_light_vert_loop` writes `atten.x = 1.0`
   (`addw.x atten, vf00, vf00`) every iteration. Nothing else in the loop
@@ -169,7 +190,9 @@ the iteration cost or the user asks for it.
 
 ### O2. Reach the bound in kernels the original's search gives up on
 
-*Evidence:* quad 48 → 45, tri 36 → 35, pv_diff_quad 51 → 50. If
+*Evidence:* quad 48 → 45 (47 natively and in the port), tri 36 → 35,
+pv_diff_quad 51 → 50; section 2 shows that a larger search budget does not
+close the gap. If
 `--LoopExtra` becomes a hint the improved mode may beat, `pt_light` goes
 39 → 34 and `final_loop` 5 → 4. These are the hottest loops of the
 largest ps2gl renderers.
@@ -195,7 +218,7 @@ prologues and epilogues (O3 offsets this).
 
 ### O3. Schedule loop prologues, epilogues and entry/exit points
 
-*Evidence:* 1,782 stall cycles in 3,512 rows. In `general` the loop parts
+*Evidence:* 1,782 stall cycles in 3,688 rows. In `general` the loop parts
 cost 406 rows plus 209 stall cycles per batch, against 84 cycles per vertex
 summed over its kernels. A typical case: the `xform_loop` epilogue
 `EPI0` issues `opmula` two cycles after the `sub` it reads (`STALL ?2`),
@@ -239,8 +262,8 @@ must not be compared or stored as values.
 
 ### O5. Schedule across streams
 
-*Evidence:* 1,052 stall cycles in straight-line streams, 81 leading empty
-rows, 80 of 225 empty branch delay slots, and 155 empty exit slots in the
+*Evidence:* 1,413 stall cycles in straight-line streams, 187 leading empty
+rows, 141 of 328 empty branch delay slots, and 235 empty exit slots in the
 public corpus. In the local corpus, 773 empty delay slots. The per-light setup
 `dir_light_loop_lid` (`esadd` latency 11 → `mfp` → `ersqrt` 18 → `mfp`)
 stalls 278 cycles across the variants because nothing in its own stream
@@ -272,8 +295,8 @@ in the plan.
 
 ### O6. Eliminate copies
 
-*Evidence:* 35 copies in kernels, 123 in loop parts, 53 elsewhere in the
-public corpus; 1,591 in the local corpus (hand-written register shuffles). A
+*Evidence:* 25 copies in kernels, 106 in loop parts, 50 elsewhere in the
+public corpus; 1,368 in the local corpus (hand-written register shuffles). A
 copy is an FMAC op with latency 4, so one on a dependence chain costs four
 cycles, not one.
 
@@ -333,13 +356,12 @@ range is unknown.
 
 ### O9. End bits and exits
 
-*Evidence:* 155 empty exit slots (section 2). The original's final
-compression can also delete the row carrying the E bit: the
-`local/evidence/oracle/external-vf-two/` (local, not tracked) fixture, and one
-`--cont` stream in the local corpus, are printed without any E bit, so
-the VU runs past the end of the program. The port copies this to stay
-compatible; `--fix=end` keeps an E row and its delay slot on every exit and
-`--cont` path ([VCL_BUGS.md](VCL_BUGS.md#f4-exit-rows-without-an-e-bit)).
+*Evidence:* 235 empty exit slots (section 2). The original's final
+compression can also delete the row carrying the E bit. That defect is
+fixed: `--fix=end`, implied by oxide mode, keeps an E row and its delay
+slot on every exit and `--cont` path
+([VCL_BUGS.md](VCL_BUGS.md#f4-exit-rows-without-an-e-bit)). What remains is
+the empty slots.
 
 *Design.* Fill the E row and its delay slot as in O5 step 1, and drop the
 safe-end padding rows: the manual guarantees that results in flight
@@ -367,39 +389,89 @@ kernels first.
 
 ## 5. Infrastructure first
 
-None of the above is safe without measuring and checking tools. In order:
+None of the above is safe without measuring and checking tools. They are
+phase 0:
 
-1. **Survey tool.** Turn the scratch scripts behind section 2 into a
-   tracked tool: they parse `_LNOPT_w`/`_LPOPT_w` tables and stall notes,
-   and count slots, copies, empty delay slots and kernel bounds. It should
-   compare two outputs, compatibility and improved, per table.
-2. **Cycle model.** Extend `crates/oxide-vcl/tests/support/vu_model.rs` from an interlocked
-   logical model to a cycle-counting one: FMAC/FDIV/EFU stages, per-field
-   hazards, non-interlocked Q/P/ACC/flags landing times, branch and E delay
-   slots, the `xgkick` rule. Check it against the manual's worked examples
-   (figures 3-3 to 3-18). It replaces the static `STALL ?n` estimates with
-   real cycles per path.
-3. **Equivalence checking.** Run compatibility and improved output of the
-   same source on randomized VU memory and register states, with trip
-   counts covering 0, 1 and the stage boundaries. Compare VU memory,
-   declared outputs and the GIF packets kicked. Because the plan keeps every
-   arithmetic operation, results must be bit-identical, so float tolerance
-   is not needed. The existing bounded execution comparisons in
-   `crates/oxide-vcl/tests/semantic_equivalence.rs` show the shape.
-4. **The opt-in switch**, threaded through `Options`. Each optimization gets
-   its own sub-flag for bisection.
+1. **Survey tool.** `tools/survey_output.py` parses the `_LNOPT_w` and
+   `_LPOPT_w` tables and stall notes of a listing and counts, per table
+   kind, rows, stall cycles, empty rows, copies, empty delay and exit
+   slots and leading empty rows; `--kernels` lists each kernel's period
+   against its resource bound. It reads the recorded outputs of a corpus
+   or compiles each case itself in a mode (`--side vcl --side oxide`,
+   `--side oxide:--opt=none`), and with two sides compares them per
+   program and, with `--tables`, per table. Section 2's figures come from
+   it.
+2. **The switch.** Optimizations run only in oxide mode. Each has a name
+   in `vcl::Optimization` for `--opt=`, which keeps the named ones (or
+   `all`, the default, or `none`); `Options::optimizes` asks whether one
+   runs. None exists yet, so `--opt=` accepts only `all` and `none`.
+3. **Timed model.** `crates/oxide-vcl/tests/support/vu_model.rs` has a
+   second configuration, `Config::TIMED`: pairs stall on VF fields still in
+   the FMAC pipeline (latency 4), on ILW results, and on a busy FDIV or
+   EFU; Q, P and the MAC, status and clip flags are not interlocked and
+   change when their latency has passed; WAITQ and WAITP wait for them.
+   Arithmetic is deterministic f32 within the VU's range, addresses wrap,
+   and each XGKICK records the GIF packet it sends. It covers every
+   instruction the corpus and probes use. Not modeled: the ordering of an
+   XGKICK after an XGKICK, the integer branch hazard (the compiler keeps
+   the setter one instruction away), and the VU's exact rounding.
+4. **Equivalence checking.** `crates/oxide-vcl/tests/listing_equivalence.rs`
+   runs two listings of one program from the same seeded states (random VF
+   values, small VI values, data memory whose low bits make short counts
+   and pointers) and compares data memory and the GIF packets kicked.
+   Because the plan keeps every arithmetic operation, results must be
+   bit-identical. Over the public corpus and the probes it checks that
+   oxide mode with every optimization computes what `--opt=none`
+   computes, and that oxide mode's code computes what the original's
+   recorded code computes, except for the nine programs the alias fix
+   repairs. A test shows that it catches a read of Q one row before the
+   quotient lands, which an interlocked model accepts.
+
+Still open: the model's cycle counts (`Execution::cycles`) are not yet
+reported per program and path, so the survey still uses the static
+`STALL ?n` notes; the timing has not been checked against the manual's
+worked examples (figures 3-3 to 3-18); and the seeds do not aim trip
+counts at 0, 1 or the stage boundaries of a pipelined loop. O1 needs the
+last of these before it lands.
 
 ## 6. Phases
 
-| Phase | Items | Expected result |
-| --- | --- | --- |
-| 0 | Survey tool, cycle model, equivalence harness, opt-in switch | Baseline cycles per program and per loop |
-| 1 | O9 (E-bit fix, exit slots), O3 step 1 (reschedule loop parts), O5 step 1 (delay slots) | Removes most of the 1,782 loop-part stall cycles and the empty delay/exit slots; low risk |
-| 2 | O2 (bound-reaching modulo scheduler), O4 (induction merging, post-increment) | Every annotated kernel at its bound: a few percent on the main ps2gl loops, about 13% on `pt_light` |
-| 3 | O1 (pipeline unannotated loops) with O10 (code budget) | −22% over the 13 loops, about 4× on `sprite` |
-| 4 | O6 (copies), O7 (allocation) | Shorter chains, lower pressure; frees periods in high-pressure kernels |
-| 5 | O5 steps 2–3 (superblocks, hoisting), O8 (memory/kick precision) | Setup chains and stream boundaries; the largest remaining static stalls |
+The order weighs measured gain against risk and effort. Effort is a rough
+size: small is days, medium one to two weeks, large three to five weeks.
+
+| Phase | Items | Effort | Expected result |
+| --- | --- | --- | --- |
+| 0 | Survey tool, `--opt=` switch, timed model, equivalence harness (section 5) | Medium | Baseline per table and per program; a check that oxide output computes what vcl output computes |
+| 1 | O5 step 1 and the rest of O9: fill branch delay slots, the E row and its delay slot | Small to medium | 141 of 328 empty delay slots and 235 empty exit slots in the public corpus, 773 delay slots in the local corpus |
+| 2 | O1 (pipeline unannotated loops) with O10 (code budget) | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 4× on `sprite` |
+| 3 | O3 step 1 (reschedule loop prologues and epilogues) | Medium | Most of the 1,782 stall cycles in loop parts |
+| 4 | O4 (merge induction variables, post-increment folding) | Medium | One cycle per iteration in lower-bound kernels (`general` `xform_loop` 22 → 21, `fast_nolights` 12 → 11) |
+| 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
+| 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
+| 7 | O5 steps 2–3 (superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
+
+Why this order:
+
+- **Phase 1 first.** Delay-slot and exit-row filling is a pass over the
+  final, allocated rows: each change is local and easy to check, and it
+  exercises the whole Phase 0 tool chain on a small change. Its gain is
+  modest, about one cycle per filled slot per execution. Moving an
+  instruction past a branch can change when Q or P lands, which is why the
+  model checks landing times first.
+- **O1 is the largest measured runtime gain** and reuses the modulo
+  scheduler and loop expansion; what is new is the exit-test recognition,
+  the trip-count guard with the original loop as fallback, the speculation
+  rule and the size budget. Pipeline a loop only when the kernel at least
+  halves its iteration cost.
+- **O3 before O2 and O4** although they save more per vertex: O3 keeps the
+  original's data flow, so its risk is low. It reschedules code that is
+  already allocated, so reuse of physical registers limits what it finds.
+- **O2 after O4**, because O4 lowers the bounds O2 aims at, and O2 needs a
+  new scheduler (section 2). `--LoopExtra` stays honoured: the source asks
+  for those cycles.
+- **O5 steps 2–3 last**: the largest piece of work, with code duplication
+  at side entries.
 
 Each phase ends with the corpus measured on both outputs (cycles per
 iteration, per batch, code size), the equivalence harness passing, and
-compatibility output still identical to the original's.
+vcl mode's output still identical to the original's.

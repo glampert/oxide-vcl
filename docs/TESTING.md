@@ -10,6 +10,10 @@ establishes complete VCL or PlayStation 2 compatibility.
   register choices.
 - `crates/oxide-vcl/tests/semantic_equivalence.rs` compares the observable effects
   of selected outputs even when their pair layouts differ.
+- `crates/oxide-vcl/tests/listing_equivalence.rs` runs oxide mode's listings
+  of every public corpus program and probe in the timed model and requires
+  them to compute what the original's listings and the unoptimized listings
+  compute ([Listing equivalence](#listing-equivalence)).
 - `crates/oxide-vcl/tests/public_corpus.rs` requires all 52 public corpus programs
   to match the original ([CORPUS_BASELINE.md](CORPUS_BASELINE.md)).
 - `crates/oxide-vcl/tests/probes.rs` applies the same comparison to the probe
@@ -74,7 +78,9 @@ documents named here list them.
 
 ## Bounded execution of emitted microassembly
 
-`crates/oxide-vcl/tests/support/vu_model.rs` is a small **test-only logical execution model**.
+`crates/oxide-vcl/tests/support/vu_model.rs` is a small **test-only execution model**.
+Its default configuration, `Config::LOGICAL`, is described in this section;
+`Config::TIMED` is in [The timed configuration](#the-timed-configuration).
 Its specification comes from SCE's *VU User's Manual*, version 6.0 (a Markdown
 copy is kept with the PS2 manuals). It does not use openvcl implementation code
 or another emulator's execution model.
@@ -113,10 +119,13 @@ The tests stay within ordinary memory. Integer wrapping is tested independently
 of out-of-range memory addressing.
 
 Supported instructions include ADD/SUB/MUL, ABS, MAX/MINI, accumulator
-variants, scalar I/Q and broadcast arithmetic; IADD/ISUB/IAND/IOR and immediate
-forms; direct B/IBEQ/IBNE and signed conditional branches; LQ/SQ, LQI/SQI,
-LQD/SQD, ILW/ISW; MOVE/MR32/MTIR/MFIR; DIV/SQRT/RSQRT, WAITQ/WAITP,
-LOI and MFP. Unknown opcodes, unresolved expressions, malformed registers,
+variants, scalar I/Q and broadcast arithmetic, OPMULA/OPMSUB, FTOI/ITOF and
+CLIPW; IADD/ISUB/IAND/IOR and immediate forms; B/BAL/JR/JALR, IBEQ/IBNE and
+signed conditional branches; LQ/SQ, LQI/SQI, LQD/SQD, ILW/ISW, ILWR/ISWR;
+MOVE/MR32/MTIR/MFIR; DIV/SQRT/RSQRT, the EFU instructions, WAITQ/WAITP, LOI
+and MFP; the MAC, status and clip flag instructions; XTOP/XITOP and XGKICK;
+RINIT/RGET/RNEXT/RXOR. The D, T and M bits are accepted and ignored, and
+`-m`'s DMA and VIF lines are skipped. Unknown opcodes, unresolved expressions, malformed registers,
 unsupported modifiers, branches in branch delay slots, and forbidden modeled
 operations in E delay slots return errors. An instruction appearing in this
 supported set does not mean every hardware operand restriction is validated.
@@ -135,14 +144,13 @@ inputs are positive dyadic values from 1/4 to 4, with short bounded loops, so
 their arithmetic stays exact. Tests also check that unsupported numerical cases
 are rejected.
 
-The model interlocks logical register dependencies and completes operations
-before a subsequent pair reads their results. It does not simulate pipeline
-latencies, stalls, the preceding-instruction VI branch hazard, asynchronous
-Q/P visibility, or ACC latency. WAITQ and WAITP are logical no-ops. DIV and
-square roots are restricted to exact results; no EFU producer is implemented,
-and MFP reads a caller-supplied P value. Q/P/I and ACC state can be initialized
-explicitly. Flags, clipping, interrupts, random generators, fixed-point
-conversions, indirect calls, and external transfers are not modeled.
+The logical configuration interlocks logical register dependencies and
+completes operations before a subsequent pair reads their results. It does
+not simulate pipeline latencies, stalls, the preceding-instruction VI branch
+hazard, asynchronous Q/P visibility, or ACC latency. WAITQ and WAITP are
+logical no-ops. DIV, square roots and EFU results are restricted to exact
+results. Q/P/I and ACC state can be initialized explicitly. Interrupts, DMA
+and the GIF's own processing are not modeled.
 
 Consequently a semantic pass checks the intended interlocked computation. It
 does **not** establish that an output has safe hardware timing. Pair comparison
@@ -224,3 +232,62 @@ clippy, then a debug and a release build, each running every test.
 
 How the local corpora are built is described in
 [LOCAL_CORPUS.md](LOCAL_CORPUS.md).
+### The timed configuration
+
+`Config::TIMED` runs a listing cycle by cycle, from the timing rules of the
+VU User's Manual 6.0 (§3.4, §7.4) that the port's instruction table also
+follows:
+
+- A pair issues when both instructions can: a read of a VF field waits until
+  an FMAC, load or move writing it is 4 cycles old, a read of a VI register
+  loaded by ILW waits 4 cycles, and DIV/SQRT/RSQRT or an EFU instruction
+  waits while its unit is busy (7, 13, or the EFU throughput).
+- Q, P and the MAC, status and clip flags are not interlocked: each changes
+  when its latency has passed (Q 7 or 13 cycles, P the EFU latency, flags
+  4), and a reader sees the value of its issue cycle. WAITQ and WAITP wait
+  until the change.
+- ACC and I are visible to the next pair.
+- Arithmetic is `Arithmetic::Deterministic`: f32 on the VU's range (no
+  infinity, NaN or denormal; overflow saturates, underflow flushes to
+  zero), with each product rounded before an accumulation. This is not the
+  VU's rounding, so timed runs compare two listings with each other, never
+  with hardware.
+- Addresses wrap around the 1024 qwords of data memory, a run that passes
+  the last pair ends as if an E bit ended it, and results in flight land
+  after termination.
+- XGKICK records its address and the GIF packet there: each tag and its
+  data (PACKED, REGLIST or IMAGE sizes) up to the tag with EOP.
+- RNEXT steps a deterministic stand-in for the hardware's random generator.
+
+Not modeled: the stall of an XGKICK after an XGKICK, the integer branch
+hazard, and the VU's exact rounding. The model's unit tests check field
+interlocks, Q landing and WAITQ, flag timing, ILW interlocks, GIF packet
+capture and saturating arithmetic.
+
+## Listing equivalence
+
+`crates/oxide-vcl/tests/listing_equivalence.rs` compares two listings of
+one program by running both in the timed configuration from four seeded
+states: VF values of mixed sign between 2^-4 and 2^4, VI values from 1 to
+32, TOP below 512, and data memory whose low 16 bits are 12, 24, 36 or 48,
+so that counts and pointers read with ILW are short and loops stepping by
+1, 2, 3, 4 or 6 to a bound end. Two listings are equivalent when, on every
+seed both finish, they leave the same data memory and kick the same GIF
+packets. Listings with the same text are equivalent without running; a run
+that reaches the 200,000-pair limit is retried with eight times the limit
+when the other finished.
+
+Over the public corpus and the probes it requires:
+
+- oxide mode with every optimization to compute what `--opt=none` computes,
+  and to accept the same programs;
+- oxide mode's code to compute what the original's recorded code computes,
+  except for the nine programs the alias fix repairs (`FIXED`);
+- every oxide-mode listing to run in the model, except three whose
+  symbolic registers or immediates cannot execute (`NOT_EXECUTABLE`).
+
+These three compile the corpus twice and are ignored in debug builds; the
+release suite runs them. A fourth test shows that a schedule reading Q one
+row before the quotient lands is a difference, which the logical
+configuration does not see.
+

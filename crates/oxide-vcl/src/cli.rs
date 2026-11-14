@@ -188,6 +188,37 @@ where
             index += 1;
             continue;
         }
+        // oxide-vcl's own option: which optimizations oxide mode runs.
+        if let Some(list) = argument.strip_prefix("--opt=") {
+            if options.compile.mode != vcl::Mode::Oxide {
+                return Err(CliError::new(
+                    CliMessage::OptimizationsNeedOxideMode {
+                        argument: argument.clone(),
+                    },
+                    options,
+                ));
+            }
+            match parse_optimizations(list) {
+                Ok(chosen) => {
+                    let earlier = options
+                        .compile
+                        .optimizations
+                        .unwrap_or(vcl::Optimizations::NONE);
+                    options.compile.optimizations = Some(earlier.union(chosen));
+                }
+                Err(name) => {
+                    return Err(CliError::new(
+                        CliMessage::BadOptimization {
+                            argument: argument.clone(),
+                            name,
+                        },
+                        options,
+                    ));
+                }
+            }
+            index += 1;
+            continue;
+        }
         let selector = argument.as_bytes().get(1).copied().unwrap_or(0);
         // VCL arguments are byte-oriented. A non-ASCII selector cannot match
         // any switch, so only take this UTF-8 slice when the selector is ASCII.
@@ -281,6 +312,25 @@ fn parse_fixes(list: &str) -> Result<vcl::Fixes, String> {
         }
     }
     Ok(fixes)
+}
+
+/// The optimizations an `--opt=` list names: `all`, `none`, or optimization
+/// names separated by commas. The error is the first name that is none of
+/// these (empty for an empty list).
+fn parse_optimizations(list: &str) -> Result<vcl::Optimizations, String> {
+    let mut optimizations = vcl::Optimizations::NONE;
+    for name in list.split(',') {
+        match name {
+            "all" => optimizations = optimizations.union(vcl::Optimizations::all()),
+            "none" => {}
+            _ => {
+                let optimization =
+                    vcl::Optimization::from_name(name).ok_or_else(|| name.to_owned())?;
+                optimizations = optimizations.with(optimization);
+            }
+        }
+    }
+    Ok(optimizations)
 }
 
 /// i386 glibc `strtol(value, NULL, 10)`: whitespace/sign, a decimal prefix,
@@ -398,6 +448,56 @@ mod tests {
         let error = parse(["--mode=oxide", "--fix=alias-warn"]).unwrap_err();
         assert_eq!(error.exit_status(), OXIDE_EXIT_USAGE);
         assert!(error.diagnostic.text().contains("unknown fix 'alias-warn'"));
+    }
+
+    #[test]
+    fn optimizations_are_chosen_in_oxide_mode_only() {
+        let oxide = parse(["--mode=oxide", "a.vcl"]).unwrap().compile;
+        assert_eq!(oxide.optimizations, None);
+        assert_eq!(oxide.enabled_optimizations(), vcl::Optimizations::all());
+        for flags in [
+            vec!["--mode=oxide", "--opt=none"],
+            vec!["--opt=none", "--mode=oxide"],
+            vec!["--mode=oxide", "--opt=all", "--opt=none"],
+        ] {
+            let options = parse(flags.iter().copied().chain(["a.vcl"]))
+                .unwrap()
+                .compile;
+            assert!(options.optimizations.is_some(), "{flags:?}");
+        }
+        let none = parse(["--mode=oxide", "--opt=none", "a.vcl"])
+            .unwrap()
+            .compile;
+        assert_eq!(none.optimizations, Some(vcl::Optimizations::NONE));
+        assert!(none.enabled_optimizations().is_empty());
+
+        let error = parse(["--opt=all", "a.vcl"]).unwrap_err();
+        assert!(
+            *error.message()
+                == CliMessage::OptimizationsNeedOxideMode {
+                    argument: "--opt=all".into()
+                }
+        );
+        assert_eq!(error.to_string(), "--opt=all applies only in oxide mode");
+        assert_eq!(error.exit_status(), VCL_EXIT_FAILURE);
+        for (argument, name) in [
+            ("--opt=", ""),
+            ("--opt=fast", "fast"),
+            ("--opt=all,", ""),
+            ("--opt=None", "None"),
+        ] {
+            let error = parse(["--mode=oxide", argument, "a.vcl"]).unwrap_err();
+            assert!(
+                *error.message()
+                    == CliMessage::BadOptimization {
+                        argument: argument.into(),
+                        name: name.into()
+                    },
+                "{argument}"
+            );
+            assert!(error.to_string().contains("optimization"), "{argument}");
+            assert_eq!(error.exit_status(), OXIDE_EXIT_USAGE);
+        }
     }
 
     #[test]

@@ -846,12 +846,13 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `--mode=vcl` | Generate the code vcl 1.4beta7 generates, with its exit statuses. The default. |
 | `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and future optimizations. |
 | `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
+| `--opt=<names>` | With `--mode=oxide` only: run just the named optimizations, separated by commas; `--opt=all` (the default) runs every one, `--opt=none` none. May be repeated. See [Optimizations](#optimizations). |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 
 The preprocessing stages run in the order `-G`, `-g`, `-g+`, each on the
 previous stage's output; any combination may be given.
 
-`--mode`, `--fix` and `--warnings-as-errors` are oxide-vcl's own options;
+`--mode`, `--fix`, `--opt` and `--warnings-as-errors` are oxide-vcl's own options;
 vcl 1.4beta7 has no long options and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
@@ -880,6 +881,18 @@ name with `--fix=`; `--mode=oxide` enables all of them.
 oxide-vcl --fix=end -oskin.vsm skin.vcl       # vcl's output, with the E bit fix
 oxide-vcl --fix=all -oskin.vsm skin.vcl       # every fix, vcl's exit statuses
 ```
+
+### Optimizations
+
+Oxide mode is also where code generation improves on vcl 1.4beta7
+([OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md)). Each optimization keeps
+the arithmetic the program performs, operation for operation, and has a
+name for `--opt=`, so that one can be turned off to find out whether it
+causes a difference. `--mode=oxide` runs them all; `--opt=none` runs none,
+and `--opt=NAME,...` exactly those named. vcl mode never optimizes, and
+`--opt=` without `--mode=oxide` is an error.
+
+No optimization exists yet: `--opt=` accepts only `all` and `none`.
 
 ### Examples
 

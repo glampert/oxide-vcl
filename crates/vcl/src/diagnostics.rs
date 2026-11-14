@@ -222,6 +222,10 @@ pub enum CliMessage {
     BadMode { argument: String },
     /// `--fix=` naming no fix, or an unknown one (`name`).
     BadFix { argument: String, name: String },
+    /// `--opt=` naming no optimization, or an unknown one (`name`).
+    BadOptimization { argument: String, name: String },
+    /// `--opt=` without `--mode=oxide`: vcl mode never optimizes.
+    OptimizationsNeedOxideMode { argument: String },
     /// More than one input file.
     TooManyArguments,
     /// `-o` naming the input file.

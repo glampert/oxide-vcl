@@ -34,7 +34,7 @@ pub mod scheduler;
 
 pub use compiler::{CompileError, Compiled, compile};
 pub use diagnostics::{Diagnostic, Message, Mode};
-pub use options::{Fix, Fixes, Options};
+pub use options::{Fix, Fixes, Optimization, Optimizations, Options};
 
 /// The project's version, shared by every crate in the workspace.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

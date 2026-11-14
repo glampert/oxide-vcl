@@ -25,8 +25,10 @@ untracked notes are in `CLAUDE.local.md` when present.
   behaviour, with the original's recorded runs.
 - `tools/`: Python tools: corpus comparison, listing conversion, and the
   oracle runner and its setup (`setup_oracle.py`, `run_oracle.py`,
-  `replay_oracle.py`, `run_native.py`), and `compare_openvcl.py`, which
-  scores oxide-vcl against openvcl (`docs/OPENVCL_COMPARISON.md`).
+  `replay_oracle.py`, `run_native.py`), `compare_openvcl.py`, which
+  scores oxide-vcl against openvcl (`docs/OPENVCL_COMPARISON.md`), and
+  `survey_output.py`, which counts stalls and empty slots per table and
+  compares two modes' listings (`docs/OPTIMIZATION_PLAN.md`).
 - `docs/`: one chapter per mechanism; `LANGUAGE.md` is the implementer's
   view of the source language.
 - `local/` (gitignored, **no git backup**): the original binary, its runs and
@@ -71,6 +73,9 @@ scheduling or allocation changed.
   code generation and exit statuses, and is what the tests assert; `oxide`
   holds fixes and optimizations. Anything that breaks compatibility goes
   behind `options.mode == Mode::Oxide`, leaving the vcl path unchanged.
+  Optimizations (`docs/OPTIMIZATION_PLAN.md`) each get a `vcl::Optimization`
+  name for `--opt=`, run where `options.optimizes(...)` says, and must keep
+  `tests/listing_equivalence.rs` passing.
 - No `println!`/`eprintln!` outside `crates/vcl/src/diagnostics.rs`: messages
   are `vcl::diagnostics` enum variants (wording, subject and suggested fix in
   `diagnostics/oxide.rs`), printed through `Reporter`; developer traces use

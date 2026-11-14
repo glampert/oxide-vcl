@@ -92,6 +92,30 @@ fn cli(message: &CliMessage) -> Wording {
                 names.join(", ")
             ))
         }
+        BadOptimization { name, .. } => {
+            let names: Vec<_> = crate::Optimization::ALL
+                .iter()
+                .map(|optimization| optimization.name())
+                .collect();
+            let wording = if name.is_empty() {
+                Wording::new("--opt= names no optimization")
+            } else {
+                Wording::new(format!("unknown optimization '{name}'"))
+            };
+            wording.help(if names.is_empty() {
+                "use --opt=all or --opt=none; no optimization has a name yet".to_owned()
+            } else {
+                format!(
+                    "use --opt=all, --opt=none, or a comma-separated list of: {}",
+                    names.join(", ")
+                )
+            })
+        }
+        OptimizationsNeedOxideMode { argument } => {
+            Wording::new(format!("{argument} applies only in oxide mode")).help(
+                "add --mode=oxide; vcl mode always generates the code vcl 1.4beta7 generates",
+            )
+        }
         TooManyArguments => Wording::new("more than one input file").help(
             "oxide-vcl compiles one file per run, and options must come before it; \
              an option's value is attached to it (-oout.vsm), so a separate word is read as \
