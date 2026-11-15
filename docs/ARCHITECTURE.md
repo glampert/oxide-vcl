@@ -175,8 +175,9 @@ Optimizations run only in oxide mode. Each is a `vcl::Optimization`,
 chosen with `--opt=` and turned off with `--no-opt=`, and checked with
 `Options::optimizes(optimization)`. `unswitch` (`compiler/unswitch.rs`)
 rewrites the parsed program before it is compiled, as the `entry` fix's
-waits do (`compiler/loop_entry.rs`), and falls back to the program as
-written when the result does not fit in micro memory. `loops` and `exit`
+waits do (`compiler/loop_entry.rs`). When the result does not fit in micro
+memory it falls back to one level of copies, then to the program as
+written. `loops` and `exit`
 act inside the compiler's phases. See
 [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
 

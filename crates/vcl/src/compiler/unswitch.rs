@@ -14,7 +14,9 @@
 //! - Its *usual path* is every block except inner loops and the *special
 //!   cases*: the blocks a branch reaches, before the code its two arms
 //!   share, when they lead to an inner loop the other arm does not (a
-//!   clipping pass, say). Special cases stay as one shared copy.
+//!   clipping pass, say). Special cases stay as one shared copy. An inner
+//!   loop is the blocks on a cycle that avoids the header, so where a block
+//!   sits in the source does not decide what it is.
 //! - The condition is the most frequent conditional branch on the usual
 //!   path whose registers no usual-path instruction writes. Branches on
 //!   the same registers, with the same or the opposite test, resolve in
@@ -27,7 +29,10 @@
 //!   write it.
 //!
 //! Each copy's labels get a suffix (`__u0`, `__u1`), and a dispatch or a
-//! fall-through that no longer follows its block becomes a `b`.
+//! fall-through that no longer follows its block becomes a `b`. A copy is
+//! a loop of its own and may be unswitched once more, on another
+//! condition (`unswitch_loops`' `nested`): its copies get a second suffix
+//! (`__u1__u0`).
 
 use super::*;
 use crate::isa::instruction::subtype;
@@ -36,26 +41,42 @@ use crate::isa::instruction::subtype;
 const MAX_LOOPS: usize = 16;
 
 /// The parsed program with its loops unswitched, or `None` when no loop
-/// qualifies.
+/// qualifies, and whether a copy was unswitched again.
+///
+/// With `nested`, the two copies of a loop are loops of their own and may
+/// each be unswitched once more, on another condition: a loop that tests
+/// two modes (a colour form and a vertex format) gets a copy for each pair
+/// of outcomes, four at most. A copy of a copy is not unswitched again.
 pub(super) fn unswitch_loops(
     parsed: &parser::Program,
     options: &Options,
-) -> Option<parser::Program> {
+    nested: bool,
+) -> Option<(parser::Program, bool)> {
     let mut current = parsed.clone();
-    // Lowercase header labels already looked at, and every label the
-    // rewrites made: a copy is not unswitched again.
-    let mut seen = BTreeSet::new();
+    let mut labels = Labels::default();
     let mut changed = false;
     for _ in 0..MAX_LOOPS {
         let mut program = Source::new(options);
         program.parse_program(current.clone()).ok()?;
-        let Some(next) = unswitch_one(&current, &program, &mut seen) else {
+        let Some(next) = unswitch_one(&current, &program, &mut labels, nested) else {
             break;
         };
         current = next;
         changed = true;
     }
-    changed.then_some(current)
+    changed.then_some((current, labels.nested))
+}
+
+/// The loop headers `unswitch_loops` has dealt with, as lowercase labels.
+#[derive(Default)]
+struct Labels {
+    /// Headers already looked at, and every label a rewrite made that is
+    /// not to be unswitched: those are not looked at again.
+    seen: BTreeSet<String>,
+    /// The copies' headers that may be unswitched once more (`nested`).
+    copies: BTreeSet<String>,
+    /// Whether one of them was.
+    nested: bool,
 }
 
 /// A branch test and its registers, and the branches with it: statement
@@ -142,7 +163,8 @@ fn test_of(mnemonic: &str) -> Option<(&'static str, bool)> {
 fn unswitch_one(
     parsed: &parser::Program,
     program: &Source,
-    seen: &mut BTreeSet<String>,
+    labels: &mut Labels,
+    nested: bool,
 ) -> Option<parser::Program> {
     let statements = &parsed.statements;
     let mut defined = BTreeMap::new();
@@ -173,11 +195,20 @@ fn unswitch_one(
         let StatementKind::Label(label) = &statements[header].kind else {
             continue;
         };
-        if !seen.insert(label.name.to_ascii_lowercase()) {
+        let name = label.name.to_ascii_lowercase();
+        if !labels.seen.insert(name.clone()) {
             continue;
         }
-        if let Some((rewritten, made)) = unswitch_loop(parsed, program, header, latch) {
-            seen.extend(made);
+        if let Some((rewritten, made, copies)) = unswitch_loop(parsed, program, header, latch) {
+            let is_copy = labels.copies.contains(&name);
+            labels.nested |= is_copy;
+            for made in made {
+                if nested && !is_copy && copies.contains(&made) {
+                    labels.copies.insert(made);
+                } else {
+                    labels.seen.insert(made);
+                }
+            }
             return Some(rewritten);
         }
     }
@@ -185,13 +216,14 @@ fn unswitch_one(
 }
 
 /// The loop from the label at `header` to the branch at `latch`,
-/// unswitched, and the labels the rewrite made (lowercase).
+/// unswitched, the labels the rewrite made, and the two copies' headers
+/// among them (lowercase).
 fn unswitch_loop(
     parsed: &parser::Program,
     program: &Source,
     header: usize,
     latch: usize,
-) -> Option<(parser::Program, Vec<String>)> {
+) -> Option<(parser::Program, Vec<String>, [String; 2])> {
     let statements = &parsed.statements;
     // The header block starts at the first of the labels before its code.
     let mut start = header;
@@ -229,17 +261,7 @@ fn unswitch_loop(
 
     let blocks = loop_blocks(statements, start, latch);
     let count = blocks.len();
-    // Inner loops: the blocks from a branch back to a label other than
-    // the header up to that branch.
-    let mut inner = vec![false; count];
-    for (id, block) in blocks.iter().enumerate() {
-        if let Some(Next::Block(target)) = block.jump
-            && target != 0
-            && target <= id
-        {
-            inner[target..=id].iter_mut().for_each(|flag| *flag = true);
-        }
-    }
+    let inner = inner_loops(&blocks);
     let cold = special_cases(&blocks, &inner);
     // The usual path: what the header reaches without entering an inner
     // loop or a special case.
@@ -340,7 +362,11 @@ fn unswitch_loop(
         .collect();
 
     let rewrite = Rewrite::new(parsed, program, &blocks, &usual, start, latch);
-    Some(rewrite.emit(condition, &resolved))
+    let copies = rewrite.copy_labels[0]
+        .clone()
+        .map(|name| name.to_ascii_lowercase());
+    let (rewritten, made) = rewrite.emit(condition, &resolved);
+    Some((rewritten, made, copies))
 }
 
 /// The blocks of the statements `start..=latch`. A block starts at a label
@@ -406,6 +432,36 @@ fn loop_blocks(statements: &[parser::Statement], start: usize, latch: usize) -> 
         }
     }
     blocks
+}
+
+/// The inner loops: the blocks on a cycle that does not pass through the
+/// header. Found from the control flow rather than from the source order, so
+/// a branch to an earlier label that only runs forward (a hot arm placed
+/// after a special case and branching up to it) makes no loop.
+fn inner_loops(blocks: &[LoopBlock]) -> Vec<bool> {
+    let count = blocks.len();
+    let successors = |id: usize| {
+        blocks[id].successors().filter_map(|next| match next {
+            Next::Block(to) if to != 0 => Some(to),
+            _ => None,
+        })
+    };
+    (0..count)
+        .map(|id| {
+            let mut seen = vec![false; count];
+            let mut work: Vec<usize> = successors(id).collect();
+            while let Some(at) = work.pop() {
+                if at == id {
+                    return true;
+                }
+                if !seen[at] {
+                    seen[at] = true;
+                    work.extend(successors(at));
+                }
+            }
+            false
+        })
+        .collect()
 }
 
 /// The special cases: for each conditional branch outside an inner loop

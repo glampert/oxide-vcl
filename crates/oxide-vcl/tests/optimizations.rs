@@ -514,6 +514,171 @@ fn unswitch_shares_a_special_case_and_tests_the_mode_again_after_it() {
 }
 
 #[test]
+fn unswitch_finds_the_usual_path_wherever_it_sits_in_the_source() {
+    // The usual arm comes after the special case and branches back up to
+    // it. That branch runs forward, so it makes no inner loop: the usual
+    // arm is still copied, and its MODE test resolves in each copy.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi base(vi01)\n\
+                  in_vi count(vi02)\n\
+                  in_vi mode(vi03)\n\
+                  in_vf scale(vf02)\n\
+                  --endenter\n\
+                  loop:\n\
+                  lq value,0(base)\n\
+                  ibeq mode,vi00,plain_first\n\
+                  mul value,value,scale\n\
+                  plain_first:\n\
+                  ilw.w split,0(base)\n\
+                  ibeq split,vi00,usual\n\
+                  special:\n\
+                  iaddiu parts,vi00,3\n\
+                  part_loop:\n\
+                  add value,value,scale\n\
+                  isubiu parts,parts,1\n\
+                  ibne parts,vi00,part_loop\n\
+                  sq value,0(base)\n\
+                  b advance\n\
+                  usual:\n\
+                  lq other,1(base)\n\
+                  ibeq mode,vi00,plain_second\n\
+                  mul other,other,scale\n\
+                  plain_second:\n\
+                  ilw.w more,2(base)\n\
+                  ibne more,vi00,special\n\
+                  sq other,1(base)\n\
+                  sq value,0(base)\n\
+                  advance:\n\
+                  iaddiu base,base,1\n\
+                  isubiu count,count,1\n\
+                  ibne count,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let (plain, optimized, _, _) = unswitched_same_results(source);
+    assert!(
+        optimized.contains("usual__u0:") && optimized.contains("usual__u1:"),
+        "{optimized}"
+    );
+    assert_eq!(optimized.matches("part_loop:").count(), 1, "{optimized}");
+    // Both MODE tests resolve in the copies. What is left is the SPLIT test
+    // in each copy, and MODE's dispatches at the header and after the
+    // special case.
+    assert_eq!(branch_rows(&plain, "ibeq"), 3);
+    assert_eq!(branch_rows(&optimized, "ibeq"), 4, "{optimized}");
+}
+
+/// A loop that tests three modes, none of which it changes: MODE (VI03)
+/// twice an iteration, FORM (VI04) and SHADE (VI05) once each.
+const THREE_MODE_LOOP: &str = ".init_vf_all\n\
+                               .init_vi_all\n\
+                               --enter\n\
+                               in_vi base(vi01)\n\
+                               in_vi count(vi02)\n\
+                               in_vi mode(vi03)\n\
+                               in_vi form(vi04)\n\
+                               in_vi shade(vi05)\n\
+                               in_vf scale(vf02)\n\
+                               --endenter\n\
+                               loop:\n\
+                               lq value,0(base)\n\
+                               ibeq mode,vi00,plain_first\n\
+                               mul value,value,scale\n\
+                               plain_first:\n\
+                               ibeq form,vi00,plain_second\n\
+                               add value,value,scale\n\
+                               plain_second:\n\
+                               ibeq shade,vi00,plain_third\n\
+                               sub value,value,scale\n\
+                               plain_third:\n\
+                               sq value,0(base)\n\
+                               lq other,1(base)\n\
+                               ibeq mode,vi00,plain_fourth\n\
+                               mul other,other,scale\n\
+                               plain_fourth:\n\
+                               sq other,1(base)\n\
+                               iaddiu base,base,2\n\
+                               isubiu count,count,1\n\
+                               ibne count,vi00,loop\n\
+                               --exit\n\
+                               --endexit\n";
+
+/// Runs `source`'s listings with and without optimizations for every
+/// combination of VI03, VI04 and VI05 in 0 and 1, and trip counts 1 to 4,
+/// and requires the same memory. Returns the optimized listing.
+fn three_modes_same_results(source: &str) -> String {
+    let plain = compile(source, &["--opt=none"]);
+    let optimized = compile(source, &[]);
+    for modes in 0..8 {
+        for count in 1..=4 {
+            let mut state = source_state();
+            state.vi[2] = count;
+            state.vi[3] = modes & 1;
+            state.vi[4] = (modes >> 1) & 1;
+            state.vi[5] = (modes >> 2) & 1;
+            state.set_vector(2, [0.5, -2.0, 3.0, 1.0]);
+            for (address, qword) in state.memory.iter_mut().enumerate() {
+                *qword = [((address % 7 + 1) as f32).to_bits(), 0, 0, 0];
+            }
+            let program = |listing: &str| Program::parse(listing).unwrap();
+            let before = program(&plain)
+                .run(state.clone(), Config::TIMED, 4096)
+                .unwrap();
+            let after = program(&optimized).run(state, Config::TIMED, 4096).unwrap();
+            assert_eq!(
+                after.state.memory, before.state.memory,
+                "modes {modes:03b}, count {count}\n{optimized}"
+            );
+        }
+    }
+    optimized
+}
+
+#[test]
+fn unswitch_gives_each_copy_its_own_copies_for_a_second_mode() {
+    // MODE, tested most, picks the first two copies; each of those is a
+    // loop that still tests FORM, and gets a copy per outcome of it. SHADE
+    // stays a branch: a copy of a copy is not unswitched again.
+    let optimized = three_modes_same_results(THREE_MODE_LOOP);
+    for copy in [
+        "loop__u0__u0",
+        "loop__u0__u1",
+        "loop__u1__u0",
+        "loop__u1__u1",
+    ] {
+        assert!(
+            optimized.contains(&format!("{copy}:")),
+            "{copy}\n{optimized}"
+        );
+    }
+    assert!(!optimized.contains("__u0__u0__u"), "{optimized}");
+    // In each of the four copies, the SHADE test and nothing else.
+    let shade_tests = rows(&optimized)
+        .iter()
+        .filter(|row| row.contains("ibeq VI05") || row.contains("ibne VI05"))
+        .count();
+    assert_eq!(shade_tests, 4, "{optimized}");
+}
+
+#[test]
+fn unswitch_once_when_four_copies_would_not_fit_in_micro_memory() {
+    // Four copies of 700 stores are more than VU1's 2,048 instructions,
+    // two are not: the loop gets the two.
+    let stores: String = (0..700)
+        .map(|offset| {
+            let barrier = if offset % 25 == 24 { "--barrier\n" } else { "" };
+            format!("isw.x count,{}(base)\n{barrier}", offset % 1000)
+        })
+        .collect();
+    let source =
+        THREE_MODE_LOOP.replace("sq other,1(base)\n", &format!("sq other,1(base)\n{stores}"));
+    let optimized = compile(&source, &[]);
+    assert!(optimized.contains("loop__u1:"), "{optimized}");
+    assert!(!optimized.contains("loop__u1__u0"), "{optimized}");
+}
+
+#[test]
 fn unswitch_leaves_a_loop_that_changes_its_mode() {
     let source = MODE_LOOP.replace(
         "isubiu count,count,1\n",

@@ -505,7 +505,11 @@ it is compiled:
   not reach: quake2's clipping and warp code, both of which end in the
   clipped polygon's fan loop. A branch that skips straight to the shared
   code (an early out such as the backface cull, or a skip past an inner
-  loop) marks nothing.
+  loop) marks nothing. An inner loop is the blocks on a cycle that does
+  not pass through the header, found from the control flow: a branch to
+  an earlier label that only runs forward, such as a usual arm placed
+  after a special case and branching up to it, makes none, so where the
+  blocks sit in the source does not change the usual path.
 - The condition is the most frequent `ibeq`/`ibne`/`ibgtz`/`iblez`/
   `ibltz`/`ibgez` on the usual path whose registers no usual-path
   instruction writes. The usual path is copied once for each outcome; in
@@ -516,11 +520,15 @@ it is compiled:
   a `.global` label) goes through a dispatch that keeps the original
   label and tests the condition again. A special case may therefore write
   the condition's registers.
-- Loops are unswitched one at a time, outermost first, and a copy is not
-  unswitched again. An inner loop in shared code can be unswitched on its
-  own: quake2's fan loop is.
+- Loops are unswitched one at a time, outermost first. Each of a loop's
+  two copies is a loop of its own and is unswitched once more when it
+  tests another mode it never writes, so a loop with two such modes (a
+  colour form and a vertex format) has a copy for each pair of outcomes,
+  four in all. A copy of a copy is not unswitched again. An inner loop in
+  shared code can be unswitched on its own: quake2's fan loop is.
 - When the result fails to compile or would not fit in VU1 micro memory,
-  the program is compiled as written.
+  the loops are unswitched once only, without the second level; when that
+  does not fit either, the program is compiled as written.
 
 The copies join the code between the tests into longer streams, and a
 copy that becomes a loop of one block is pipelined by `loops`. In the
@@ -542,9 +550,17 @@ their vertex loops are pipelined, each with its prologue and epilogue.
 `--no-opt=unswitch` keeps the smaller program where micro memory is
 shared.
 
-*Limits:* one condition per loop; the special-case rule is structural, so
-a rare arm without an inner loop is copied with the usual path (quake2's
-window flush).
+No loop in the public corpus tests a second mode it never writes, so the
+second level changes none of those listings: quake2's reads its vertex
+format from memory every triangle. Held in a register for the whole batch,
+with the vertex advance moved into each format's block and the triangle
+written out ahead of its clip decision, the loop splits by colour form and
+then by format, and on the renderer scenes the world wall takes 1,754
+cycles and the model 1,192 (1,840 and 1,344 with one level).
+
+*Limits:* two conditions per loop, four copies at most; the special-case
+rule is structural, so a rare arm without an inner loop is copied with the
+usual path (quake2's window flush).
 
 ## 4. Not in this plan
 

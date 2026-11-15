@@ -1507,20 +1507,32 @@ impl Failure {
 }
 
 /// Compiles a parsed program. With the `unswitch` optimization, its
-/// loops are unswitched first (`unswitch`), unless the result fails to
-/// compile or no longer fits in micro memory: then the program is compiled
-/// as written.
+/// loops are unswitched first (`unswitch`), with each copy unswitched once
+/// more where it tests another mode. When that fails to compile or no
+/// longer fits in micro memory, the loops are unswitched once only, and
+/// when that does not either, the program is compiled as written.
 fn compile_parsed(
     parsed: parser::Program,
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
-    if options.optimizes(Optimization::Unswitch)
-        && let Some(unswitched) = unswitch::unswitch_loops(&parsed, options)
-        && let Ok(output) = compile_waited(unswitched, filename, options)
-        && output.instruction_pairs <= program_size::MICRO_MEMORY
-    {
-        return Ok(output);
+    if options.optimizes(Optimization::Unswitch) {
+        let fits = |unswitched: parser::Program| {
+            compile_waited(unswitched, filename, options)
+                .ok()
+                .filter(|output| output.instruction_pairs <= program_size::MICRO_MEMORY)
+        };
+        if let Some((unswitched, nested)) = unswitch::unswitch_loops(&parsed, options, true) {
+            if let Some(output) = fits(unswitched) {
+                return Ok(output);
+            }
+            if nested
+                && let Some((unswitched, _)) = unswitch::unswitch_loops(&parsed, options, false)
+                && let Some(output) = fits(unswitched)
+            {
+                return Ok(output);
+            }
+        }
     }
     compile_waited(parsed, filename, options)
 }
