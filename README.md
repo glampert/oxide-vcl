@@ -22,6 +22,10 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
 - Defects of the original that the port reproduces by default, and the
   opt-in fixes for them (`--fix=`, or every one with `--mode=oxide`), are in
   [VCL_BUGS.md](docs/VCL_BUGS.md).
+- Oxide mode also optimizes beyond the original: `exit`, `loops` and
+  `unswitch`, each of which `--no-opt=NAME` turns off. They are described
+  in [VCL_REFERENCE.md](docs/VCL_REFERENCE.md#optimizations) and
+  [OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md).
 
 ## Performance against [openvcl](https://github.com/ps2dev/openvcl)
 

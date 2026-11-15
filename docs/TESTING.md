@@ -301,6 +301,11 @@ cargo test --release --test listing_equivalence cycle_report -- --ignored --noca
 row before the quotient lands is a difference, which the logical
 configuration does not see.
 
+`crates/oxide-vcl/tests/optimizations.rs` checks each optimization on
+small inline programs: the listing it changes, its `--opt=` and
+`--no-opt=` names, and the same results in the timed configuration as
+`--opt=none`.
+
 ## Renderer scenes
 
 Random states run code paths at random rates: a renderer's clipper, rare in

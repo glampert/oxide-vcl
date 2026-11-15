@@ -38,6 +38,7 @@ mod source_passes;
 mod spill;
 mod table_planning;
 mod table_timing;
+mod unswitch;
 mod wrangle_tables;
 
 use flow_graph::*;
@@ -1505,8 +1506,27 @@ impl Failure {
     }
 }
 
-/// Compiles a parsed program.
+/// Compiles a parsed program. With the `unswitch` optimization, its
+/// loops are unswitched first (`unswitch`), unless the result fails to
+/// compile or no longer fits in micro memory: then the program is compiled
+/// as written.
 fn compile_parsed(
+    parsed: parser::Program,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Box<Failure>> {
+    if options.optimizes(Optimization::Unswitch)
+        && let Some(unswitched) = unswitch::unswitch_loops(&parsed, options)
+        && let Ok(output) = compile_waited(unswitched, filename, options)
+        && output.instruction_pairs <= program_size::MICRO_MEMORY
+    {
+        return Ok(output);
+    }
+    compile_waited(parsed, filename, options)
+}
+
+/// Compiles a parsed program, with the waits of the `entry` fix.
+fn compile_waited(
     parsed: parser::Program,
     filename: &str,
     options: &Options,

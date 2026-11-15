@@ -847,12 +847,13 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and its optimizations ([Optimizations](#optimizations)). |
 | `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
 | `--opt=<names>` | With `--mode=oxide` only: run just the named optimizations, separated by commas; `--opt=all` (the default) runs every one, `--opt=none` none. May be repeated. See [Optimizations](#optimizations). |
+| `--no-opt=<names>` | With `--mode=oxide` only: do not run the named optimizations, whatever `--opt=` chose, in any order. May be repeated. |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 
 The preprocessing stages run in the order `-G`, `-g`, `-g+`, each on the
 previous stage's output; any combination may be given.
 
-`--mode`, `--fix`, `--opt` and `--warnings-as-errors` are oxide-vcl's own options;
+`--mode`, `--fix`, `--opt`, `--no-opt` and `--warnings-as-errors` are oxide-vcl's own options;
 vcl 1.4beta7 has no long options and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
@@ -889,19 +890,40 @@ Oxide mode is also where code generation improves on vcl 1.4beta7
 ([OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md)). Each optimization keeps
 the arithmetic the program performs, operation for operation, and has a
 name for `--opt=`, so that one can be turned off to find out whether it
-causes a difference. `--mode=oxide` runs them all; `--opt=none` runs none,
-and `--opt=NAME,...` exactly those named. vcl mode never optimizes, and
-`--opt=` without `--mode=oxide` is an error.
+causes a difference or is not worth its cost. `--mode=oxide` runs them
+all; `--opt=none` runs none, `--opt=NAME,...` exactly those named, and
+`--no-opt=NAME,...` all but those named. vcl mode never optimizes, and
+`--opt=` or `--no-opt=` without `--mode=oxide` is an error.
 
 | Optimization | Improves |
 | --- | --- |
 | `loops` | Loops without `--LoopCS`. A loop vcl would software-pipeline if it had the hint is pipelined as if it had `--LoopCS 1,0`, which every such loop satisfies: it runs at least once, and no store runs past its last iteration. A loop stays as it is when pipelining does not shorten its iterations, or when the program would no longer fit in VU1 micro memory. A loop that reads Q, P or a flag set before it gets the `entry` fix's wait, and is left alone when a branch to its label could pass the wait. `-L` turns it off with the rest of loop pipelining. |
+| `unswitch` | Loops that test a mode the loop never changes, such as a lighting or vertex format flag the host sets for a batch. A branch on registers that the loop's usual path does not write (`ibeq`, `ibne`, `ibgtz`, `iblez`, `ibltz`, `ibgez`) is decided once before the loop, which then runs in one of two copies of its usual path, each without that branch or the others with the same test. The code between the tests joins into longer streams, which schedule better, and a copy that becomes a loop of one block can be pipelined. The *special cases* stay as one copy: an arm of a branch that leads to an inner loop the other arm does not reach (a clipping pass, say). Code that enters the usual path from outside it, a special case included, tests the mode again, so a special case may change it. The program grows by the copied code: when it would no longer fit in VU1 micro memory it is compiled without unswitching, and `--no-opt=unswitch` turns it off for programs that must stay small. |
 | `exit` | The end of a program and of each `--cont` stream. vcl puts the E bit and its delay slot on rows after the last instruction, usually both empty. With `exit` the last instruction runs in the delay slot when the hardware allows it there, and otherwise carries the E bit itself; the program is a row and a cycle shorter. An XGKICK before `--barrier` and an exit takes the E bit the same way. No instruction moves, and with `-e` nothing changes. |
 
 ```sh
 oxide-vcl --mode=oxide -oskin.vsm skin.vcl              # every optimization
 oxide-vcl --mode=oxide --opt=none -oskin.vsm skin.vcl   # fixes only
+oxide-vcl --mode=oxide --no-opt=unswitch -oskin.vsm skin.vcl   # all but unswitch
 ```
+
+A loop that `unswitch` copies:
+
+```text
+loop:
+    lq      value, 0(base)
+    ibeq    mode, vi00, plain     ; mode is never written in the loop
+    mul     value, value, scale
+plain:
+    sq      value, 0(base)
+    iaddiu  base, base, 1
+    isubiu  count, count, 1
+    ibne    count, vi00, loop
+```
+
+becomes, in effect, one test of `mode` before the loop and two loops of
+one block each: one with the `mul`, one without it. Their labels are the
+loop's with `__u0` and `__u1` after them.
 
 ### Examples
 

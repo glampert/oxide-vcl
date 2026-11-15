@@ -6,9 +6,9 @@ sets of disassembled VU programs. This chapter asks the next question: where doe
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-Two optimizations exist: `exit` (part of O9) and `loops` (O1 without
-O10's budget option). The measuring and checking tools of section 5 exist; section 6
-gives the order of the rest.
+Three optimizations exist: `exit` (part of O9), `loops` (O1 without
+O10's budget option) and `unswitch` (O11). The measuring and checking
+tools of section 5 exist; section 6 gives the order of the rest.
 
 The ground rules:
 
@@ -16,7 +16,8 @@ The ground rules:
   mode (`--mode=oxide`); vcl mode's output stays identical to the
   original's. Each optimization has a name for `--opt=` so that it can be
   turned off on its own: oxide mode enables them all, `--opt=none` none,
-  and `--opt=NAME,...` exactly those named.
+  `--opt=NAME,...` exactly those named, and `--no-opt=NAME,...` all but
+  those named.
 - **Same results, bit for bit.** Every optimization in the main plan keeps
   the arithmetic each program performs, operation for operation. Rewrites
   that change rounding (for example `sqrt` then `div` into `rsqrt`) are
@@ -168,8 +169,9 @@ the memory their hosts send. Cycles in oxide mode, and where they go:
 | doom3 `world_lm`, wall (strip path, nearly every batch) | 3,372 → 2,259 | `lTransform` kernel 46%; the strip emit loop `lStripRoom` 45%, issue-bound |
 | doom3 `world_lm`, floor (clipped) | 47,417 → 46,153 | the five clip passes 55%, a third of it stalls |
 | doom3 `world_strips`, wall | 3,896 → 3,896 | `lTransform` 75%, 952 of its 2,933 cycles stalls |
-| quake2 `textured_triangles`, world wall | 4,783 → 4,782 | the per-triangle blocks of `lTriangleLoop`, 40-50% stalls |
-| quake2 `textured_triangles`, model | 1,858 → 1,857 | `lKeyframes` 51% |
+| quake2 `textured_triangles`, world wall | 4,783 → 2,805 | `lTriangleLoop`'s copy for the world's colour mode (O11) |
+| quake2 `textured_triangles`, world floor (clipped) | 18,691 → 16,768 | the clip passes |
+| quake2 `textured_triangles`, model | 1,858 → 1,578 | `lKeyframes` in the model's copy (O11) |
 | quake2 `particles`, burst | 2,435 → 1,189 | the pipelined particle loop |
 
 `world_strips`' transform loop has a `--barrier` in its body, which makes
@@ -177,11 +179,17 @@ it two streams, so neither vcl nor the `loops` optimization pipelines it;
 `world_lm`'s has none. Without that barrier, oxide mode pipelines it and
 the wall scene takes 2,209 cycles (−43%), with the same packets.
 
-What would help these programs next: pipelining loops whose body has a
-rarely taken branch (doom3's strip and lightmap emit loops, which test
-for a full output window), along their usual path; then scheduling across
-the blocks of loops with branches inside (quake2's `lTriangleLoop`, the
-clip passes). O2 and O4 do not apply: their kernels are at their bounds.
+What remains on doom3's usual path is not the scheduler's to find.
+`lTransform`'s kernel sits at its bound, 21 upper instructions per
+vertex. The strip emit loop is bound by its lower instructions, 14 per
+vertex with an empty upper pipe, so pipelining it past its window-full
+branch would gain nothing. Three of those 14 repeat work: the `iMask`
+constant is set again for each of the four vertices, and each vertex
+adds to `iOutPtr` and `iVertsLeft`. Folding them, by hand, takes the
+`world_lm` wall from 2,259 to 2,106 cycles (−7%): repeated-expression
+removal within a block and O4's increment folding, applied to a loop
+that is not pipelined. On the clipped scenes the clip passes stall a
+third of their cycles across their blocks (O5).
 
 ## 3. Opportunities, by expected value
 
@@ -465,13 +473,78 @@ reordering. With `-e` the optimization does nothing.
 
 ### O10. Code size budget
 
-Pipelining (O1, O2), unrolling (O6) and superblock duplication (O5) all
-grow code. VU1 micro memory holds 2048 instructions; the largest corpus
-program uses 998 (`quake2`) and the ps2gl renderers about 600, but
-renderers usually share micro memory with each other. The improved mode
-needs a size budget option (absolute, or growth relative to compatibility
-output) and a greedy pass that spends it where cycles per byte are best:
-kernels first.
+Pipelining (O1, O2), unswitching (O11), unrolling (O6) and superblock
+duplication (O5) all grow code. VU1 micro memory holds 2048 instructions;
+the largest corpus program uses 998 (`quake2`, 1,212 with `unswitch`) and
+the ps2gl renderers about 600, but renderers usually share micro memory
+with each other. `loops` and `unswitch` keep a program within micro
+memory and spend no budget beyond that; `--no-opt=` turns off the one
+that costs too much. The
+improved mode needs a size budget option (absolute, or growth relative to
+compatibility output) and a greedy pass that spends it where cycles per
+byte are best: kernels first.
+
+### O11. Unswitch loops on a mode
+
+*Evidence:* quake2's `lTriangleLoop` tests `iColorMode`, which the host
+sets per batch and the loop never writes, twice for each of a triangle's
+three vertices: once around the lighting and once around the colour
+write. Each test ends a stream, so the work of one vertex cannot overlap
+the next one's, and the loop's blocks stall 40–50% of their cycles in the
+renderer scenes. tyra's `stapip` programs test a single-colour flag once
+per vertex in the same way.
+
+*The `unswitch` optimization* (`--opt=unswitch`, `--no-opt=unswitch`;
+`crates/vcl/src/compiler/unswitch.rs`) rewrites the parsed program before
+it is compiled:
+
+- A loop is a label and the last conditional branch back to it. Its
+  *usual path* is every block except inner loops and *special cases*. A
+  special case is what an arm of a two-armed branch reaches before the
+  code both arms share, when it leads to an inner loop the other arm does
+  not reach: quake2's clipping and warp code, both of which end in the
+  clipped polygon's fan loop. A branch that skips straight to the shared
+  code (an early out such as the backface cull, or a skip past an inner
+  loop) marks nothing.
+- The condition is the most frequent `ibeq`/`ibne`/`ibgtz`/`iblez`/
+  `ibltz`/`ibgez` on the usual path whose registers no usual-path
+  instruction writes. The usual path is copied once for each outcome; in
+  each copy the branches with that test or its opposite become jumps or
+  disappear, and code no longer reached goes with them.
+- Everything that enters the usual path from elsewhere (the code before
+  the loop, a special case falling back into it, a branch from outside,
+  a `.global` label) goes through a dispatch that keeps the original
+  label and tests the condition again. A special case may therefore write
+  the condition's registers.
+- Loops are unswitched one at a time, outermost first, and a copy is not
+  unswitched again. An inner loop in shared code can be unswitched on its
+  own: quake2's fan loop is.
+- When the result fails to compile or would not fit in VU1 micro memory,
+  the program is compiled as written.
+
+The copies join the code between the tests into longer streams, and a
+copy that becomes a loop of one block is pipelined by `loops`. In the
+public corpus it changes 5 programs:
+
+| Program | Rows (`--no-opt=unswitch` → all) | Cycles at 12 iterations (equivalence state) |
+| --- | ---: | ---: |
+| quake2 `textured_triangles` | 997 → 1,212 | 2,706 → 2,569 |
+| tyra `stapip_as_is_c` | 59 → 125 | 144 → 116 |
+| tyra `stapip_as_is_tc` | 70 → 98 | 172 → 151 |
+| tyra `stapip_cull_c` | 83 → 192 | 233 → 194 |
+| tyra `stapip_cull_tc` | 89 → 259 | 245 → 210 |
+
+The equivalence state's memory is random, not a renderer's batch. On the
+renderer scenes the world wall goes from 4,782 to 2,805
+cycles (−41%), the clipped floor from 18,690 to 16,768, and the model from
+1,857 to 1,578 (−15%). The tyra programs grow most because both copies of
+their vertex loops are pipelined, each with its prologue and epilogue.
+`--no-opt=unswitch` keeps the smaller program where micro memory is
+shared.
+
+*Limits:* one condition per loop; the special-case rule is structural, so
+a rare arm without an inner loop is copied with the usual path (quake2's
+window flush).
 
 ## 4. Not in this plan
 
@@ -499,8 +572,9 @@ phase 0:
    it.
 2. **The switch.** Optimizations run only in oxide mode. Each has a name
    in `vcl::Optimization` for `--opt=`, which keeps the named ones (or
-   `all`, the default, or `none`); `Options::optimizes` asks whether one
-   runs. The first is `exit` (O9).
+   `all`, the default, or `none`), and `--no-opt=`, which drops the named
+   ones from that; `Options::optimizes` asks whether one runs. The first
+   is `exit` (O9).
 3. **Timed model.** `crates/oxide-vcl/tests/support/vu_model.rs` has a
    second configuration, `Config::TIMED`: pairs stall on VF fields still in
    the FMAC pipeline (latency 4), on ILW results, and on a busy FDIV or
@@ -540,6 +614,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 0 | Survey tool, `--opt=` switch, timed model, equivalence harness (section 5) | Medium | Baseline per table and per program; a check that oxide output computes what vcl output computes |
 | 1 | O9 (`exit`: the E row on the last instructions) | Small | A row and a cycle off 36 of 52 public programs |
 | 2 | O1 (pipeline unannotated loops) with O10 (code budget): `loops` and the `entry` fix | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 3× on `sprite` |
+| 2a | O11 (`unswitch`: a copy of a loop's usual path per mode) | Medium | quake2 world triangles −41%, models −15%; tyra `stapip` −15 to −20% |
 | 3 | O3 step 1 (reschedule loop prologues and epilogues) | Medium | Most of the 1,782 stall cycles in loop parts |
 | 4 | O4 (merge induction variables, post-increment folding) | Medium | One cycle per iteration in lower-bound kernels (`general` `xform_loop` 22 → 21, `fast_nolights` 12 → 11) |
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
@@ -563,6 +638,8 @@ Why this order:
   the work given `--LoopCS 1,0` (the `loops` optimization), with the
   `entry` fix for the values it does not time from before the loop. What
   remains of O10 is a size option for programs that share micro memory.
+- **O11 after O1**, for the renderer scenes: it is what quake2's triangle
+  loop needs, and its copies feed O1's pipelining.
 - **O3 before O2 and O4** although they save more per vertex: O3 keeps the
   original's data flow, so its risk is low. It reschedules code that is
   already allocated, so reuse of physical registers limits what it finds.

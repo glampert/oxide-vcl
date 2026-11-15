@@ -170,6 +170,15 @@ every `vcl::Fix`, which vcl mode enables one by one with `--fix=`
 and `Source::fixes` carries the set into the compiler. The mode does not
 change how messages or the listing's comments are printed.
 
+Optimizations run only in oxide mode. Each is a `vcl::Optimization`,
+chosen with `--opt=` and turned off with `--no-opt=`, and checked with
+`Options::optimizes(optimization)`. `unswitch` (`compiler/unswitch.rs`)
+rewrites the parsed program before it is compiled, as the `entry` fix's
+waits do (`compiler/loop_entry.rs`), and falls back to the program as
+written when the result does not fit in micro memory. `loops` and `exit`
+act inside the compiler's phases. See
+[OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
+
 Every message is a typed value in `vcl::diagnostics`, never preformatted
 text: `Message` groups `CliMessage` (command line), `DriverMessage` (files,
 streams, preprocessors), `ParseMessage` and `CompileMessage`.

@@ -92,24 +92,24 @@ fn cli(message: &CliMessage) -> Wording {
                 names.join(", ")
             ))
         }
-        BadOptimization { name, .. } => {
+        BadOptimization { argument, name } => {
             let names: Vec<_> = crate::Optimization::ALL
                 .iter()
                 .map(|optimization| optimization.name())
                 .collect();
+            // `--opt=` or `--no-opt=`.
+            let option = argument
+                .split_once('=')
+                .map_or(argument.as_str(), |(option, _)| option);
             let wording = if name.is_empty() {
-                Wording::new("--opt= names no optimization")
+                Wording::new(format!("{option}= names no optimization"))
             } else {
                 Wording::new(format!("unknown optimization '{name}'"))
             };
-            wording.help(if names.is_empty() {
-                "use --opt=all or --opt=none; no optimization has a name yet".to_owned()
-            } else {
-                format!(
-                    "use --opt=all, --opt=none, or a comma-separated list of: {}",
-                    names.join(", ")
-                )
-            })
+            wording.help(format!(
+                "use {option}=all, {option}=none, or a comma-separated list of: {}",
+                names.join(", ")
+            ))
         }
         OptimizationsNeedOxideMode { argument } => {
             Wording::new(format!("{argument} applies only in oxide mode")).help(

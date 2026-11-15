@@ -61,10 +61,16 @@ optimizations (--mode=oxide only, which runs them all by default):
                  be repeated
   --opt=all      run every optimization
   --opt=none     run no optimization
+  --no-opt=<names>
+                 do not run the named optimizations, whatever --opt= chose;
+                 may be repeated
                  exit: end the program on its last instructions, without
                  vcl's empty [E] row and delay slot
                  loops: software-pipeline loops that have no --LoopCS, as if
                  they had --LoopCS 1,0
+                 unswitch: give a loop one copy of its usual path for each
+                 outcome of a branch on a register the path never writes;
+                 larger programs, fewer branches
 
 diagnostics (file(line): severity: message, with the source line and a fix):
   -q             quiet mode: prints only warnings and errors

@@ -371,3 +371,177 @@ fn loops_leaves_a_loop_that_pipelining_does_not_shorten() {
     assert!(!pipelined(&compile(source, &[])));
     assert_eq!(compile(source, &[]), compile(source, &["--opt=exit"]));
 }
+
+// ----------------------------------------------
+// unswitch
+// ----------------------------------------------
+
+/// Runs `source`'s listings with and without optimizations, for modes 0
+/// and 1 in VI03 and trip counts 1 to 6 in VI02, and requires the same
+/// memory. A qword's W is 1 at addresses that are multiples of 3, else 0.
+/// Returns the listings and both cycle counts at trip count 6, mode 1.
+fn unswitched_same_results(source: &str) -> (String, String, u64, u64) {
+    let plain = compile(source, &["--opt=none"]);
+    let optimized = compile(source, &[]);
+    let mut cycles = (0, 0);
+    for mode in [0, 1] {
+        for count in 1..=6 {
+            let mut state = source_state();
+            state.vi[2] = count;
+            state.vi[3] = mode;
+            state.set_vector(2, [0.5, -2.0, 3.0, 1.0]);
+            for (address, qword) in state.memory.iter_mut().enumerate() {
+                let w = u32::from(address % 3 == 0);
+                *qword = [
+                    ((address % 7 + 1) as f32).to_bits(),
+                    2.0f32.to_bits(),
+                    0.5f32.to_bits(),
+                    w,
+                ];
+            }
+            let program = |listing: &str| Program::parse(listing).unwrap();
+            let before = program(&plain)
+                .run(state.clone(), Config::TIMED, 4096)
+                .unwrap();
+            let after = program(&optimized).run(state, Config::TIMED, 4096).unwrap();
+            assert_eq!(
+                after.state.memory, before.state.memory,
+                "mode {mode}, count {count}\n{optimized}"
+            );
+            if (mode, count) == (1, 6) {
+                cycles = (before.cycles, after.cycles);
+            }
+        }
+    }
+    (plain, optimized, cycles.0, cycles.1)
+}
+
+fn branch_rows(listing: &str, mnemonic: &str) -> usize {
+    rows(listing)
+        .iter()
+        .filter(|row| row.split_whitespace().any(|word| word == mnemonic))
+        .count()
+}
+
+const MODE_LOOP: &str = ".init_vf_all\n\
+                         .init_vi_all\n\
+                         --enter\n\
+                         in_vi base(vi01)\n\
+                         in_vi count(vi02)\n\
+                         in_vi mode(vi03)\n\
+                         in_vf scale(vf02)\n\
+                         --endenter\n\
+                         loop:\n\
+                         lq value,0(base)\n\
+                         ibeq mode,vi00,plain_first\n\
+                         mul value,value,scale\n\
+                         plain_first:\n\
+                         sq value,0(base)\n\
+                         lq other,1(base)\n\
+                         ibeq mode,vi00,plain_second\n\
+                         mul other,other,scale\n\
+                         plain_second:\n\
+                         sq other,1(base)\n\
+                         iaddiu base,base,2\n\
+                         isubiu count,count,1\n\
+                         ibne count,vi00,loop\n\
+                         --exit\n\
+                         --endexit\n";
+
+#[test]
+fn unswitch_gives_each_outcome_of_a_mode_its_own_loop() {
+    // MODE never changes in the loop: one test before it picks a copy
+    // that scales both values or one that scales neither, and the two
+    // tests per iteration are gone. Each copy is then a loop of one
+    // block, which the `loops` optimization pipelines.
+    let (plain, optimized, before, after) = unswitched_same_results(MODE_LOOP);
+    assert_eq!(branch_rows(&plain, "ibeq"), 2);
+    assert_eq!(branch_rows(&optimized, "ibeq"), 1, "{optimized}");
+    assert!(optimized.contains("loop__u0") && optimized.contains("loop__u1"));
+    assert!(pipelined(&optimized), "{optimized}");
+    assert!(after < before, "{before} -> {after} cycles\n{optimized}");
+    // Turned off on its own, the other optimizations still run.
+    let without = compile(MODE_LOOP, &["--no-opt=unswitch"]);
+    assert_eq!(without, compile(MODE_LOOP, &["--opt=exit,loops"]));
+    assert_eq!(branch_rows(&without, "ibeq"), 2);
+    assert_eq!(
+        compile(MODE_LOOP, &["--opt=unswitch"])
+            .matches("__u1:")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn unswitch_shares_a_special_case_and_tests_the_mode_again_after_it() {
+    // The arm that runs an inner loop is a special case: one copy of it,
+    // shared by both copies of the loop. It changes MODE, and the loop
+    // continues in the copy for the new value.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi base(vi01)\n\
+                  in_vi count(vi02)\n\
+                  in_vi mode(vi03)\n\
+                  in_vf scale(vf02)\n\
+                  --endenter\n\
+                  loop:\n\
+                  lq value,0(base)\n\
+                  ibeq mode,vi00,plain_first\n\
+                  mul value,value,scale\n\
+                  plain_first:\n\
+                  ilw.w split,0(base)\n\
+                  ibne split,vi00,special\n\
+                  sq value,0(base)\n\
+                  b advance\n\
+                  special:\n\
+                  iaddiu parts,vi00,3\n\
+                  part_loop:\n\
+                  add value,value,scale\n\
+                  isubiu parts,parts,1\n\
+                  ibne parts,vi00,part_loop\n\
+                  sq value,0(base)\n\
+                  iaddiu mode,mode,1\n\
+                  advance:\n\
+                  iaddiu base,base,1\n\
+                  isubiu count,count,1\n\
+                  ibne count,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let (_, optimized, _, _) = unswitched_same_results(source);
+    assert!(optimized.contains("loop__u1:"), "{optimized}");
+    assert_eq!(optimized.matches("part_loop:").count(), 1, "{optimized}");
+}
+
+#[test]
+fn unswitch_leaves_a_loop_that_changes_its_mode() {
+    let source = MODE_LOOP.replace(
+        "isubiu count,count,1\n",
+        "isubiu count,count,1\n\
+         iaddiu mode,mode,1\n",
+    );
+    let (_, optimized, _, _) = unswitched_same_results(&source);
+    assert_eq!(optimized, compile(&source, &["--no-opt=unswitch"]));
+}
+
+#[test]
+fn unswitch_leaves_a_program_that_would_not_fit_in_micro_memory() {
+    // Two copies of a loop of 1,100 stores would need more than VU1's
+    // 2,048 instructions; of 400, they fit. Barriers keep the streams
+    // short, and quick to schedule.
+    let with_stores = |count: usize| {
+        let stores: String = (0..count)
+            .map(|offset| {
+                let barrier = if offset % 25 == 24 { "--barrier\n" } else { "" };
+                format!("isw.x count,{}(base)\n{barrier}", offset % 1000)
+            })
+            .collect();
+        MODE_LOOP.replace("sq other,1(base)\n", &format!("sq other,1(base)\n{stores}"))
+    };
+    let fits = with_stores(400);
+    assert!(compile(&fits, &[]).contains("loop__u1"));
+    let too_large = with_stores(1100);
+    let unchanged = compile(&too_large, &["--no-opt=unswitch"]);
+    assert_eq!(compile(&too_large, &[]), unchanged);
+    assert!(!unchanged.contains("loop__u1"));
+}

@@ -74,8 +74,8 @@ scheduling or allocation changed.
   holds fixes and optimizations. Anything that breaks compatibility goes
   behind `options.mode == Mode::Oxide`, leaving the vcl path unchanged.
   Optimizations (`docs/OPTIMIZATION_PLAN.md`) each get a `vcl::Optimization`
-  name for `--opt=`, run where `options.optimizes(...)` says, and must keep
-  `tests/listing_equivalence.rs` passing.
+  name for `--opt=` and `--no-opt=`, run where `options.optimizes(...)`
+  says, and must keep `tests/listing_equivalence.rs` passing.
 - No `println!`/`eprintln!` outside `crates/vcl/src/diagnostics.rs`: messages
   are `vcl::diagnostics` enum variants (wording, subject and suggested fix in
   `diagnostics/oxide.rs`), printed through `Reporter`; developer traces use

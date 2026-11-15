@@ -40,6 +40,8 @@ pub struct Options {
     /// Optimizations chosen with `--opt=`; `None` is oxide mode's default,
     /// all of them. vcl mode never optimizes: see [`Options::optimizes`].
     pub optimizations: Option<Optimizations>,
+    /// Optimizations turned off with `--no-opt=`, whatever `--opt=` chose.
+    pub disabled_optimizations: Optimizations,
 }
 
 impl Options {
@@ -58,17 +60,22 @@ impl Options {
     }
 
     /// Whether `optimization` runs: only in oxide mode, where `--opt=`
-    /// chooses them and every one runs by default.
+    /// chooses them, `--no-opt=` turns them off, and every one runs by
+    /// default.
     pub fn optimizes(&self, optimization: Optimization) -> bool {
         self.enabled_optimizations().contains(optimization)
     }
 
     /// The optimizations that run: none in vcl mode; in oxide mode those
-    /// chosen with `--opt=`, or all of them.
+    /// chosen with `--opt=`, or all of them, less those `--no-opt=` turns
+    /// off.
     pub fn enabled_optimizations(&self) -> Optimizations {
         match self.mode {
             crate::Mode::Vcl => Optimizations::NONE,
-            crate::Mode::Oxide => self.optimizations.unwrap_or_else(Optimizations::all),
+            crate::Mode::Oxide => self
+                .optimizations
+                .unwrap_or_else(Optimizations::all)
+                .without(self.disabled_optimizations),
         }
     }
 }
@@ -184,17 +191,26 @@ pub enum Optimization {
     /// A loop without `--LoopCS` is software-pipelined as if it had
     /// `--LoopCS 1,0`, which every such loop satisfies (`loops`).
     Loops,
+    /// A loop whose usual path branches on a register it never writes is
+    /// compiled as two copies of that path, one for each outcome, without
+    /// those branches (`unswitch`).
+    Unswitch,
 }
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 2] = [Optimization::Exit, Optimization::Loops];
+    pub const ALL: [Optimization; 3] = [
+        Optimization::Exit,
+        Optimization::Loops,
+        Optimization::Unswitch,
+    ];
 
     /// The optimization's name on the command line.
     pub const fn name(self) -> &'static str {
         match self {
             Optimization::Exit => "exit",
             Optimization::Loops => "loops",
+            Optimization::Unswitch => "unswitch",
         }
     }
 
@@ -231,6 +247,11 @@ impl Optimizations {
     /// The optimizations in either set.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
+    }
+
+    /// The optimizations in this set and not in `other`.
+    pub const fn without(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
     }
 
     pub const fn contains(self, optimization: Optimization) -> bool {
@@ -295,5 +316,22 @@ mod tests {
             ..oxide
         };
         assert!(none.enabled_optimizations().is_empty());
+        let disabled = Optimizations::NONE.with(Optimization::Unswitch);
+        let without_unswitch = Options {
+            mode: crate::Mode::Oxide,
+            disabled_optimizations: disabled,
+            ..Options::default()
+        };
+        assert_eq!(
+            without_unswitch.enabled_optimizations(),
+            all.without(disabled)
+        );
+        assert!(!without_unswitch.optimizes(Optimization::Unswitch));
+        assert!(without_unswitch.optimizes(Optimization::Loops));
+        let chosen_then_disabled = Options {
+            optimizations: Some(disabled),
+            ..without_unswitch
+        };
+        assert!(chosen_then_disabled.enabled_optimizations().is_empty());
     }
 }
