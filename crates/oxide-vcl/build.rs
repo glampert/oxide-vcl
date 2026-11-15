@@ -4,14 +4,23 @@
 //!
 //! The date is UTC. `SOURCE_DATE_EPOCH` overrides the clock, for reproducible
 //! builds.
+//!
+//! Cargo takes a watched path that does not exist as changed, and reruns
+//! the script (and rebuilds the crate) every time, so without the evidence
+//! the script watches only itself: a clone that gains `local/evidence` later
+//! needs `cargo clean -p oxide-vcl` to see it.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
     let oracle = "../../local/evidence/oracle";
+    let present = std::path::Path::new(oracle).is_dir();
     println!("cargo::rustc-check-cfg=cfg(local_evidence)");
-    println!("cargo::rerun-if-changed={oracle}");
-    if std::path::Path::new(oracle).is_dir() {
+    println!(
+        "cargo::rerun-if-changed={}",
+        if present { oracle } else { "build.rs" }
+    );
+    if present {
         println!("cargo::rustc-cfg=local_evidence");
     }
 
