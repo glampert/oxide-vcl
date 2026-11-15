@@ -92,12 +92,52 @@ pub enum Severity {
 }
 
 /// One message with its severity and, for source diagnostics, its line
-/// (0 when it has none).
+/// (0 when it has none). A diagnostic about a file other than the one being
+/// compiled, such as one the preprocessor reads, carries its own
+/// [`SourceLocation`] instead, and may come with [`Note`]s: the chain of
+/// includes or macro expansions behind it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Diagnostic {
     pub severity: Severity,
     pub line: usize,
     pub message: Message,
+    pub location: Option<SourceLocation>,
+    pub notes: Vec<Note>,
+}
+
+/// A place in a named source file. Lines and columns count from 1; 0 means
+/// unknown (a column of 0 leaves the caret to the message's subject).
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub struct SourceLocation {
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+}
+
+impl SourceLocation {
+    pub fn new(file: impl Into<String>, line: usize, column: usize) -> Self {
+        Self {
+            file: file.into(),
+            line,
+            column,
+        }
+    }
+}
+
+/// A line of context printed after a diagnostic, at its own place.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Note {
+    pub location: Option<SourceLocation>,
+    pub message: Message,
+}
+
+impl Note {
+    pub fn new(location: Option<SourceLocation>, message: impl Into<Message>) -> Self {
+        Self {
+            location,
+            message: message.into(),
+        }
+    }
 }
 
 impl Diagnostic {
@@ -118,6 +158,8 @@ impl Diagnostic {
             severity,
             line,
             message: message.into(),
+            location: None,
+            notes: Vec::new(),
         }
     }
 
@@ -126,15 +168,34 @@ impl Diagnostic {
         self
     }
 
+    /// The diagnostic at a place in a named file, with its line as `line`.
+    pub fn located_at(mut self, location: SourceLocation) -> Self {
+        self.line = location.line;
+        self.location = Some(location);
+        self
+    }
+
+    /// The diagnostic with notes after it.
+    pub fn with_notes(mut self, notes: Vec<Note>) -> Self {
+        self.notes = notes;
+        self
+    }
+
     /// The message text, without location.
     pub fn text(&self) -> String {
         self.message.text()
     }
 
-    /// The text with its source line: `line N: text`, or the text alone
-    /// when there is no line.
+    /// The text with its source line: `line N: text` (`file(N): text` for
+    /// one with a location), or the text alone when there is no line.
     pub fn located(&self) -> String {
-        if self.line == 0 {
+        if let Some(location) = &self.location {
+            if location.line == 0 {
+                format!("{}: {}", location.file, self.text())
+            } else {
+                format!("{}({}): {}", location.file, location.line, self.text())
+            }
+        } else if self.line == 0 {
             self.text()
         } else {
             format!("line {}: {}", self.line, self.text())
@@ -157,6 +218,7 @@ pub enum Message {
     Driver(DriverMessage),
     Parse(ParseMessage),
     Compile(CompileMessage),
+    Preprocess(PreprocessMessage),
 }
 
 impl Message {
@@ -200,7 +262,8 @@ message_from!(
     Cli(CliMessage),
     Driver(DriverMessage),
     Parse(ParseMessage),
-    Compile(CompileMessage)
+    Compile(CompileMessage),
+    Preprocess(PreprocessMessage)
 );
 
 /// Command-line notices and errors.
@@ -226,14 +289,20 @@ pub enum CliMessage {
     BadOptimization { argument: String, name: String },
     /// `--opt=` without `--mode=oxide`: vcl mode never optimizes.
     OptimizationsNeedOxideMode { argument: String },
+    /// A preprocessor option (`--define=`, `--preprocess-only`, ...) without
+    /// `-G` or `-g`.
+    PreprocessorOptionWithoutPreprocessor { argument: String },
+    /// `--define=` with a name that cannot be a macro or variable.
+    BadDefine { argument: String, name: String },
+    /// `--comment-char=` without exactly one character.
+    BadCommentChar { argument: String },
     /// More than one input file.
     TooManyArguments,
     /// `-o` naming the input file.
     SameInputAndOutput,
 }
 
-/// The driver's own failures and notes: files, standard streams and the
-/// preprocessors.
+/// The driver's own failures and notes: files and standard streams.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DriverMessage {
     OpenInput {
@@ -244,30 +313,8 @@ pub enum DriverMessage {
         error: String,
     },
     NotUtf8,
-    WriteTemporary {
-        path: String,
-        error: String,
-    },
-    CreateTemporary {
-        path: String,
-        error: String,
-    },
-    ReadTemporary {
-        path: String,
-        error: String,
-    },
-    StartPreprocessor {
-        program: String,
-        error: String,
-    },
-    PreprocessorFailed {
-        program: String,
-        status: String,
-    },
-    KeptTemporaries {
-        input: String,
-        output: String,
-    },
+    /// `-g+`: gasp's alternate syntax, which the preprocessor does not take.
+    AlternateSyntax,
     WriteOutput {
         path: String,
         error: String,
@@ -277,6 +324,309 @@ pub enum DriverMessage {
     },
     /// `--warnings-as-errors` failing a run that printed warnings.
     WarningsAsErrors,
+}
+
+/// The preprocessor's errors, warnings and notes (`-G`, `-g`). Their texts
+/// are vclpp's, the preprocessor the built-in one follows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreprocessMessage {
+    // Notes.
+    /// The `#include` that led to the file a diagnostic is in.
+    IncludedFrom,
+    /// More `#include`s in a long chain, left out.
+    MoreIncludes {
+        count: usize,
+    },
+    /// The invocation of the macro the code came out of.
+    InExpansionOf {
+        name: String,
+    },
+    /// More expansions in a long chain, left out.
+    MoreExpansions {
+        count: usize,
+    },
+    /// Where an `#include` looked for its file.
+    NotFoundAt {
+        path: String,
+    },
+    /// `<file>` with no `-I` directories to look in.
+    NoIncludeDirectories,
+    FirstOneHere,
+    FirstUsedHere,
+    PreviousDefinitionHere,
+    DefinedHere {
+        name: String,
+    },
+
+    // Lexing.
+    Lex {
+        error: crate::preprocessor::lexer::LexErrorKind,
+    },
+    LexWarning {
+        warning: crate::preprocessor::lexer::LexWarningKind,
+    },
+
+    // Directives.
+    UnknownDirective {
+        name: String,
+    },
+    /// `#error` and the rest of its line, with a space before it.
+    ErrorDirective {
+        text: String,
+    },
+    /// `#warning` and the rest of its line, with a space before it.
+    WarningDirective {
+        text: String,
+    },
+    ExtraTokens {
+        directive: String,
+    },
+    /// `#pragma` other than `once`, with the rest of its line.
+    UnknownPragma {
+        text: String,
+    },
+    ExpectedMacroName {
+        directive: String,
+    },
+    DefinedAsMacroName,
+    ChangeBuiltin {
+        name: String,
+        undefining: bool,
+    },
+    /// A `#define` after code that names the macro, which it does not apply to.
+    DefinedAfterUse {
+        name: String,
+    },
+    Redefined {
+        name: String,
+    },
+
+    // #include.
+    IncludeExpectsFile,
+    IncludeMissingGreater,
+    IncludeEmptyName,
+    IncludeTooDeep {
+        depth: usize,
+    },
+    IncludeNotFound {
+        name: String,
+    },
+    IncludeUnreadable {
+        path: String,
+    },
+
+    // Function-like macros.
+    MissingParameterClose {
+        name: String,
+    },
+    ExpectedParameterBeforeClose {
+        name: String,
+    },
+    EllipsisNotLast {
+        name: String,
+    },
+    ExpectedCommaOrClose {
+        name: String,
+    },
+    ExpectedParameterName {
+        name: String,
+    },
+    DuplicateParameter {
+        parameter: String,
+        name: String,
+    },
+    HashWithoutParameter {
+        name: String,
+    },
+    PasteAtEnd {
+        name: String,
+        block: bool,
+    },
+
+    // Block macros.
+    BlockMacroWithoutColon {
+        name: String,
+    },
+    LostCommaBeforeFirst {
+        name: String,
+    },
+    LostCommaAfter {
+        parameter: String,
+        name: String,
+    },
+    MissingCommaAfter {
+        parameter: String,
+        name: String,
+    },
+    ExtraneousComma {
+        parameter: String,
+        name: String,
+    },
+    UnterminatedMacro {
+        name: String,
+    },
+    TextAfterEndmacro,
+    DirectiveInMacro {
+        directive: String,
+        name: String,
+    },
+    EndmacroWithoutMacro,
+
+    // Programs.
+    VuprogTwice,
+    EndvuprogTwice,
+    ExpectedProgramName,
+    TextAfterProgramName,
+    EndvuprogWithoutVuprog,
+    TextAfterEndvuprog,
+    MissingVuprog,
+    MissingEndvuprog,
+
+    // Conditionals.
+    UnterminatedConditional {
+        directive: String,
+    },
+    WithoutIf {
+        directive: String,
+    },
+    ElifAfterElse,
+    ElseAfterElse,
+    DefinedWithoutName,
+    DefinedMissingClose {
+        name: String,
+    },
+    NoExpression {
+        directive: String,
+    },
+    /// `--warn-undef`: a name left in an `#if` after expansion.
+    NotDefinedIsZero {
+        name: String,
+    },
+
+    // Integer expressions, in `context` (`#if`, `constant expression`, ...).
+    FloatInExpression {
+        context: String,
+        number: String,
+    },
+    NotInExpression {
+        context: String,
+        token: String,
+    },
+    Expression {
+        context: String,
+        error: crate::preprocessor::expression::ExpressionError,
+    },
+
+    // Expansion.
+    NotABlockMacro {
+        name: String,
+    },
+    RecursiveBlockMacro {
+        name: String,
+    },
+    BlockMacroInContext {
+        name: String,
+        context: String,
+    },
+    UnterminatedArguments {
+        name: String,
+    },
+    UnbalancedArgument {
+        token: String,
+        name: String,
+    },
+    TooFewArguments {
+        name: String,
+        at_least: usize,
+        given: usize,
+    },
+    WrongArgumentCount {
+        name: String,
+        takes: usize,
+        given: usize,
+    },
+    EmptyBlockArgument {
+        index: usize,
+        parameter: String,
+        name: String,
+    },
+    InvalidPaste {
+        left: String,
+        right: String,
+    },
+
+    // MASP mode (`-g`).
+    /// `#macro`, `#endmacro`, `#vuprog` or `#endvuprog`, which are not masp's.
+    NotInMaspMode {
+        directive: String,
+    },
+    MaspUnterminatedAif,
+    MaspEndlessWhile {
+        passes: u64,
+    },
+    MaspMissingEnd,
+    /// A `.macro`, `.arepeat` or `.awhile` without its closing directive.
+    MaspUnterminatedBlock {
+        open: String,
+        close: String,
+    },
+    /// `.endm`, `.aendr` or `.aendw` with nothing open.
+    MaspCloseWithoutOpen {
+        close: String,
+        open: String,
+    },
+    /// `.assigna` or `.assignc` without a name in column 1.
+    MaspAssignNeedsName {
+        directive: String,
+    },
+    /// A GASP directive that masp carries out itself, such as `.sdata`.
+    MaspRefusedDirective {
+        name: String,
+    },
+    MaspExpectedMacroName,
+    MaspMissingParameterName {
+        name: String,
+    },
+    MaspNotAParameterName {
+        parameter: String,
+        name: String,
+    },
+    MaspExpansionTooDeep {
+        depth: usize,
+        name: String,
+    },
+    MaspNoSuchParameter {
+        name: String,
+        parameter: String,
+    },
+    MaspPositionalAfterNamed {
+        argument: String,
+        name: String,
+    },
+    MaspTooManyArguments {
+        name: String,
+        takes: usize,
+    },
+    MaspExitmOutsideMacro,
+    MaspAelseWithoutAif,
+    MaspAelseAfterAelse,
+    MaspAendiWithoutAif,
+    MaspRepeatTooMany {
+        count: i64,
+        max: u64,
+    },
+    MaspIncludeExpectsFile,
+    MaspIncludeEmptyName,
+    MaspIncludeTooDeep {
+        depth: usize,
+    },
+    MaspUndefinedVariable {
+        name: String,
+    },
+    /// A quoted string compared with something other than a string.
+    MaspStringComparison {
+        context: String,
+    },
 }
 
 /// Source errors found while parsing.
@@ -551,6 +901,10 @@ pub struct Reporter<O: Write = io::Stdout, E: Write = io::Stderr> {
     out: O,
     err: E,
     source: Option<Source>,
+    files: Vec<Source>,
+    /// For each line of the program, the file and line it came from, when a
+    /// preprocessor made it.
+    line_origins: Vec<Option<SourceLocation>>,
     warnings_as_errors: bool,
     errors: usize,
     warnings: usize,
@@ -575,6 +929,8 @@ impl<O: Write, E: Write> Reporter<O, E> {
             out,
             err,
             source: None,
+            files: Vec::new(),
+            line_origins: Vec::new(),
             warnings_as_errors: false,
             errors: 0,
             warnings: 0,
@@ -588,6 +944,23 @@ impl<O: Write, E: Write> Reporter<O, E> {
             file: file.to_string(),
             lines: text.lines().map(str::to_string).collect(),
         });
+    }
+
+    /// Another file whose lines diagnostics may quote, such as one the
+    /// preprocessor read. A file added twice keeps its first text.
+    pub fn add_source(&mut self, file: &str, text: &str) {
+        if self.source_named(file).is_none() {
+            self.files.push(Source {
+                file: file.to_string(),
+                lines: text.lines().map(str::to_string).collect(),
+            });
+        }
+    }
+
+    /// Where each line of the program came from, for a preprocessed one:
+    /// source diagnostics name that file and line, and quote that line.
+    pub fn set_line_origins(&mut self, origins: Vec<Option<SourceLocation>>) {
+        self.line_origins = origins;
     }
 
     /// `--warnings-as-errors`: each warning is printed as an error.
@@ -632,6 +1005,12 @@ impl<O: Write, E: Write> Reporter<O, E> {
         let _ = self.out.flush();
     }
 
+    /// Text as it is, on standard output: `--preprocess-only`'s source.
+    pub fn text(&mut self, text: &str) -> io::Result<()> {
+        self.out.write_all(text.as_bytes())?;
+        self.out.flush()
+    }
+
     /// The help screen, on standard error.
     pub fn help(&mut self, text: &str) {
         self.stderr(format_args!("{text}"));
@@ -674,35 +1053,101 @@ impl<O: Write, E: Write> Reporter<O, E> {
         if severity == Severity::Error {
             self.errors += 1;
         }
+        let mut text = String::new();
+        let indent = self.render_one(
+            &mut text,
+            severity,
+            suffix,
+            &diagnostic.message,
+            diagnostic.location.as_ref(),
+            diagnostic.line,
+        );
+        for note in &diagnostic.notes {
+            // A note with no place of its own reads as part of the message.
+            if note.location.is_none() {
+                text.push_str(&format!("{indent}= note: {}\n", note.message.text()));
+                continue;
+            }
+            let line = note.location.as_ref().map_or(0, |location| location.line);
+            self.render_one(
+                &mut text,
+                Severity::Info,
+                "",
+                &note.message,
+                note.location.as_ref(),
+                line,
+            );
+        }
+        self.stderr(format_args!("{text}"));
+    }
+
+    /// One message, its quoted line and its help, at `location` when it has
+    /// one, else at `line` of the program being compiled. Returns the indent
+    /// of the lines under it.
+    fn render_one(
+        &self,
+        text: &mut String,
+        severity: Severity,
+        suffix: &str,
+        message: &Message,
+        location: Option<&SourceLocation>,
+        line: usize,
+    ) -> String {
         let label = match severity {
             Severity::Info => "note",
             Severity::Warning => "warning",
             Severity::Error => "error",
         };
-        let wording = diagnostic.message.wording();
-        let in_source = matches!(diagnostic.message, Message::Parse(_) | Message::Compile(_));
-        let source = self.source.as_ref().filter(|_| in_source);
-        let location = match source {
-            Some(source) if diagnostic.line != 0 => format!("{}({})", source.file, diagnostic.line),
-            Some(source) => source.file.clone(),
+        let wording = message.wording();
+        let in_source = matches!(
+            message,
+            Message::Parse(_) | Message::Compile(_) | Message::Preprocess(_)
+        );
+        // A line of preprocessed code is shown where it came from.
+        let origin = match location {
+            None if in_source => line
+                .checked_sub(1)
+                .and_then(|index| self.line_origins.get(index))
+                .and_then(Option::as_ref)
+                .filter(|origin| origin.line != 0),
+            _ => None,
+        };
+        let line = origin.map_or(line, |origin| origin.line);
+        let (file, source, column) = match location.or(origin) {
+            Some(location) => (
+                Some(location.file.as_str()),
+                self.source_named(&location.file),
+                location.column,
+            ),
+            None => {
+                let source = self.source.as_ref().filter(|_| in_source);
+                (source.map(|source| source.file.as_str()), source, 0)
+            }
+        };
+        let place = match file {
+            Some(file) if line != 0 => format!("{file}({line})"),
+            Some(file) => file.to_string(),
             None => "oxide-vcl".to_string(),
         };
-        let mut text = format!("{location}: {label}: {}{suffix}\n", wording.text);
-        let quoted = source
-            .and_then(|source| source.lines.get(diagnostic.line.checked_sub(1)?))
-            .map(|line| expand_tabs(line.trim_end()));
-        let gutter = " ".repeat(diagnostic.line.to_string().len() + 4);
-        if let Some(line) = &quoted {
+        text.push_str(&format!("{place}: {label}: {}{suffix}\n", wording.text));
+        let raw = source.and_then(|source| source.lines.get(line.checked_sub(1)?));
+        let quoted = raw.map(|line| expand_tabs(line.trim_end()));
+        let gutter = " ".repeat(line.to_string().len() + 4);
+        if let (Some(raw), Some(quoted)) = (raw, &quoted) {
             text.push_str(&format!(
-                "{:>width$} | {line}\n",
-                diagnostic.line,
+                "{:>width$} | {quoted}\n",
+                line,
                 width = gutter.len() - 1
             ));
-            if let Some((start, length)) = wording
-                .subject
-                .as_deref()
-                .and_then(|subject| find_token(line, subject))
-            {
+            let underline = if column != 0 {
+                caret_at(raw, column, wording.subject.as_deref())
+            } else {
+                wording
+                    .subject
+                    .as_deref()
+                    .and_then(|subject| find_token(quoted, subject))
+            };
+            if let Some((start, length)) = underline {
                 text.push_str(&format!(
                     "{gutter}| {}{}\n",
                     " ".repeat(start),
@@ -710,15 +1155,26 @@ impl<O: Write, E: Write> Reporter<O, E> {
                 ));
             }
         }
+        let indent = if quoted.is_some() {
+            gutter
+        } else {
+            "  ".to_string()
+        };
         if let Some(help) = &wording.help {
-            let indent = if quoted.is_some() {
-                gutter.as_str()
-            } else {
-                "  "
-            };
             text.push_str(&format!("{indent}= help: {help}\n"));
         }
-        self.stderr(format_args!("{text}"));
+        indent
+    }
+
+    /// The source a location names: a file added with
+    /// [`Reporter::add_source`], or the program being compiled.
+    fn source_named(&self, file: &str) -> Option<&Source> {
+        // A preprocessor's files first: the program, under the input's name,
+        // is then the preprocessed text, and the file its first version.
+        self.files
+            .iter()
+            .chain(&self.source)
+            .find(|source| source.file == file)
     }
 
     /// The last line of a failed compile.
@@ -761,6 +1217,28 @@ fn expand_tabs(line: &str) -> String {
         }
     }
     expanded
+}
+
+/// The caret under a diagnostic with a column: from that column (counted in
+/// characters of the raw line, tabs as one) for the subject's length when the
+/// subject is written there, else for one character. Returns the start and
+/// length in the tab-expanded line.
+fn caret_at(raw: &str, column: usize, subject: Option<&str>) -> Option<(usize, usize)> {
+    let before: String = raw.chars().take(column - 1).collect();
+    if before.chars().count() != column - 1 {
+        return None;
+    }
+    let start = expand_tabs(&before).len();
+    let rest: String = raw.chars().skip(column - 1).collect();
+    let length = subject
+        .filter(|subject| {
+            !subject.is_empty()
+                && rest
+                    .to_ascii_lowercase()
+                    .starts_with(&subject.to_ascii_lowercase())
+        })
+        .map_or(1, |subject| subject.chars().count());
+    Some((start, length))
 }
 
 /// Where `token` appears in `line`, ignoring case: preferably as a whole
@@ -882,6 +1360,54 @@ mod tests {
             err.ends_with(
                 "prog.vcl(9): error: a label with no name\n\
                  oxide-vcl: 1 error, 1 warning; no output written\n"
+            ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn located_diagnostics_quote_their_own_file_and_notes_follow() {
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.set_source("prog.vcl", "unused\n");
+        reporter.add_source("lib.i", "#define P(a) a\n\tP(+)\n");
+        let error = Diagnostic::error(PreprocessMessage::IncludedFrom)
+            .located_at(SourceLocation::new("lib.i", 1, 9))
+            .with_notes(vec![Note::new(
+                Some(SourceLocation::new("lib.i", 2, 2)),
+                PreprocessMessage::InExpansionOf { name: "P".into() },
+            )]);
+        reporter.compile_errors(&[error]);
+        let (_, err) = reporter.into_inner();
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "lib.i(1): error: in the file included from here\n   \
+             1 | #define P(a) a\n     \
+             |         ^\n\
+             lib.i(2): note: in expansion of macro 'P'\n   \
+             2 |     P(+)\n     \
+             |     ^\n\
+             oxide-vcl: 1 error; no output written\n"
+        );
+    }
+
+    #[test]
+    fn preprocessed_lines_are_shown_where_they_came_from() {
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.set_source("prog.vcl", ".vu\n\tad res, src, src\n");
+        reporter.add_source("lib.i", "#macro M\n    ad res, src, src\n#endmacro\n");
+        reporter.set_line_origins(vec![None, Some(SourceLocation::new("lib.i", 2, 0))]);
+        let error = Diagnostic::error(ParseMessage::UnknownInstruction {
+            opcode: "ad".into(),
+        })
+        .at(2);
+        reporter.compile_errors(&[error]);
+        let (_, err) = reporter.into_inner();
+        let err = String::from_utf8(err).unwrap();
+        assert!(
+            err.starts_with(
+                "lib.i(2): error: unknown instruction 'ad'\n   \
+                 2 |     ad res, src, src\n     \
+                 |     ^^\n"
             ),
             "{err}"
         );

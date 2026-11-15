@@ -180,7 +180,8 @@ the port. Flags the port accepts without effect are listed separately.
   negative, and zero values become 1; `-t3junk` becomes 3; `-t0x20` becomes 1.
 - `-g` and `-g+` select preprocessing; `-gbad` fails, while `-g+bad` is accepted.
   `-W`/`-w` skip the preprocessing stages. `-I...` is ignored by VCL and
-  reserved for forwarding to preprocessors.
+  passed to the preprocessors; in the port it names a directory for the
+  built-in preprocessor ([PREPROCESSOR.md](PREPROCESSOR.md)).
 - `-q` suppresses informational messages according to parse order. Thus
   `-q -h` produces no output. Warnings from deprecated `-P`/`-Z` remain visible.
 - `-P` and `-Z` print deprecation warnings and do not disable the current
@@ -190,8 +191,9 @@ the port. Flags the port accepts without effect are listed separately.
 
 These probes establish individual behaviors, not whole-program equivalence.
 The runtime contains the dynamic loader and libraries, not a Linux process
-environment with working `cpp` and `ee-gasp`; preprocessing integration is not
-validated. Loop optimization and large realistic programs require additional
+environment with working `cpp` and `ee-gasp`, so the original's preprocessing
+runs are not observed; the port's preprocessor is checked against vclpp
+instead ([PREPROCESSOR.md](PREPROCESSOR.md#tests)). Loop optimization and large realistic programs require additional
 coverage.
 
 VCL uses `alarm()` to bound optimizer search. The emulation recipe substitutes

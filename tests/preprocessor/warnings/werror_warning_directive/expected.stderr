@@ -1,0 +1,4 @@
+input.vcl(1): error: #warning not yet [--warnings-as-errors]
+   1 | #warning not yet
+     |  ^
+oxide-vcl: 1 error; no output written

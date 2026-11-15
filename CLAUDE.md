@@ -15,7 +15,8 @@ untracked notes are in `CLAUDE.local.md` when present.
 
 - `crates/vcl`: the compiler library, by phase: `isa`, `parser`, `analysis`,
   `scheduler`, `loops`, `allocator`, `emit`, `compiler` (one file per phase),
-  plus `diagnostics` (modes, typed messages, the output `Reporter`). Entry
+  plus `diagnostics` (modes, typed messages, the output `Reporter`) and
+  `preprocessor` (vclpp's, for `-G`/`-g`, `docs/PREPROCESSOR.md`). Entry
   point `vcl::compile`, settings `vcl::Options`.
 - `crates/oxide-vcl`: the `oxide-vcl` driver (`main.rs`, plus `cli.rs` as the
   `vcl_cli` library target so tests share the argument parser) and all
@@ -23,6 +24,8 @@ untracked notes are in `CLAUDE.local.md` when present.
 - `tests/corpus`: public VU programs with the original's recorded runs.
 - `tests/probes`: small programs written for this project, each pinning one
   behaviour, with the original's recorded runs.
+- `tests/preprocessor`: vclpp's test suite, for the preprocessor;
+  `tests/corpus/sources` the corpus inputs' sources before vclpp.
 - `tools/`: Python tools: corpus comparison, listing conversion, and the
   oracle runner and its setup (`setup_oracle.py`, `run_oracle.py`,
   `replay_oracle.py`, `run_native.py`), `compare_openvcl.py`, which

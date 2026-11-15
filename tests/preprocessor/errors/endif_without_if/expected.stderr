@@ -1,0 +1,4 @@
+input.vcl(1): error: #endif without #if
+   1 | #endif
+     |  ^^^^^
+oxide-vcl: 1 error; no output written

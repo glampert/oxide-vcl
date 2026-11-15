@@ -1,0 +1,4 @@
+input.vcl(4): error: block macro 'B' cannot be invoked in an #if expression
+   4 | #if B{ }
+     |     ^
+oxide-vcl: 1 error; no output written

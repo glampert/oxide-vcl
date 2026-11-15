@@ -1,0 +1,3 @@
+input.vcl(2): warning: 'FOO' is not defined, evaluates to 0 [--warn-undef]
+   2 | #if FOO || defined(BAR) || false
+     |     ^^^

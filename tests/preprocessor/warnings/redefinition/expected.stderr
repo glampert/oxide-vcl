@@ -1,0 +1,6 @@
+input.vcl(3): warning: 'A' redefined
+   3 | #define A 2
+     |         ^
+input.vcl(2): note: the previous definition is here
+   2 | #define A 1
+     |         ^

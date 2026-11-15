@@ -1,0 +1,4 @@
+input.vcl(1): error: #error stop here, please
+   1 | #error stop here, please
+     |  ^
+oxide-vcl: 1 error; no output written

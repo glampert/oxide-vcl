@@ -2,8 +2,8 @@
 
 A guide to writing vector unit (VU) programs for `oxide-vcl`, this project's
 compatible reimplementation of the VCL compiler (vcl 1.4beta7). It covers the
-source language, every `--` annotation and `.` directive, and the command
-line.
+source language, every `--` annotation and `.` directive, the preprocessor
+and the command line.
 
 VCL takes VU code written as a plain list of instructions, one per line, in
 program order, with symbolic register names. It works out the dependencies,
@@ -807,6 +807,190 @@ prog.vcl(6): note: 'ta' does not fit in the VF registers: it is kept in vu1 data
   use. A loop whose pipelined schedule still does not fit is compiled as a
   plain loop.
 
+## Preprocessor
+
+`-G` and `-g` run a preprocessor over the source before compiling it, in the
+same run. It is [vclpp](https://github.com/glampert/vclpp) 2's, the
+preprocessor the PS2 ports of Quake II and Doom 3 build their VU programs
+with:
+
+- `-G`, standard mode: C's directives, block macros and `#vuprog`;
+- `-g`, MASP mode: the macro language of masp and GASP, the assembler
+  preprocessors classic VU code was written for, then C's directives over
+  the result.
+
+`--preprocess-only` writes the preprocessed source instead of compiling it.
+Errors and warnings name the file, line and column at fault, the chain of
+`#include`s that led there and the macros the code came out of. The
+compiler's own messages about preprocessed code name the line the code was
+written on, in whichever file that is.
+
+### Standard mode (`-G`)
+
+Comments and blank lines are left out of the output, and each line of code
+keeps its indentation. `;`, `//` and `/* */` comments all work.
+
+```text
+#define kWindowA   10
+#define kWindowB   (kWindowA + kWindowSize)
+#define ADDR(base, offset)  ((base) + (offset))
+#define STR(x)     #x
+#define LABEL(n)   l ## n ## Loop
+```
+
+`#define` defines a constant, or with a parameter list straight after the
+name a function-like macro, as in C: `#` turns an argument into a string,
+`##` pastes two tokens together, and `...` takes any number of arguments, as
+`__VA_ARGS__`. A macro applies to the code after its definition, and what it
+expands to is expanded again, so macros can be made of other macros. A
+function-like macro's name without an argument list after it is left alone.
+
+**Block macros** hold lines of code:
+
+```text
+#macro MatrixMultiplyVertex: result, matrix, vertex
+    mul  acc,    matrix[0], vertex[x]
+    madd acc,    matrix[1], vertex[y]
+    madd acc,    matrix[2], vertex[z]
+    madd result, matrix[3], vertex[w]
+#endmacro
+
+    MatrixMultiplyVertex{ vPos, fMVP, vPos }
+```
+
+The invocation is replaced by the body's lines. Arguments are separated by
+commas, and brackets of any kind group them, so an argument can be an
+expression like `kBase + 3`; an argument list can continue on the next lines.
+A block macro can invoke other block macros and use any other macro, and `##`
+works in its body. A block macro that invokes itself, directly or through
+others, is an error, and so is `Name{ ... }` with no `#macro Name` before it.
+
+**Include files**: `#include "file"` is looked for next to the file that
+includes it, then in the `-I` directories in order, then in the working
+directory; `#include <file>` only in the `-I` directories. `#pragma once` and
+include guards work as in C.
+
+**Conditionals**: `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else` and `#endif`
+work as in C, with `defined` and C's integer operators. A name that is not a
+macro counts as 0 (`--warn-undef` warns about it), and `true` and `false`
+count as 1 and 0. Also available: `#undef`, `#error`, `#warning` and
+`#pragma once`.
+
+**Programs**: `#vuprog Name` ... `#endvuprog` mark the program; the name
+becomes VCL's `.name` directive. The preprocessor warns if either is missing.
+
+**Built-in macros**: `__FILE__`, `__LINE__`, `__COUNTER__`, and `__VCLPP__`,
+which is 2.
+
+A complete program, compiled with `oxide-vcl -G -uDEMO scale.vcl`:
+
+```text
+#macro ScaleVector: result, vector
+    mul result, vector, factor[x]
+#endmacro
+
+#vuprog ScaleVector
+.init_vf_all
+.syntax new
+.vu
+--enter
+in_vf vector(vf01)
+in_vf factor(vf02)
+--endenter
+    ScaleVector{ scaled, vector }
+--exit
+out_vf scaled(vf03)
+--endexit
+#endvuprog
+```
+
+### Preprocessor options
+
+They apply with `-G` or `-g`, in either mode, and are an error without them.
+
+| Option | Effect |
+| --- | --- |
+| `-I<dir>` | Look for included files in `dir`. May be repeated. |
+| `--define=<name>[=<value>]` | Define a macro before the source, as `#define name value` (the value is 1 by default). With `-g` it sets the masp variable `\&name` instead. |
+| `--vcl-boilerplate` | Put `.init_vi_all`, `.init_vf_all`, `.syntax new`, `.vu` and empty `--enter` and `--exit` blocks around the code. |
+| `--fold-constants` | Replace each integer constant expression that stands on its own by its value: `1010 + 0(vi00)` becomes `1010(vi00)`. One that an operator next to it would take part in, like the `1 - 2` in `a - 1 - 2`, is left alone. |
+| `--flatten-subscripts` | Turn a subscript of one digit, or of `w`, `x`, `y` or `z`, into a suffix: `matrix[0]` becomes `matrix_0`, `vf01[x]` becomes `vf01x`. |
+| `--warn-undef` | Warn when an `#if` reads a name that is not a macro as 0. |
+| `--comment-char=<c>` | With `-g`: make `c` start comments as well as `;`. |
+| `--preprocess-only` | Write the preprocessed source to `-o` or standard output, and stop. |
+| `--warnings-as-errors` | Also fails a run whose preprocessing printed a warning, before anything is written. |
+
+`--vcl-boilerplate` declares `.init_vi_all`, so VI01 is allocable too: VCL
+keeps VI01 free across the FCAND, FCEQ and FCOR that write it (observed from
+vcl 1.4beta7, probe `vi01-n15-fc`). vclpp lists VI02 to VI14 instead, for
+openvcl, which does not.
+
+### MASP mode (`-g`)
+
+```text
+        .macro  dot3    output, vec1, vec2, op=mul
+        \op.xyz \output, \vec1, \vec2
+        .endm
+
+loop:   dot3    vf01, vf02, vf03            ; mul.xyz vf01, vf02, vf03
+        dot3    vf01, vf02, vf03, op=add    ; add.xyz vf01, vf02, vf03
+        iaddiu  vi02, vi00,
++               kOffset                     ; '+' in column 1 continues a line
+```
+
+**Lines**: a name in column 1 is a label, which may go without its colon (one
+is added). Code and directives are indented. Comments and blank lines are
+left out of the output.
+
+**Macros**: `.macro name params` ... `.endm`. A macro is invoked by its name,
+followed by a space or the end of the line, then its arguments, separated by
+commas; quotes keep a comma inside an argument. Macro names ignore case,
+parameter names do not. A parameter can have a default value, and an argument
+can name its parameter, as `op=add` does; after one argument given by name,
+the rest have to be too. A missing argument takes its default, or is empty.
+`name .macro params`, with the name in column 1, defines a macro too.
+
+In the body, `\name` is replaced by the argument wherever it appears, even
+inside a word; the name is the longest one after the backslash, and one that
+is no parameter's is left as written. `\@` is the number of expansions before
+this one, from 0, which gives each expansion labels of its own. The expanded
+lines are read again, so they can invoke other macros and use any directive.
+`.exitm` ends an expansion early. A macro can invoke itself as long as an
+`.aif` stops it; expansions nest up to 200 deep.
+
+**Conditionals**: `.aif`, `.aelse`, `.aendi`. `.aif` compares two operands
+with `EQ`, `NE`, `LT`, `LE`, `GT` or `GE`, in any case. Two quoted strings
+compare as text; anything else is an integer expression. An `.aif` with no
+comparison holds if its value is not 0.
+
+**Loops**: `.arepeat count` ... `.aendr` repeats its lines, and `.awhile
+condition` ... `.aendw` repeats them while the condition holds. Either stops
+after 100000 passes.
+
+**Variables and constants**: `name .assignc "text"` gives a variable some
+text, `name .assigna expression` the value of an integer expression, and
+`\&name` is replaced by the value anywhere. `name .equ expression` gives a
+name a value, which replaces the name wherever it appears as a whole word,
+even inside quotes. The name goes in column 1; an indented `.equ` passes
+through to VCL.
+
+**Files**: `.include "file"` looks next to the including file, then in the
+`-I` directories, then in the working directory. `.end` ends the program,
+even in an included file; the preprocessor warns if there is none.
+
+**Other directives** pass through as code: VCL's `.name`, `.init_vf_all` or
+`.align`, for example. GASP's data and listing directives are errors:
+`.data`, `.datab`, `.sdata`, `.sdatab`, `.sdataz`, `.sdatac`, `.res`,
+`.sres`, `.sresc`, `.sresz`, `.print`, `.heading`, `.page`, `.form`, `.org`,
+`.radix`, `.alternate`, `.program`, `.export` and `.assign`. `-g+` (gasp's
+alternate syntax) is not supported.
+
+**C directives**: lines that start with `#` are carried out after masp's
+directives, in order, as cpp would run over masp's output. `#include` takes
+only a header's directives, as `cpp -imacros` does, since VU code shares its
+headers with C code. `#macro`, `Name{ }` and `#vuprog` are not available in
+MASP mode.
+
 ## Command line
 
 ```sh
@@ -830,12 +1014,12 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-u<name>` | Use `name` instead of the file name for generated and unique labels. |
 | `-U` | Make all labels except globals unique, like `.unique`. |
 | `-n` | Start in new syntax. |
-| `-G` | Run the C preprocessor first: `gcc -P -E -C -x assembler-with-cpp`. |
-| `-g` | Run gasp first, for macros and source line information: `gasp -p -s -c ';'`. |
-| `-g+` | Run gasp with its alternate syntax: `gasp -p -a -s -c ';'`. |
-| `-I<dir>` | Pass an include directory to the preprocessors. |
-| `-W` | Skip all preprocessing. |
-| `-K` | Keep the preprocessors' temporary files. |
+| `-G` | Preprocess the source first, in standard mode: C directives, `#macro` blocks and `#vuprog` (see [Preprocessor](#preprocessor)). |
+| `-g` | Preprocess the source first, in MASP mode: masp's `.macro`, `.aif`, `.include` and the rest, then C directives. |
+| `-g+` | gasp's alternate syntax: accepted on the command line, but an error when preprocessing runs. |
+| `-I<dir>` | Look for included files in `dir`. May be repeated. |
+| `-W` | Skip preprocessing. |
+| `-K` | Accepted; preprocessing keeps no temporary files. |
 | `-L` | Do not pipeline loops. |
 | `-d` | Plain in-order code only; implies `-L`. |
 | `-C` | Skip the code size reduction pass. |
@@ -850,11 +1034,15 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `--no-opt=<names>` | With `--mode=oxide` only: do not run the named optimizations, whatever `--opt=` chose, in any order. May be repeated. |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
 
-The preprocessing stages run in the order `-G`, `-g`, `-g+`, each on the
-previous stage's output; any combination may be given.
+`-g` with `-G` is MASP mode, which runs C's directives too. The
+preprocessor's own long options are listed under [Preprocessor
+options](#preprocessor-options). vcl 1.4beta7 runs `gcc -P -E -C -x
+assembler-with-cpp` for `-G` and `gasp` for `-g`; oxide-vcl runs no external
+program.
 
-`--mode`, `--fix`, `--opt`, `--no-opt` and `--warnings-as-errors` are oxide-vcl's own options;
-vcl 1.4beta7 has no long options and rejects them as unknown switches.
+`--mode`, `--fix`, `--opt`, `--no-opt`, `--warnings-as-errors` and the
+preprocessor's options are oxide-vcl's own; vcl 1.4beta7 has no long options
+and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer
 time limit; `oxide-vcl` has none), `-S`, `-D`, `-Q`, `-a` and `-p` (Microsoft-style
@@ -930,7 +1118,9 @@ loop's with `__u0` and `__u1` after them.
 ```sh
 oxide-vcl -oskin.vsm skin.vcl                 # compile to a file
 oxide-vcl -uSkin -U -oskin.vsm skin.vcl       # unique labels with prefix Skin
-oxide-vcl -g -Iinclude -oskin.vsm skin.vcl    # expand gasp macros first
+oxide-vcl -G -Iinclude -oskin.vsm skin.vcl    # preprocess, then compile
+oxide-vcl -g -Ivu1 -oskin.vsm skin.vcl        # masp source
+oxide-vcl -G --preprocess-only skin.vcl       # see the preprocessed source
 oxide-vcl -m0 -jskin.h -oskin.vsm skin.vcl    # MPG packet plus label header
 cat skin.vcl | oxide-vcl -q > skin.vsm        # filter mode
 ```

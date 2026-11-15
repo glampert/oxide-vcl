@@ -1,0 +1,1 @@
+-G --define=FLAG --define=VALUE=40+2 --define=EMPTY=

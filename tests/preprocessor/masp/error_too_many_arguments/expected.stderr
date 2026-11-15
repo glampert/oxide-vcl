@@ -1,0 +1,4 @@
+input.vcl(4): error: too many arguments for macro 'one': it takes 1
+   4 |     one 1, 2
+     | ^
+oxide-vcl: 1 error; no output written

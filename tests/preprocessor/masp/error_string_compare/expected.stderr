@@ -1,0 +1,4 @@
+input.vcl(1): error: .aif: a quoted string can only be compared with another one
+   1 |     .aif "a" EQ 1
+     | ^
+oxide-vcl: 1 error; no output written

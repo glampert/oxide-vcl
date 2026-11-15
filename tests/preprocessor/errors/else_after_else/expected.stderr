@@ -1,0 +1,4 @@
+input.vcl(3): error: #else after #else
+   3 | #else
+     |  ^^^^
+oxide-vcl: 1 error; no output written

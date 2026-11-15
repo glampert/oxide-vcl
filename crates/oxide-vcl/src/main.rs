@@ -1,5 +1,5 @@
 //! `oxide-vcl`: the command-line driver. It parses the original's command line,
-//! runs the optional preprocessors, compiles with the `vcl` crate and writes
+//! runs the optional preprocessor, compiles with the `vcl` crate and writes
 //! the results, with the original's exit status in vcl mode (255 on any
 //! failure).
 //!
@@ -7,105 +7,64 @@
 
 use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::Command;
 use vcl::diagnostics::{Diagnostic, DriverMessage, Reporter};
+use vcl::preprocessor::{self, FileSystem, PreprocessFailure};
 use vcl_cli::{self as cli, Arguments};
 
-/// The original's preprocessing stages, in the order it runs them: the C
-/// preprocessor (`-G`), gasp (`-g`) and gasp with its alternate syntax (`-g+`).
-/// Each enabled stage reads the previous stage's output.
-fn preprocess(
-    mut source: Vec<u8>,
-    arguments: &Arguments,
-    reporter: &mut Reporter,
-) -> Result<Vec<u8>, DriverMessage> {
-    if arguments.skip_preprocessing {
-        return Ok(source);
-    }
-    let stages: [(bool, &str, &[&str]); 3] = [
-        (
-            arguments.preprocess_cpp,
-            "gcc",
-            &["-P", "-E", "-C", "-x", "assembler-with-cpp"],
-        ),
-        (arguments.preprocess_gasp, "gasp", &["-p", "-s", "-c", ";"]),
-        (
-            arguments.preprocess_gasp_alternate,
-            "gasp",
-            &["-p", "-a", "-s", "-c", ";"],
-        ),
-    ];
-    for (stage, (enabled, program, switches)) in stages.into_iter().enumerate() {
-        if enabled {
-            source = run_stage(stage, program, switches, &source, arguments, reporter)?;
-        }
-    }
-    Ok(source)
+/// Whether the source is preprocessed: `-G`, `-g` or `-g+`, without `-W`.
+fn preprocesses(arguments: &Arguments) -> bool {
+    !arguments.skip_preprocessing
+        && (arguments.preprocess_cpp
+            || arguments.preprocess_gasp
+            || arguments.preprocess_gasp_alternate)
 }
 
-/// Run one stage on a temporary copy of the source, as the original does
-/// (`program switches -I... input > output`). `-K` keeps both files.
-fn run_stage(
-    stage: usize,
-    program: &str,
-    switches: &[&str],
-    source: &[u8],
+/// Runs the preprocessor over the source, in standard mode for `-G` and in
+/// MASP mode for `-g`. Its warnings are printed here; the files it read are
+/// handed to the reporter for quoting.
+fn preprocess(
+    source: String,
     arguments: &Arguments,
     reporter: &mut Reporter,
-) -> Result<Vec<u8>, DriverMessage> {
-    let temporary = |kind: &str| -> PathBuf {
-        std::env::temp_dir().join(format!("vcl{kind}_{}_{stage}", std::process::id()))
-    };
-    let (input, output) = (temporary("i"), temporary("o"));
-    let display = |path: &PathBuf| path.display().to_string();
-    std::fs::write(&input, source).map_err(|e| DriverMessage::WriteTemporary {
-        path: display(&input),
-        error: e.to_string(),
-    })?;
-    let result = (|| {
-        let file = std::fs::File::create(&output).map_err(|e| DriverMessage::CreateTemporary {
-            path: display(&output),
-            error: e.to_string(),
-        })?;
-        let status = Command::new(program)
-            .args(switches)
-            .args(&arguments.preprocessor_arguments)
-            .arg(&input)
-            .stdout(file)
-            .status()
-            .map_err(|e| DriverMessage::StartPreprocessor {
-                program: program.into(),
-                error: e.to_string(),
-            })?;
-        if !status.success() {
-            return Err(DriverMessage::PreprocessorFailed {
-                program: program.into(),
-                status: status.to_string(),
-            });
-        }
-        std::fs::read(&output).map_err(|e| DriverMessage::ReadTemporary {
-            path: display(&output),
-            error: e.to_string(),
-        })
-    })();
-    if arguments.keep_temps {
-        if !arguments.quiet {
-            reporter.report(&Diagnostic::info(DriverMessage::KeptTemporaries {
-                input: display(&input),
-                output: display(&output),
-            }));
-        }
-    } else {
-        let _ = std::fs::remove_file(&input);
-        let _ = std::fs::remove_file(&output);
+) -> Result<String, RunError> {
+    if !preprocesses(arguments) {
+        return Ok(source);
     }
-    result
+    if arguments.preprocess_gasp_alternate {
+        return Err(DriverMessage::AlternateSyntax.into());
+    }
+    let result = preprocessor::preprocess(
+        input_name(arguments),
+        &source,
+        &arguments.preprocess,
+        &FileSystem,
+    );
+    let (files, warnings) = match &result {
+        Ok(done) => (&done.files, &done.warnings),
+        Err(failure) => (&failure.files, &failure.warnings),
+    };
+    for file in files {
+        reporter.add_source(&file.name, &file.text);
+    }
+    for warning in warnings {
+        reporter.report(warning);
+    }
+    let preprocessed = result.map_err(RunError::Preprocess)?;
+    // Warnings that fail the run stop it before anything is written.
+    if arguments.warnings_as_errors && reporter.warnings() > 0 {
+        return Err(RunError::Warnings);
+    }
+    // The compiler's diagnostics name the line each one came from.
+    reporter.set_line_origins(preprocessed.line_origins);
+    Ok(preprocessed.text)
 }
 
 /// Why a run stopped.
 enum RunError {
-    /// A file, stream or preprocessor failure.
+    /// A file or stream failure.
     Driver(DriverMessage),
+    /// The preprocessor stopped at an error.
+    Preprocess(Box<PreprocessFailure>),
     /// The program did not compile.
     Compile(Vec<vcl::CompileError>),
     /// `--warnings-as-errors`, and warnings were printed.
@@ -138,8 +97,11 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
             })?;
         source
     };
-    let source = preprocess(source, arguments, reporter)?;
     let source = String::from_utf8(source).map_err(|_| DriverMessage::NotUtf8)?;
+    let source = preprocess(source, arguments, reporter)?;
+    if arguments.preprocess_only {
+        return write_preprocessed(&source, arguments, reporter);
+    }
     reporter.set_source(input_name(arguments), &source);
     let filename = arguments.input.as_deref().unwrap_or("_stdin_");
     let output = vcl::compile(&source, filename, &arguments.compile).map_err(RunError::Compile)?;
@@ -189,6 +151,24 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
             }
         }
     }
+    Ok(())
+}
+
+/// `--preprocess-only`: the preprocessed source, to `-o` or standard output.
+fn write_preprocessed(
+    source: &str,
+    arguments: &Arguments,
+    reporter: &mut Reporter,
+) -> Result<(), RunError> {
+    if let Some(path) = &arguments.output {
+        write_all_or_nothing(&[(path.as_str(), source.as_bytes())])?;
+        return Ok(());
+    }
+    reporter
+        .text(source)
+        .map_err(|e| DriverMessage::WriteStandardOutput {
+            error: e.to_string(),
+        })?;
     Ok(())
 }
 
@@ -267,6 +247,10 @@ fn main() {
         Err(RunError::Compile(errors)) => {
             let diagnostics: Vec<Diagnostic> = errors.iter().map(|e| e.diagnostic()).collect();
             reporter.compile_errors(&diagnostics);
+            std::process::exit(failure_status);
+        }
+        Err(RunError::Preprocess(failure)) => {
+            reporter.compile_errors(&[failure.error]);
             std::process::exit(failure_status);
         }
         Err(RunError::Warnings) => {

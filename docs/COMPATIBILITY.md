@@ -90,8 +90,11 @@ where the known boundary lies.
   stream boundaries is incomplete ([FINAL_REDUCTION.md](FINAL_REDUCTION.md)).
 - Some special emitter hooks and memory-alias ordering refinements are
   missing.
-- Generated labels, statistics, preprocessing flags and label-header output
-  follow the recovered paths only in part
+- `-G` and `-g` run the port's own preprocessor, vclpp's, where vcl
+  1.4beta7 runs `gcc` and `gasp`; `-g+`, gasp's alternate syntax, is an error
+  when preprocessing runs ([PREPROCESSOR.md](PREPROCESSOR.md)).
+- Generated labels, statistics and label-header output follow the recovered
+  paths only in part
   ([OUTPUT_FORMAT.md](OUTPUT_FORMAT.md)). The listing carries vcl's
   banners, table comments, register statistics and `-c` comments, but not
   its loop optimizer report; the bracketed numbers of a table comment and

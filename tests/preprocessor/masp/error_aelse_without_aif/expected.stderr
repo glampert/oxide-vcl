@@ -1,0 +1,4 @@
+input.vcl(1): error: .aelse without .aif
+   1 |     .aelse
+     | ^
+oxide-vcl: 1 error; no output written

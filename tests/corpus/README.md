@@ -27,6 +27,12 @@ Each program has its own directory, in the format of the local corpora
 - `source.vcl` (`openvcl__examples_triangle-gasp_vu1Triangle` only): the
   example before masp preprocessing.
 
+`sources/<project>/` holds the files vclpp read to make the doom3-bfg-ps2,
+quake2-ps2, tyra and ps2gl inputs, at the commits their headers name and
+under their projects' licenses (below), laid out as in each repository. The
+preprocessor's tests make the inputs again from them
+([docs/TESTING.md](../../docs/TESTING.md#preprocessor)).
+
 Names are `project__path`: the repository name, then the file's path in it
 with `/` turned into `_` and the extension dropped. The fjtrujy/openvcl fork's
 `test/repro/quad_adc_bug.vcl` differs from glampert/openvcl's and gets an

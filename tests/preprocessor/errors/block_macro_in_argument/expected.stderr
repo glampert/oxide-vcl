@@ -1,0 +1,4 @@
+input.vcl(6): error: block macro 'B' cannot be invoked in a macro argument
+   6 |     F(B{ })
+     |       ^
+oxide-vcl: 1 error; no output written

@@ -22,6 +22,9 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
 - Defects of the original that the port reproduces by default, and the
   opt-in fixes for them (`--fix=`, or every one with `--mode=oxide`), are in
   [VCL_BUGS.md](docs/VCL_BUGS.md).
+- `-G` and `-g` preprocess the source in the same run, with the port's own
+  preprocessor: [vclpp](https://github.com/glampert/vclpp)'s C directives,
+  block macros and MASP mode ([VCL_REFERENCE.md](docs/VCL_REFERENCE.md#preprocessor)).
 - Oxide mode also optimizes beyond the original: `exit`, `loops` and
   `unswitch`, each of which `--no-opt=NAME` turns off. They are described
   in [VCL_REFERENCE.md](docs/VCL_REFERENCE.md#optimizations) and
@@ -63,11 +66,13 @@ The Cargo workspace has two crates:
   wrangler, row timing and clean-up), `loops` (modulo scheduling and loop
   expansion), `allocator` (register assignment), `emit` (assembly formatting)
   and `compiler`, which runs the phases over a program. `vcl::compile` is the
-  entry point and `vcl::Options` its settings.
+  entry point and `vcl::Options` its settings; `preprocessor` runs before it
+  for `-G` and `-g` (`vcl::preprocessor::preprocess`).
 - `crates/oxide-vcl`, the `oxide-vcl` command-line driver: the entry point, the
   original's command-line rules (`cli.rs`, also a small library target so the
-  tests share it), preprocessing and file handling. Its `tests/` hold the
-  integration tests; the public corpus they compile is `tests/corpus/`.
+  tests share it) and file handling. Its `tests/` hold the integration tests;
+  the public corpus they compile is `tests/corpus/`, and the preprocessor's
+  cases are in `tests/preprocessor/`.
 
 The workspace version (`Cargo.toml`) is the project's version; `oxide-vcl -h`
 prints it with the build date.
@@ -139,6 +144,7 @@ How vcl 1.4beta7 works, and how the port reproduces it:
 - [Raw reorder and external readiness](docs/RAW_BOUNDARIES.md)
 - [Final dispatch reduction](docs/FINAL_REDUCTION.md)
 - [Assembly output, label headers and preprocessing](docs/OUTPUT_FORMAT.md)
+- [Preprocessor](docs/PREPROCESSOR.md)
 
 Testing and evidence:
 

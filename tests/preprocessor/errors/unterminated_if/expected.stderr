@@ -1,0 +1,4 @@
+input.vcl(2): error: unterminated #if: missing #endif
+   2 | #if 1
+     |  ^^
+oxide-vcl: 1 error; no output written

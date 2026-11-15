@@ -1,0 +1,4 @@
+input.vcl(1): error: #macro is not available in MASP mode: use .macro
+   1 | #macro Foo
+     |  ^^^^^
+oxide-vcl: 1 error; no output written

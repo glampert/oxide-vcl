@@ -22,6 +22,9 @@ establishes complete VCL or PlayStation 2 compatibility.
   covers at the listing level ([tests/probes/README.md](../tests/probes/README.md)).
   A short list of known differences, each with its reason, is allowed.
 - `crates/oxide-vcl/tests/local_corpus.rs` checks the local corpora (below).
+- `crates/oxide-vcl/tests/preprocessor.rs` checks the preprocessor against
+  vclpp's test suite and against the corpus inputs vclpp produced
+  ([Preprocessor](#preprocessor)).
 
 ## Original controls by area
 
@@ -342,4 +345,24 @@ VCL_PROFILE=<case> cargo test --release --test scenes scene_profile -- --ignored
 
 The scenes are synthetic: they follow the hosts' memory layouts, not
 recorded frames, so how often each path runs is a model of a frame.
+
+## Preprocessor
+
+The preprocessor (`-G`, `-g`) follows vclpp 2, not the original, which runs
+external programs ([PREPROCESSOR.md](PREPROCESSOR.md)), so its tests compare
+with vclpp:
+
+- `tests/preprocessor/<group>/<case>/` is vclpp's own test suite: 82 cases in
+  `compat`, `errors`, `features`, `masp` and `warnings`. `preprocessor.rs`
+  runs `oxide-vcl <args> --preprocess-only input.vcl` in each case's
+  directory: with `expected.vsm` it must succeed and print exactly that,
+  without it fail and print nothing, and its diagnostics must equal
+  `expected.stderr`. The outputs are vclpp's but for `--vcl-boilerplate`'s
+  `.init_vi_all`; the diagnostics are vclpp's in the `Reporter`'s layout.
+  `VCL_UPDATE_PREPROCESSOR=1` rewrites the expected files.
+- `vclpp_made_corpus_inputs_come_out_the_same` preprocesses the sources in
+  `tests/corpus/sources/` (doom3-bfg-ps2, quake2-ps2, tyra and ps2gl, at the
+  commits the corpus headers name) with the vclpp flags each header records,
+  and requires each of the 22 inputs back, but for the boilerplate's
+  `.init_vi` line.
 

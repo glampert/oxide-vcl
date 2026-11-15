@@ -30,10 +30,11 @@ pub mod isa;
 pub mod loops;
 mod options;
 pub mod parser;
+pub mod preprocessor;
 pub mod scheduler;
 
 pub use compiler::{CompileError, Compiled, compile};
-pub use diagnostics::{Diagnostic, Message, Mode};
+pub use diagnostics::{Diagnostic, Message, Mode, Note, SourceLocation};
 pub use options::{Fix, Fixes, Optimization, Optimizations, Options};
 
 /// The project's version, shared by every crate in the workspace.

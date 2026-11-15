@@ -1,0 +1,6 @@
+INFO: OS_Init(Linux)
+INFO2: REMOVE INST:   ---> [***{lq}***] {vPos},{0(vi00)} 
+INFO2: REMOVE INST:   ---> [***{clipw.xyz}***] {vPos},{vPos[w]} 
+INFO: Opt::Linear       __v_DEMO_4  30/30
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

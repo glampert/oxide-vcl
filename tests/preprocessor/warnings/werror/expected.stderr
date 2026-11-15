@@ -1,0 +1,4 @@
+input.vcl(2): error: 'FOO' is not defined, evaluates to 0 [--warn-undef] [--warnings-as-errors]
+   2 | #if FOO
+     |     ^^^
+oxide-vcl: 1 error; no output written

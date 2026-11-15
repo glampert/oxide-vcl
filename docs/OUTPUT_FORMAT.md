@@ -159,14 +159,13 @@ parser hook):
 Descriptor records: `local/evidence/tables/instructions.json` (local, not
 tracked). See [Move lifecycle](EXTERNAL_ALLOCATION.md#generated-moves-are-a-different-subsystem).
 
-## External preprocessing and location records
+## Preprocessing
 
-`-G`, `-g`, and `-g+` each enable one stage independently (`-g+` accepts
-trailing text after the plus). Enabled stages run in this fixed order, each on
-the previous stage's output; enabling both gasp options runs both passes.
-`-W` and `-w` skip all stages. The port's `oxide-vcl` driver
-(`crates/oxide-vcl/src/main.rs`) runs the same commands, forwarding the `-I...`
-arguments in their original spelling and order; `-D` is handled by VCL itself.
+vcl 1.4beta7 preprocesses with external programs. `-G`, `-g`, and `-g+` each
+enable one stage independently (`-g+` accepts trailing text after the plus).
+Enabled stages run in this fixed order, each on the previous stage's output;
+`-W` and `-w` skip all stages. `-I...` arguments are passed to each program
+in their original spelling and order.
 
 | Stage | Option | Command |
 | --- | --- | --- |
@@ -174,21 +173,19 @@ arguments in their original spelling and order; `-D` is handled by VCL itself.
 | 1 | `-g` | `gasp -p -s -c ';'` |
 | 2 | `-g+` | `gasp -p -a -s -c ';'` |
 
-Each stage writes its input to a temporary file, creates a second temporary
-file for the result, runs the command as `program switches -I... input >
-output` with no added shell quoting, and on zero status reads the output file
-for the next stage. Temporary files are removed afterwards; `-K` keeps them.
-vcl 1.4beta7 names them `/tmp/vcli_{name}.XXXXXX` and
-`/tmp/vclo_{name}.XXXXXX` and runs the command through `system`; the port
-creates its files in the system temporary directory and starts the program
-directly.
+Each stage writes its input to `/tmp/vcli_{name}.XXXXXX`, runs the command
+through `system` as `program switches -I... input > output` into
+`/tmp/vclo_{name}.XXXXXX`, and on zero status reads that file for the next
+stage; `-K` keeps the files (inferred from vcl 1.4beta7; the flag fixture
+`local/evidence/oracle/cli-gplus-tail` (local, not tracked) uses `-W`, so it
+checks option parsing only).
 
-The flag-acceptance fixture `local/evidence/oracle/cli-gplus-tail/result.json`
-uses `-W`, so it checks option parsing only. A successful run of each external
-tool has no dedicated fixture.
+oxide-vcl runs no external program: `-G` and `-g` run its own preprocessor,
+vclpp's ([PREPROCESSOR.md](PREPROCESSOR.md)), and `-g+` is an error when
+preprocessing runs. `-K` has nothing to keep.
 
-When gasp handling is enabled, the line processor passes semicolon location
-lines to a location decoder (inferred from vcl 1.4beta7). The decoder reads up
+When gasp handling is enabled, vcl 1.4beta7's line processor passes semicolon
+location lines to a location decoder (inferred from vcl 1.4beta7). The decoder reads up
 to sixteen nonzero dot-separated location numbers. A depth increase of more
 than one is an error. A one-level increase needs a pending include or macro
 marker; the pending macro slot is tested first and uses tag kind 2, and the
@@ -196,4 +193,5 @@ pending include slot uses kind 1. The scanner recognizes `.include`
 case-insensitively and remembers the following token in the include slot; an
 ordinary candidate token can fill the macro slot. The decoder commits the new
 depth and per-level counters after scanning the line. The resulting
-include/macro location text has no dedicated fixture.
+include/macro location text has no dedicated fixture. The port's preprocessor
+writes no location lines; the driver maps diagnostics to source lines itself.

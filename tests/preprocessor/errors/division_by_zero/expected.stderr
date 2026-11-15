@@ -1,0 +1,4 @@
+input.vcl(1): error: #if: integer division by zero in preprocessor expression
+   1 | #if 1 / 0
+     |  ^
+oxide-vcl: 1 error; no output written

@@ -1,0 +1,4 @@
+input.vcl(1): error: #if: floating-point number '1.5' in an integer expression
+   1 | #if 1.5
+     |     ^^^
+oxide-vcl: 1 error; no output written

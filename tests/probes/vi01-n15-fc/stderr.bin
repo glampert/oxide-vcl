@@ -1,0 +1,23 @@
+INFO: OS_Init(Linux)
+INFO: VU User integer
+INFO:  LOCAL :          iVar1__0__0 - UNALLOCATED
+INFO:  LOCAL :          iVar2__0__0 - VI15
+INFO:  LOCAL :          iVar3__0__0 - VI14
+INFO:  LOCAL :          iVar4__0__0 - VI13
+INFO:  LOCAL :          iVar5__0__0 - VI12
+INFO:  LOCAL :          iVar6__0__0 - VI11
+INFO:  LOCAL :          iVar7__0__0 - VI10
+INFO:  LOCAL :          iVar8__0__0 - VI09
+INFO:  LOCAL :          iVar9__0__0 - VI08
+INFO:  LOCAL :         iVar10__0__0 - VI07
+INFO:  LOCAL :         iVar11__0__0 - VI06
+INFO:  LOCAL :         iVar12__0__0 - VI05
+INFO:  LOCAL :         iVar13__0__0 - VI04
+INFO:  LOCAL :         iVar14__0__0 - VI03
+INFO:  LOCAL :         iVar15__0__0 - VI02
+INFO:  LOCAL :                 VI01 - VI01
+INFO: VU User floating point
+INFO:  LOCAL :      vPos__0__0.XYZW - UNALLOCATED
+INFO: Opt::Linear       __v_DEMO_4  33/33
+INFO: skip target emit. .coz it's no longer visible
+INFO: OS_End(Linux)

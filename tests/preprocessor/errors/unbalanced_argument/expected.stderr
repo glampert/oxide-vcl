@@ -1,0 +1,4 @@
+input.vcl(5): error: unbalanced ')' in the arguments of macro 'M'
+   5 |     M{ vf01) }
+     |            ^
+oxide-vcl: 1 error; no output written

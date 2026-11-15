@@ -1,0 +1,4 @@
+input.vcl(1): error: extraneous comma after the last parameter 'b' of macro 'M'
+   1 | #macro M: a, b,
+     |               ^
+oxide-vcl: 1 error; no output written

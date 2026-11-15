@@ -45,18 +45,23 @@ pub struct Arguments {
     pub quiet: bool,
     /// Fail the run when it prints a warning (`--warnings-as-errors`).
     pub warnings_as_errors: bool,
-    /// Run the C preprocessor first (`-G`).
+    /// Preprocess in standard mode first (`-G`).
     pub preprocess_cpp: bool,
-    /// Run gasp (`-g`).
+    /// Preprocess in MASP mode first (`-g`).
     pub preprocess_gasp: bool,
-    /// Run gasp with its alternate syntax (`-g+`).
+    /// gasp's alternate syntax (`-g+`), which the preprocessor does not
+    /// support.
     pub preprocess_gasp_alternate: bool,
-    /// Skip every preprocessing stage (`-W`).
+    /// Skip preprocessing (`-W`).
     pub skip_preprocessing: bool,
-    /// Keep the preprocessing stages' temporary files (`-K`).
+    /// `-K`: accepted; the built-in preprocessor has no temporary files.
     pub keep_temps: bool,
-    /// `-I...` arguments, forwarded to the preprocessors in order.
-    pub preprocessor_arguments: Vec<String>,
+    /// The preprocessor's settings: `-I` and the long options below.
+    pub preprocess: vcl::preprocessor::PreprocessOptions,
+    /// `--preprocess-only`: write the preprocessed source and stop.
+    pub preprocess_only: bool,
+    /// The preprocessor's long options given, which need `-G` or `-g`.
+    pub preprocessor_options: Vec<String>,
     /// Notices in the original's parse order, already honoring `-q` at that point.
     pub notices: Vec<Diagnostic>,
 }
@@ -157,6 +162,15 @@ where
             }
             _ => {}
         }
+        // oxide-vcl's own options: vclpp's settings for the preprocessor.
+        if let Some(handled) = preprocessor_option(argument, &mut options) {
+            if let Err(message) = handled {
+                return Err(CliError::new(message, options));
+            }
+            options.preprocessor_options.push(argument.clone());
+            index += 1;
+            continue;
+        }
         // oxide-vcl's own option; vcl 1.4beta7 has no long options.
         if let Some(name) = argument.strip_prefix("--mode=") {
             let Some(mode) = vcl::Mode::from_name(name) else {
@@ -237,7 +251,11 @@ where
             ""
         };
         match selector {
-            b'I' => options.preprocessor_arguments.push(argument.clone()),
+            b'I' => {
+                if !value.is_empty() {
+                    options.preprocess.include_dirs.push(value.to_owned());
+                }
+            }
             b'A' | b'a' => options.info(CliMessage::AlwaysOn),
             b'C' => options.compile.disable_size_reduction = true,
             // Register dumps during external allocation: not produced.
@@ -303,11 +321,82 @@ where
     if arguments.len() - index > 1 {
         return Err(CliError::new(CliMessage::TooManyArguments, options));
     }
+    if let Some(argument) = options.preprocessor_options.first()
+        && !(options.preprocess_cpp || options.preprocess_gasp || options.preprocess_gasp_alternate)
+    {
+        let argument = argument.clone();
+        return Err(CliError::new(
+            CliMessage::PreprocessorOptionWithoutPreprocessor { argument },
+            options,
+        ));
+    }
+    options.preprocess.masp = options.preprocess_gasp;
+    // In MASP mode, as in masp, --define sets a variable rather than a macro.
+    if options.preprocess.masp {
+        options.preprocess.masp_variables = std::mem::take(&mut options.preprocess.defines);
+    } else if let Some((name, _)) = options
+        .preprocess
+        .defines
+        .iter()
+        .find(|(name, _)| name == "defined" || vcl::preprocessor::is_builtin_macro(name))
+    {
+        let name = name.clone();
+        return Err(CliError::new(
+            CliMessage::BadDefine {
+                argument: format!("--define={name}"),
+                name,
+            },
+            options,
+        ));
+    }
     options.input = arguments.get(index).cloned();
     if options.input.is_some() && options.input == options.output {
         return Err(CliError::new(CliMessage::SameInputAndOutput, options));
     }
     Ok(options)
+}
+
+/// One of the preprocessor's long options, set in `options`: `None` when
+/// `argument` is none of them.
+fn preprocessor_option(argument: &str, options: &mut Arguments) -> Option<Result<(), CliMessage>> {
+    let settings = &mut options.preprocess;
+    match argument {
+        "--vcl-boilerplate" => settings.vcl_boilerplate = true,
+        "--fold-constants" => settings.fold_constants = true,
+        "--flatten-subscripts" => settings.flatten_subscripts = true,
+        "--warn-undef" => settings.warn_undef = true,
+        "--preprocess-only" => options.preprocess_only = true,
+        _ => {
+            if let Some(definition) = argument.strip_prefix("--define=") {
+                let (name, value) = definition.split_once('=').unwrap_or((definition, "1"));
+                if !is_identifier(name) {
+                    return Some(Err(CliMessage::BadDefine {
+                        argument: argument.to_owned(),
+                        name: name.to_owned(),
+                    }));
+                }
+                settings.defines.push((name.to_owned(), value.to_owned()));
+            } else {
+                let chars = argument.strip_prefix("--comment-char=")?;
+                if chars.chars().count() != 1 {
+                    return Some(Err(CliMessage::BadCommentChar {
+                        argument: argument.to_owned(),
+                    }));
+                }
+                settings.comment_chars.push_str(chars);
+            }
+        }
+    }
+    Some(Ok(()))
+}
+
+/// A C identifier: a letter or `_`, then letters, digits and `_`.
+fn is_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// The fixes a `--fix=` list names: `all`, or fix names separated by commas.
@@ -674,11 +763,69 @@ mod tests {
                 && options.compile.disable_loops
         );
         assert!(options.preprocess_gasp_alternate && options.skip_preprocessing);
-        assert_eq!(options.preprocessor_arguments, ["-Iinclude"]);
+        assert_eq!(options.preprocess.include_dirs, ["include"]);
         assert!(
             *parse(["-gbad"]).unwrap_err().message()
                 == CliMessage::BadGaspOption {
                     argument: "-gbad".into()
+                }
+        );
+    }
+
+    #[test]
+    fn preprocessor_options_need_g_or_big_g() {
+        let options = parse([
+            "-G",
+            "-Ivu1",
+            "-Iinclude",
+            "--define=kBase=10",
+            "--define=FLAG",
+            "--vcl-boilerplate",
+            "--fold-constants",
+            "--flatten-subscripts",
+            "--warn-undef",
+            "--preprocess-only",
+            "in.vcl",
+        ])
+        .unwrap();
+        let settings = &options.preprocess;
+        assert!(!settings.masp);
+        assert_eq!(settings.include_dirs, ["vu1", "include"]);
+        assert_eq!(
+            settings.defines,
+            [("kBase".into(), "10".into()), ("FLAG".into(), "1".into())]
+        );
+        assert!(settings.vcl_boilerplate && settings.fold_constants);
+        assert!(settings.flatten_subscripts && settings.warn_undef);
+        assert!(options.preprocess_only);
+        // In MASP mode a definition sets a variable.
+        let masp = parse(["--define=count=3", "--comment-char=!", "-g"]).unwrap();
+        assert!(masp.preprocess.masp && masp.preprocess.defines.is_empty());
+        assert_eq!(
+            masp.preprocess.masp_variables,
+            [("count".into(), "3".into())]
+        );
+        assert_eq!(masp.preprocess.comment_chars, "!");
+        assert!(
+            *parse(["--fold-constants", "in.vcl"]).unwrap_err().message()
+                == CliMessage::PreprocessorOptionWithoutPreprocessor {
+                    argument: "--fold-constants".into()
+                }
+        );
+        for (argument, name) in [("--define=1x", "1x"), ("--define=__LINE__", "__LINE__")] {
+            assert!(
+                *parse(["-G", argument]).unwrap_err().message()
+                    == CliMessage::BadDefine {
+                        argument: format!("--define={name}"),
+                        name: name.into()
+                    },
+                "{argument}"
+            );
+        }
+        assert!(
+            *parse(["-g", "--comment-char=ab"]).unwrap_err().message()
+                == CliMessage::BadCommentChar {
+                    argument: "--comment-char=ab".into()
                 }
         );
     }

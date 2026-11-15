@@ -1,0 +1,7 @@
+input.vcl(5): error: argument 2 ('y') of block macro 'M' is empty
+   5 |     M{ vf01, , vf03 }
+     |     ^
+input.vcl(1): note: 'M' is defined here
+   1 | #macro M: x, y, z
+     |        ^
+oxide-vcl: 1 error; no output written

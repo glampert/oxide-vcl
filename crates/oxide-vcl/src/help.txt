@@ -21,12 +21,29 @@ output:
 
 input:
   -n             new syntax mode (like .syntax new)
-  -G             run the C preprocessor first (gcc -P -E -C -x assembler-with-cpp)
-  -g             run gasp first, for macros and source line information (gasp -p -s -c ';')
-  -g+            run gasp with its alternate syntax (gasp -p -a -s -c ';')
-  -I<dir>        pass an include directory to the preprocessors
-  -W             skip the preprocessors
-  -K             keep the preprocessors' temporary files
+  -G             preprocess first: C directives, #macro blocks and #vuprog
+  -g             preprocess masp source first: .macro, .aif, .include, ...,
+                 then C directives
+  -I<dir>        look for included files in <dir>; may be repeated
+  -W             skip preprocessing
+  -K             accepted for vcl's sake; preprocessing keeps no files
+
+preprocessing (with -G or -g, in either mode):
+  --define=<name>[=<value>]
+                 define a macro before the source (value 1 by default); with
+                 -g, set the masp variable \&<name> instead
+  --vcl-boilerplate
+                 add the usual .init_vi_all/.init_vf_all, .syntax new, .vu and
+                 empty --enter and --exit blocks around the code
+  --fold-constants
+                 replace integer constant expressions, like 1+2, by their values
+  --flatten-subscripts
+                 turn name[0] into name_0 and name[x] into namex
+  --warn-undef   warn when an #if reads a name that is not a macro as 0
+  --comment-char=<c>
+                 with -g, make <c> start comments as well as ';'
+  --preprocess-only
+                 write the preprocessed source (to -o or standard output) and stop
 
 code generation:
   -L             schedule loops as straight-line code

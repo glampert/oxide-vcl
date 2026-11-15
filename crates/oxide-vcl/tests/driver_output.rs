@@ -432,3 +432,88 @@ fn long_help_and_version() {
         }
     }
 }
+
+/// A block macro in an included file, with a mistake in its body.
+const LIBRARY: &str = "#macro Emit: reg\n\
+                       \x20   add reg, src, src\n\
+                       \x20   ad  reg, reg, src\n\
+                       #endmacro\n";
+
+/// A program that includes [`LIBRARY`] and invokes its macro.
+fn macro_program(macro_line: &str) -> String {
+    format!(
+        ".init_vf_all\n.syntax new\n.vu\n#vuprog\n#include \"lib.i\"\n--enter\n\
+         in_vf src(vf01)\n--endenter\n    {macro_line}\n--exit\nout_vf res(vf02)\n--endexit\n\
+         #endvuprog\n"
+    )
+}
+
+#[test]
+fn preprocessed_code_is_compiled_in_one_run() {
+    let library = LIBRARY.replace("ad  reg", "add reg");
+    let program = macro_program("Emit{ res }");
+    let files = [("prog.vcl", program.as_str()), ("lib.i", library.as_str())];
+    let run = run("pp-compile", &["-G", "-oprog.vsm", "prog.vcl"], &files);
+    assert_eq!((run.status, run.stderr.as_str()), (0, ""));
+    let listing = run.file("prog.vsm").unwrap();
+    assert!(listing.contains("add"), "{listing}");
+    // --preprocess-only stops at the preprocessed text.
+    let run = self::run("pp-only", &["-G", "--preprocess-only", "prog.vcl"], &files);
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    assert_eq!(
+        run.stdout,
+        ".init_vf_all\n.syntax new\n.vu\n--enter\nin_vf src(vf01)\n--endenter\n\n    \
+         add res, src, src\n    add res, res, src\n\n--exit\nout_vf res(vf02)\n--endexit\n"
+    );
+}
+
+#[test]
+fn compile_errors_in_preprocessed_code_name_the_line_it_came_from() {
+    let program = macro_program("Emit{ res }");
+    let files = [("prog.vcl", program.as_str()), ("lib.i", LIBRARY)];
+    let run = run("pp-origin", &["-G", "prog.vcl"], &files);
+    assert_eq!(run.status, 255);
+    assert_eq!(
+        run.stderr,
+        "lib.i(3): error: unknown instruction 'ad'\n   \
+         3 |     ad  reg, reg, src\n     \
+         |     ^^\n     \
+         = help: did you mean 'add'?\n\
+         oxide-vcl: 1 error; no output written\n"
+    );
+}
+
+#[test]
+fn preprocessor_errors_and_options() {
+    let program = macro_program("Emit{ }");
+    let files = [("prog.vcl", program.as_str()), ("lib.i", LIBRARY)];
+    let run = run("pp-error", &["--mode=oxide", "-G", "prog.vcl"], &files);
+    assert_eq!(run.status, 1);
+    assert!(
+        run.stderr
+            .starts_with("prog.vcl(9): error: macro 'Emit' takes 1 argument, but 0 were given\n"),
+        "{}",
+        run.stderr
+    );
+    assert!(
+        run.stderr
+            .contains("lib.i(1): note: 'Emit' is defined here\n")
+    );
+    // Preprocessor options need -G or -g, and -g+ is not supported.
+    let run = self::run("pp-no-g", &["--fold-constants", "prog.vcl"], &files);
+    assert!(
+        run.stderr.starts_with(
+            "oxide-vcl: error: --fold-constants only applies when the source is preprocessed\n"
+        ),
+        "{}",
+        run.stderr
+    );
+    let run = self::run("pp-alternate", &["-g+", "prog.vcl"], &files);
+    assert!(
+        run.stderr
+            .starts_with("oxide-vcl: error: -g+ asks for gasp's alternate"),
+        "{}",
+        run.stderr
+    );
+    assert_eq!(run.status, 255);
+}

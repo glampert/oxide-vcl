@@ -1,0 +1,7 @@
+input.vcl(5): error: macro 'M' takes 2 arguments, but 1 was given
+   5 |     M{ vf01 }
+     |     ^
+input.vcl(1): note: 'M' is defined here
+   1 | #macro M: x, y
+     |        ^
+oxide-vcl: 1 error; no output written

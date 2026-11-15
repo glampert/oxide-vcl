@@ -1,0 +1,4 @@
+input.vcl(1): error: MASP variable 'nope' is not defined: .assigna and .assignc define them
+   1 |     use \&nope
+     | ^
+oxide-vcl: 1 error; no output written

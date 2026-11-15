@@ -1,0 +1,29 @@
+input.vcl(3): error: macro expansions nested 200 levels deep: does macro 'forever' invoke itself?
+   3 |     forever \n
+     | ^
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+     = note: [192 more expansions]
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+input.vcl(3): note: in expansion of macro 'forever'
+   3 |     forever \n
+     | ^
+input.vcl(5): note: in expansion of macro 'forever'
+   5 |     forever 1
+     | ^
+oxide-vcl: 1 error; no output written

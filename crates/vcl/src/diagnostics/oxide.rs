@@ -2,7 +2,7 @@
 //! is about (for the caret underline) and, where there is one, a suggested
 //! fix. None of this is vcl 1.4beta7's text.
 
-use super::{CliMessage, CompileMessage, DriverMessage, Message, ParseMessage};
+use super::{CliMessage, CompileMessage, DriverMessage, Message, ParseMessage, PreprocessMessage};
 use crate::allocator::allocation::AllocationError;
 
 /// A message in oxide wording.
@@ -37,12 +37,19 @@ impl Wording {
 }
 
 /// The long options oxide-vcl adds, for "did you mean" suggestions.
-const LONG_OPTIONS: [&str; 5] = [
+const LONG_OPTIONS: [&str; 12] = [
     "--help",
     "--version",
     "--mode=vcl",
     "--mode=oxide",
     "--warnings-as-errors",
+    "--define=",
+    "--vcl-boilerplate",
+    "--fold-constants",
+    "--flatten-subscripts",
+    "--warn-undef",
+    "--comment-char=",
+    "--preprocess-only",
 ];
 
 pub fn wording(message: &Message) -> Wording {
@@ -51,6 +58,269 @@ pub fn wording(message: &Message) -> Wording {
         Message::Driver(message) => driver(message),
         Message::Parse(message) => parse(message),
         Message::Compile(message) => compile(message),
+        Message::Preprocess(message) => preprocess(message),
+    }
+}
+
+fn preprocess(message: &PreprocessMessage) -> Wording {
+    use PreprocessMessage::*;
+    let plural =
+        |count: usize, word: &str| format!("{count} {word}{}", if count == 1 { "" } else { "s" });
+    match message {
+        IncludedFrom => Wording::new("in the file included from here"),
+        MoreIncludes { count } => Wording::new(format!("[{count} more includes]")),
+        InExpansionOf { name } => {
+            Wording::new(format!("in expansion of macro '{name}'")).subject(name.clone())
+        }
+        MoreExpansions { count } => Wording::new(format!("[{count} more expansions]")),
+        NotFoundAt { path } => Wording::new(format!("not found at '{path}'")),
+        NoIncludeDirectories => {
+            Wording::new("<file> is only looked for in the -I directories, and there are none")
+        }
+        FirstOneHere => Wording::new("the first one is here"),
+        FirstUsedHere => Wording::new("first used here"),
+        PreviousDefinitionHere => Wording::new("the previous definition is here"),
+        DefinedHere { name } => {
+            Wording::new(format!("'{name}' is defined here")).subject(name.clone())
+        }
+        Lex { error } => Wording::new(error.to_string()),
+        LexWarning { warning } => Wording::new(warning.to_string()),
+        UnknownDirective { name } => {
+            Wording::new(format!("unknown preprocessor directive '#{name}'"))
+        }
+        ErrorDirective { text } => Wording::new(format!("#error{text}")),
+        WarningDirective { text } => Wording::new(format!("#warning{text}")),
+        ExtraTokens { directive } => Wording::new(format!(
+            "extra tokens at the end of the #{directive} directive"
+        )),
+        UnknownPragma { text } => Wording::new(format!("ignoring unknown '#pragma{text}'")),
+        ExpectedMacroName { directive } => {
+            Wording::new(format!("expected a macro name after #{directive}"))
+        }
+        DefinedAsMacroName => {
+            Wording::new("'defined' cannot be used as a macro name").subject("defined")
+        }
+        ChangeBuiltin { name, undefining } => Wording::new(format!(
+            "cannot {} built-in macro '{name}'",
+            if *undefining { "undefine" } else { "redefine" }
+        ))
+        .subject(name.clone()),
+        DefinedAfterUse { name } => Wording::new(format!(
+            "'{name}' is defined after code that uses it; those uses are not expanded \
+             (vclpp 1 expanded them)"
+        ))
+        .subject(name.clone()),
+        Redefined { name } => Wording::new(format!("'{name}' redefined")).subject(name.clone()),
+        IncludeExpectsFile => Wording::new("expected \"file\" or <file> after #include"),
+        IncludeMissingGreater => Wording::new("missing '>' after the #include file name"),
+        IncludeEmptyName => Wording::new("empty file name in #include"),
+        IncludeTooDeep { depth } => Wording::new(format!(
+            "#include nested {depth} levels deep: does a file include itself?"
+        )),
+        IncludeNotFound { name } => Wording::new(format!("cannot find include file '{name}'"))
+            .help("-I<dir> adds a directory to look in"),
+        IncludeUnreadable { path } => Wording::new(format!("cannot read include file '{path}'")),
+        MissingParameterClose { name } => Wording::new(format!(
+            "missing ')' in the parameter list of macro '{name}'"
+        )),
+        ExpectedParameterBeforeClose { name } => Wording::new(format!(
+            "expected a parameter name before ')' in macro '{name}'"
+        )),
+        EllipsisNotLast { name } => Wording::new(format!(
+            "'...' must be the last parameter of macro '{name}'"
+        )),
+        ExpectedCommaOrClose { name } => Wording::new(format!(
+            "expected ',' or ')' in the parameter list of macro '{name}'"
+        )),
+        ExpectedParameterName { name } => {
+            Wording::new(format!("expected a parameter name in macro '{name}'"))
+        }
+        DuplicateParameter { parameter, name } => Wording::new(format!(
+            "duplicate parameter '{parameter}' in macro '{name}'"
+        ))
+        .subject(parameter.clone()),
+        HashWithoutParameter { name } => Wording::new(format!(
+            "'#' is not followed by a parameter of macro '{name}'"
+        )),
+        PasteAtEnd { name, block } => Wording::new(format!(
+            "'##' cannot be at either end of {}'{name}'",
+            if *block { "a line of macro " } else { "macro " }
+        ))
+        .subject("##"),
+        BlockMacroWithoutColon { name } => Wording::new(format!(
+            "unexpected text after the name of macro '{name}'; a parameter list starts \
+             with ':', as in '#macro {name}: param1, param2'"
+        )),
+        LostCommaBeforeFirst { name } => Wording::new(format!(
+            "lost comma before the first parameter of macro '{name}'"
+        )),
+        LostCommaAfter { parameter, name } => Wording::new(format!(
+            "lost comma after parameter '{parameter}' of macro '{name}'"
+        )),
+        MissingCommaAfter { parameter, name } => Wording::new(format!(
+            "missing comma after parameter '{parameter}' of macro '{name}'"
+        )),
+        ExtraneousComma { parameter, name } => Wording::new(format!(
+            "extraneous comma after the last parameter '{parameter}' of macro '{name}'"
+        )),
+        UnterminatedMacro { name } => {
+            Wording::new(format!("unterminated #macro '{name}': missing #endmacro"))
+                .subject(name.clone())
+        }
+        TextAfterEndmacro => Wording::new("unexpected text after #endmacro"),
+        DirectiveInMacro { directive, name } => Wording::new(format!(
+            "preprocessor directive '#{directive}' inside #macro '{name}'"
+        )),
+        EndmacroWithoutMacro => Wording::new("#endmacro without #macro").subject("endmacro"),
+        VuprogTwice => Wording::new("#vuprog appears twice").subject("vuprog"),
+        EndvuprogTwice => Wording::new("#endvuprog appears twice").subject("endvuprog"),
+        ExpectedProgramName => Wording::new("expected a program name after #vuprog"),
+        TextAfterProgramName => Wording::new("unexpected text after the program name"),
+        EndvuprogWithoutVuprog => Wording::new("#endvuprog without #vuprog").subject("endvuprog"),
+        TextAfterEndvuprog => Wording::new("unexpected text after #endvuprog"),
+        MissingVuprog => Wording::new("program start directive '#vuprog' was not found"),
+        MissingEndvuprog => Wording::new("program end directive '#endvuprog' was not found"),
+        UnterminatedConditional { directive } => {
+            Wording::new(format!("unterminated #{directive}: missing #endif"))
+                .subject(directive.clone())
+        }
+        WithoutIf { directive } => {
+            Wording::new(format!("#{directive} without #if")).subject(directive.clone())
+        }
+        ElifAfterElse => Wording::new("#elif after #else").subject("elif"),
+        ElseAfterElse => Wording::new("#else after #else").subject("else"),
+        DefinedWithoutName => {
+            Wording::new("'defined' must be followed by a macro name").subject("defined")
+        }
+        DefinedMissingClose { name } => {
+            Wording::new(format!("missing ')' after 'defined({name}'")).subject("defined")
+        }
+        NoExpression { directive } => {
+            Wording::new(format!("#{directive} with no expression")).subject(directive.clone())
+        }
+        NotDefinedIsZero { name } => Wording::new(format!(
+            "'{name}' is not defined, evaluates to 0 [--warn-undef]"
+        ))
+        .subject(name.clone()),
+        FloatInExpression { context, number } => Wording::new(format!(
+            "{context}: floating-point number '{number}' in an integer expression"
+        ))
+        .subject(number.clone()),
+        NotInExpression { context, token } => Wording::new(format!(
+            "{context}: '{token}' cannot appear in an integer expression"
+        ))
+        .subject(token.clone()),
+        Expression { context, error } => Wording::new(format!("{context}: {error}")),
+        NotABlockMacro { name } => Wording::new(format!(
+            "'{name}' is not a block macro: no '#macro {name}' has been seen"
+        ))
+        .subject(name.clone()),
+        RecursiveBlockMacro { name } => {
+            Wording::new(format!("recursive invocation of block macro '{name}'"))
+                .subject(name.clone())
+        }
+        BlockMacroInContext { name, context } => Wording::new(format!(
+            "block macro '{name}' cannot be invoked in {context}"
+        ))
+        .subject(name.clone()),
+        UnterminatedArguments { name } => Wording::new(format!(
+            "unterminated argument list invoking macro '{name}'"
+        ))
+        .subject(name.clone()),
+        UnbalancedArgument { token, name } => Wording::new(format!(
+            "unbalanced '{token}' in the arguments of macro '{name}'"
+        ))
+        .subject(token.clone()),
+        TooFewArguments {
+            name,
+            at_least,
+            given,
+        } => Wording::new(format!(
+            "macro '{name}' takes at least {}, but {given} were given",
+            plural(*at_least, "argument")
+        ))
+        .subject(name.clone()),
+        WrongArgumentCount { name, takes, given } => Wording::new(format!(
+            "macro '{name}' takes {}, but {given} {} given",
+            plural(*takes, "argument"),
+            if *given == 1 { "was" } else { "were" }
+        ))
+        .subject(name.clone()),
+        EmptyBlockArgument {
+            index,
+            parameter,
+            name,
+        } => Wording::new(format!(
+            "argument {index} ('{parameter}') of block macro '{name}' is empty"
+        ))
+        .subject(name.clone()),
+        InvalidPaste { left, right } => Wording::new(format!(
+            "pasting '{left}' and '{right}' does not give a valid token"
+        ))
+        .subject("##"),
+        NotInMaspMode { directive } => Wording::new(format!(
+            "#{directive} is not available in MASP mode{}",
+            if directive == "macro" {
+                ": use .macro"
+            } else {
+                ""
+            }
+        ))
+        .subject(directive.clone()),
+        MaspUnterminatedAif => Wording::new("unterminated .aif: missing .aendi"),
+        MaspEndlessWhile { passes } => {
+            Wording::new(format!(".awhile did not end after {passes} passes"))
+        }
+        MaspMissingEnd => Wording::new("the program does not end with .end"),
+        MaspUnterminatedBlock { open, close } => {
+            Wording::new(format!("unterminated .{open}: missing .{close}"))
+        }
+        MaspCloseWithoutOpen { close, open } => Wording::new(format!(".{close} without .{open}")),
+        MaspAssignNeedsName { directive } => Wording::new(format!(
+            ".{directive} takes the name it assigns in column 1, as in 'name .{directive} value'"
+        )),
+        MaspRefusedDirective { name } => Wording::new(format!(
+            "MASP directive '.{name}' is not supported by the preprocessor"
+        )),
+        MaspExpectedMacroName => Wording::new("expected a macro name after .macro"),
+        MaspMissingParameterName { name } => {
+            Wording::new(format!("missing parameter name in macro '{name}'"))
+        }
+        MaspNotAParameterName { parameter, name } => Wording::new(format!(
+            "'{parameter}' is not a parameter name in macro '{name}': parameters are separated \
+             by commas"
+        )),
+        MaspExpansionTooDeep { depth, name } => Wording::new(format!(
+            "macro expansions nested {depth} levels deep: does macro '{name}' invoke itself?"
+        )),
+        MaspNoSuchParameter { name, parameter } => Wording::new(format!(
+            "macro '{name}' has no parameter named '{parameter}'"
+        )),
+        MaspPositionalAfterNamed { argument, name } => Wording::new(format!(
+            "argument '{argument}' after one given by name, invoking macro '{name}': after one, \
+             all have to be"
+        )),
+        MaspTooManyArguments { name, takes } => Wording::new(format!(
+            "too many arguments for macro '{name}': it takes {takes}"
+        )),
+        MaspExitmOutsideMacro => Wording::new(".exitm outside a macro"),
+        MaspAelseWithoutAif => Wording::new(".aelse without .aif"),
+        MaspAelseAfterAelse => Wording::new(".aelse after .aelse"),
+        MaspAendiWithoutAif => Wording::new(".aendi without .aif"),
+        MaspRepeatTooMany { count, max } => Wording::new(format!(
+            ".arepeat count {count} is more than the {max} passes a loop can make"
+        )),
+        MaspIncludeExpectsFile => Wording::new("expected \"file\" after .include"),
+        MaspIncludeEmptyName => Wording::new("empty file name in .include"),
+        MaspIncludeTooDeep { depth } => Wording::new(format!(
+            ".include nested {depth} levels deep: does a file include itself?"
+        )),
+        MaspUndefinedVariable { name } => Wording::new(format!(
+            "MASP variable '{name}' is not defined: .assigna and .assignc define them"
+        )),
+        MaspStringComparison { context } => Wording::new(format!(
+            "{context}: a quoted string can only be compared with another one"
+        )),
     }
 }
 
@@ -115,6 +385,18 @@ fn cli(message: &CliMessage) -> Wording {
             Wording::new(format!("{argument} applies only in oxide mode")).help(
                 "add --mode=oxide; vcl mode always generates the code vcl 1.4beta7 generates",
             )
+        }
+        PreprocessorOptionWithoutPreprocessor { argument } => {
+            Wording::new(format!("{argument} only applies when the source is preprocessed"))
+                .help("add -G to preprocess in standard mode, or -g for MASP mode")
+        }
+        BadDefine { argument, name } => {
+            Wording::new(format!("{argument}: cannot define '{name}'")).help(
+                "the name must be an identifier other than 'defined' or a built-in macro",
+            )
+        }
+        BadCommentChar { argument } => {
+            Wording::new(format!("{argument} takes exactly one character"))
         }
         TooManyArguments => Wording::new("more than one input file").help(
             "oxide-vcl compiles one file per run, and options must come before it; \
@@ -183,31 +465,10 @@ fn driver(message: &DriverMessage) -> Wording {
         }
         NotUtf8 => Wording::new("the source is not valid UTF-8")
             .help("VCL source is ASCII text; check the file's encoding"),
-        WriteTemporary { path, error } => Wording::new(format!(
-            "can't write the preprocessor's input file '{path}': {}",
-            io_text(error)
-        )),
-        CreateTemporary { path, error } => Wording::new(format!(
-            "can't create the preprocessor's output file '{path}': {}",
-            io_text(error)
-        )),
-        ReadTemporary { path, error } => Wording::new(format!(
-            "can't read the preprocessor's output file '{path}': {}",
-            io_text(error)
-        )),
-        StartPreprocessor { program, error } => {
-            let option = if program == "gcc" { "-G" } else { "-g" };
-            Wording::new(format!("can't run {program}: {}", io_text(error))).help(format!(
-                "{option} runs `{program}` from PATH; install it, or preprocess the source \
-                 yourself and drop {option}"
-            ))
-        }
-        PreprocessorFailed { program, status } => Wording::new(format!(
-            "{program} failed ({status}); its own messages are above"
-        )),
-        KeptTemporaries { input, output } => Wording::new(format!(
-            "kept the preprocessor's input '{input}' and output '{output}'"
-        )),
+        AlternateSyntax => Wording::new(
+            "-g+ asks for gasp's alternate macro syntax, which the preprocessor does not support",
+        )
+        .help("use -g, and write the macros in masp's standard syntax"),
         WriteOutput { path, error } => {
             Wording::new(format!("can't write '{path}': {}", io_text(error)))
         }

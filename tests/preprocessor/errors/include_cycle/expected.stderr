@@ -1,0 +1,21 @@
+input.vcl(1): error: #include nested 200 levels deep: does a file include itself?
+   1 | #include "input.vcl"
+     |          ^
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+     = note: [191 more includes]
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+input.vcl(1): note: in the file included from here
+   1 | #include "input.vcl"
+oxide-vcl: 1 error; no output written

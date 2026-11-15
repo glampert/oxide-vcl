@@ -1,0 +1,4 @@
+input.vcl(1): error: .awhile did not end after 100000 passes
+   1 |     .awhile 1 EQ 1
+     | ^
+oxide-vcl: 1 error; no output written

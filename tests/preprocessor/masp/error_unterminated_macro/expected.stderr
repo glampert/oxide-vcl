@@ -1,0 +1,4 @@
+input.vcl(1): error: unterminated .macro: missing .endm
+   1 |     .macro  open    a
+     | ^
+oxide-vcl: 1 error; no output written

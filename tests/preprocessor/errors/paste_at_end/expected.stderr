@@ -1,0 +1,4 @@
+input.vcl(1): error: '##' cannot be at either end of macro 'P'
+   1 | #define P(a) a ##
+     |                ^^
+oxide-vcl: 1 error; no output written

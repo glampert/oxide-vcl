@@ -1,0 +1,4 @@
+input.vcl(1): error: MASP directive '.sdata' is not supported by the preprocessor
+   1 |     .sdata  "ab"
+     | ^
+oxide-vcl: 1 error; no output written

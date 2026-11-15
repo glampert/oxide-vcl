@@ -1,0 +1,4 @@
+input.vcl(3): error: unterminated argument list invoking macro 'F'
+   3 |     F(1,
+     |     ^
+oxide-vcl: 1 error; no output written

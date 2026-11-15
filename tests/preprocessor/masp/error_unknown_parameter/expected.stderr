@@ -1,0 +1,4 @@
+input.vcl(4): error: macro 'pair' has no parameter named 'c'
+   4 |     pair    c=3
+     | ^
+oxide-vcl: 1 error; no output written

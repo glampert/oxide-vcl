@@ -1,0 +1,3 @@
+input.vcl(2): error: newline inside string
+   2 |     loi "1.0
+oxide-vcl: 1 error; no output written

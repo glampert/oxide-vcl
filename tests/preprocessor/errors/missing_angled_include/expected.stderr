@@ -1,0 +1,6 @@
+input.vcl(1): error: cannot find include file 'nope.i'
+   1 | #include <nope.i>
+     |          ^
+     = help: -I<dir> adds a directory to look in
+     = note: <file> is only looked for in the -I directories, and there are none
+oxide-vcl: 1 error; no output written

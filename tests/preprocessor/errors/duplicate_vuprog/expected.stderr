@@ -1,0 +1,7 @@
+input.vcl(2): error: #vuprog appears twice
+   2 | #vuprog B
+     |  ^^^^^^
+input.vcl(1): note: the first one is here
+   1 | #vuprog A
+     |  ^
+oxide-vcl: 1 error; no output written

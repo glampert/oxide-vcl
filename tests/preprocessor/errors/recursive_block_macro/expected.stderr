@@ -1,0 +1,10 @@
+input.vcl(5): error: recursive invocation of block macro 'A'
+   5 |     A{ }
+     |     ^
+input.vcl(2): note: in expansion of macro 'B'
+   2 |     B{ }
+     |     ^
+input.vcl(8): note: in expansion of macro 'A'
+   8 |     A{ }
+     |     ^
+oxide-vcl: 1 error; no output written

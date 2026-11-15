@@ -1,0 +1,4 @@
+input.vcl(1): error: '#' is not followed by a parameter of macro 'F'
+   1 | #define F(x) #y
+     |              ^
+oxide-vcl: 1 error; no output written

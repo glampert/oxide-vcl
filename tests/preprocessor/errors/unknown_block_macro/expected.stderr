@@ -1,0 +1,4 @@
+input.vcl(2): error: 'Foo' is not a block macro: no '#macro Foo' has been seen
+   2 |     Foo{ }
+     |     ^^^
+oxide-vcl: 1 error; no output written

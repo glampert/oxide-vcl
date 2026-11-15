@@ -1,0 +1,6 @@
+input.vcl(3): warning: 'kLate' is defined after code that uses it; those uses are not expanded (vclpp 1 expanded them)
+   3 | #define kLate 5
+     |         ^^^^^
+input.vcl(2): note: first used here
+   2 |     iaddiu vi01, vi00, kLate
+     |                        ^

@@ -1,0 +1,6 @@
+opens.i(1): error: unterminated #if: missing #endif
+   1 | #if 1
+     |  ^^
+input.vcl(1): note: in the file included from here
+   1 | #include "opens.i"
+oxide-vcl: 1 error; no output written

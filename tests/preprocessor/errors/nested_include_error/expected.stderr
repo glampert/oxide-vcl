@@ -1,0 +1,8 @@
+b.i(3): error: #error deep inside
+   3 | #error deep inside
+     |  ^
+a.i(1): note: in the file included from here
+   1 | #include "b.i"
+input.vcl(1): note: in the file included from here
+   1 | #include "a.i"
+oxide-vcl: 1 error; no output written

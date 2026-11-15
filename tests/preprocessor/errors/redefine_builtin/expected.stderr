@@ -1,0 +1,4 @@
+input.vcl(1): error: cannot redefine built-in macro '__LINE__'
+   1 | #define __LINE__ 1
+     |         ^^^^^^^^
+oxide-vcl: 1 error; no output written

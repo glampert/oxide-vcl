@@ -1,0 +1,4 @@
+input.vcl(2): error: preprocessor directive '#define' inside #macro 'M'
+   2 | #define X 1
+     | ^
+oxide-vcl: 1 error; no output written

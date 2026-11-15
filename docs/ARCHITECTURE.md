@@ -153,7 +153,8 @@ command-line driver is the separate `crates/oxide-vcl` crate.
 | `compiler` | Source/stream lowering, analysis and scheduling/allocation integration, one file per phase |
 | `emit` | Register/operand rendering and paired text layout |
 | `diagnostics` | Modes, typed messages and the reporter that prints all output |
-| `oxide-vcl` (driver crate) | Original argument rules, file I/O and preprocessing |
+| `preprocessor` | vclpp's preprocessor for `-G` and `-g`, run on the source before the parser ([PREPROCESSOR.md](PREPROCESSOR.md)) |
+| `oxide-vcl` (driver crate) | Original argument rules, file I/O, and the preprocessor run before compiling |
 
 ### Modes and diagnostics
 
@@ -180,10 +181,12 @@ act inside the compiler's phases. See
 [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
 
 Every message is a typed value in `vcl::diagnostics`, never preformatted
-text: `Message` groups `CliMessage` (command line), `DriverMessage` (files,
-streams, preprocessors), `ParseMessage` and `CompileMessage`.
+text: `Message` groups `CliMessage` (command line), `DriverMessage` (files and
+streams), `ParseMessage`, `CompileMessage` and `PreprocessMessage`.
 `CompileMessage::Internal` carries a failure of one of the port's own phases,
-for which vcl has no message. A `Diagnostic` adds severity and source line.
+for which vcl has no message. A `Diagnostic` adds severity and source line, and for a preprocessor message
+its own file, line and column and the notes behind it (the include and
+expansion chains).
 Each message has one wording (`diagnostics/oxide.rs`: `Wording`, its text,
 the token it is about and a suggested fix); vcl 1.4beta7's texts are not
 reproduced. `Reporter` owns standard output and standard error and prints
