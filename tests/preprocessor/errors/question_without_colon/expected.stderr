@@ -1,0 +1,4 @@
+input.vcl(2): error: #if: '?' without ':' in preprocessor directive
+   2 | #if 1 ? 2
+     |  ^
+oxide-vcl: 1 error; no output written

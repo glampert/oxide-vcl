@@ -871,7 +871,9 @@ directory; `#include <file>` only in the `-I` directories. `#pragma once` and
 include guards work as in C.
 
 **Conditionals**: `#if`, `#ifdef`, `#ifndef`, `#elif`, `#else` and `#endif`
-work as in C, with `defined` and C's integer operators. A name that is not a
+work as in C, with `defined` and C's integer operators, `?:` included; as in
+C, `&&`, `||` and `?:` do not evaluate an operand they skip, so
+`#if defined(N) && 64 / N` is safe. A name that is not a
 macro counts as 0 (`--warn-undef` warns about it), and `true` and `false`
 count as 1 and 0. Also available: `#undef`, `#error`, `#warning` and
 `#pragma once`.
@@ -960,8 +962,8 @@ lines are read again, so they can invoke other macros and use any directive.
 
 **Conditionals**: `.aif`, `.aelse`, `.aendi`. `.aif` compares two operands
 with `EQ`, `NE`, `LT`, `LE`, `GT` or `GE`, in any case. Two quoted strings
-compare as text; anything else is an integer expression. An `.aif` with no
-comparison holds if its value is not 0.
+compare as text; anything else is an integer expression, read as `#if`
+reads one. An `.aif` with no comparison holds if its value is not 0.
 
 **Loops**: `.arepeat count` ... `.aendr` repeats its lines, and `.awhile
 condition` ... `.aendw` repeats them while the condition holds. Either stops

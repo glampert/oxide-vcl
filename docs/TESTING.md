@@ -352,13 +352,15 @@ The preprocessor (`-G`, `-g`) follows vclpp 2, not the original, which runs
 external programs ([PREPROCESSOR.md](PREPROCESSOR.md)), so its tests compare
 with vclpp:
 
-- `tests/preprocessor/<group>/<case>/` is vclpp's own test suite: 82 cases in
-  `compat`, `errors`, `features`, `masp` and `warnings`. `preprocessor.rs`
+- `tests/preprocessor/<group>/<case>/` is vclpp's own test suite, 82 cases
+  in `compat`, `errors`, `features`, `masp` and `warnings`, plus the port's
+  cases for C's expression rules, where it departs from vclpp. `preprocessor.rs`
   runs `oxide-vcl <args> --preprocess-only input.vcl` in each case's
   directory: with `expected.vsm` it must succeed and print exactly that,
   without it fail and print nothing, and its diagnostics must equal
   `expected.stderr`. The outputs are vclpp's but for `--vcl-boilerplate`'s
-  `.init_vi_all`; the diagnostics are vclpp's in the `Reporter`'s layout.
+  `.init_vi_all` and C's `?:`, `&&` and `||`; the diagnostics are vclpp's in
+  the `Reporter`'s layout.
   `VCL_UPDATE_PREPROCESSOR=1` rewrites the expected files.
 - `vclpp_made_corpus_inputs_come_out_the_same` preprocesses the sources in
   `tests/corpus/sources/` (doom3-bfg-ps2, quake2-ps2, tyra and ps2gl, at the

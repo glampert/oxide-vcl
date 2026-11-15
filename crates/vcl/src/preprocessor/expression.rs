@@ -1,31 +1,30 @@
-//! Integer constant expressions, as `#if` and `-x` read them: numbers, the C
-//! operators and parentheses, worked out in 64-bit integers.
+//! Integer constant expressions, as `#if`, masp's `.aif`, `.awhile`,
+//! `.assigna`, `.equ` and `.arepeat`, and `--fold-constants` read them:
+//! numbers, the C operators and parentheses, worked out in 64-bit integers.
 //!
-//! The rules are vclpp's (observed from vclpp 2, `#if` lines run one at a
-//! time):
+//! The operators work as in C:
 //!
 //! - **Operators and precedence.** The binary operators are C's, at C's
 //!   precedence: `* / %`, then `+ -`, `<< >>`, `< <= > >=`, `== !=`, `&`,
-//!   `^`, `|`, `&&` and `||`. The unary operators are `+ - ~ !`.
+//!   `^`, `|`, `&&` and `||`, all grouping to the left. The unary operators
+//!   are `+ - ~ !`.
+//! - **`?:`.** C's conditional operator, below `||` and grouping to the
+//!   right: `a ? b : c ? d : e` is `a ? b : (c ? d : e)`. Either branch can be
+//!   any expression, another `?:` included. A `?` needs its `:`.
+//! - **Unevaluated operands.** The right side of `&&` when the left is 0, of
+//!   `||` when it is not, and the branch of `?:` not taken are checked but not
+//!   evaluated, so `0 && 1 / 0` is 0, not a division by zero.
 //! - **Arithmetic.** Overflow wraps, and so do literals too large for 64
 //!   bits. A shift amount counts modulo 64, so `1 << 64` is 1 and `1 >> -1`
 //!   is 0. Division and remainder truncate toward zero.
-//! - **Evaluation.** Every operand is evaluated: `&&`, `||` and `?:` do not
-//!   skip anything, so `0 && 1 / 0` is a division by zero.
-//! - **`?` and `:`.** These are two binary operators of the lowest
-//!   precedence, which group to the left, so `a ? b : c ? d : e` is
-//!   `(a ? b : c) ? d : e`.
-//!   - `a ? b` gives `b` and keeps `a` pending; a `:` then picks its left
-//!     value if `a` holds, else its right one. `a ? b` with no `:` is `b`.
-//!   - One condition can be pending at a time, across parentheses too. A `?`
-//!     applied while one is pending is an error, as in
-//!     `1 ? 2 : (3 ? 4 : 5)`. A `:` with none pending is an error, as in
-//!     `1 ? 2 : 3 : 4`.
-//!   - A `?` inside parentheses in the middle operand is worked out before
-//!     the outer `?` applies, so `1 ? (2 ? 3 : 4) : 5` is 3.
 //! - **Numbers.** `0x` is hex, `0b` binary, and a leading `0` octal; `0x` and
 //!   `0b` with no digits are 0. An octal number with an 8 or 9 in it is a
 //!   syntax error.
+//!
+//! vclpp 2 evaluates `?` and `:` as two left-grouping operators that share
+//! one pending condition, and evaluates every operand; the port follows C
+//! instead (docs/PREPROCESSOR.md, "Differences from vclpp"). The error
+//! messages are vclpp's.
 
 use super::lexer::{Punct, Token, TokenKind};
 
@@ -53,10 +52,10 @@ pub enum ExpressionError {
     /// An operator or `(` with nothing after it.
     TrailingOperator,
     DivisionByZero,
-    /// `:` with no `?` pending.
+    /// A `:` that belongs to no `?`.
     ColonWithoutQuestion,
-    /// `?` while another `?` is pending.
-    QuestionAfterQuestion,
+    /// A `?` without its `:`.
+    QuestionWithoutColon,
     /// A token that is not a number or punctuation, or a float.
     NotAnInteger {
         token: String,
@@ -87,7 +86,7 @@ impl std::fmt::Display for ExpressionError {
             TrailingOperator => f.write_str("trailing operator in preprocessor expression"),
             DivisionByZero => f.write_str("integer division by zero in preprocessor expression"),
             ColonWithoutQuestion => f.write_str("':' without '?' in preprocessor directive"),
-            QuestionAfterQuestion => f.write_str("'?' after '?' in preprocessor directive"),
+            QuestionWithoutColon => f.write_str("'?' without ':' in preprocessor directive"),
             NotAnInteger { token } => write!(f, "'{token}' cannot appear in an integer expression"),
         }
     }
@@ -99,19 +98,20 @@ pub fn evaluate(tokens: &[Token]) -> Result<i64, ExpressionError> {
         return Err(ExpressionError::Empty);
     }
     check(tokens)?;
-    let mut evaluator = Evaluator {
-        tokens,
-        next: 0,
-        pending: None,
-    };
-    evaluator.binary(0)
+    let mut evaluator = Evaluator { tokens, next: 0 };
+    let value = evaluator.conditional(true)?;
+    // What is left can only be a `:` that closes no `?`.
+    if evaluator.next < tokens.len() {
+        return Err(ExpressionError::ColonWithoutQuestion);
+    }
+    Ok(value)
 }
 
-/// The binary operators by precedence, lowest first; `?` and `:` share 1.
+/// The binary operators by precedence, lowest first. `?` and `:` are not
+/// among them: [`Evaluator::conditional`] reads them.
 fn precedence(punct: Punct) -> Option<u8> {
     use Punct::*;
     Some(match punct {
-        Question | Colon => 1,
         LogicOr => 2,
         LogicAnd => 3,
         BitOr => 4,
@@ -161,7 +161,10 @@ fn check(tokens: &[Token]) -> Result<(), ExpressionError> {
                         return Err(ExpressionError::NotAfterValue);
                     }
                 }
-                punct if precedence(punct).is_some() => {
+                punct
+                    if precedence(punct).is_some()
+                        || matches!(punct, Punct::Question | Punct::Colon) =>
+                {
                     if want_value {
                         return Err(ExpressionError::OperatorAfterOperator {
                             operator: token.text.clone(),
@@ -191,41 +194,71 @@ fn check(tokens: &[Token]) -> Result<(), ExpressionError> {
     Ok(())
 }
 
-/// Works out checked tokens by precedence climbing, applying operators in
-/// the order an operator-precedence parser reduces them: that order decides
-/// when a `?` finds another pending.
+/// Works out checked tokens by recursive descent. `live` is false inside an
+/// operand C does not evaluate: its syntax still counts, but it divides by
+/// zero without error.
 struct Evaluator<'a> {
     tokens: &'a [Token],
     next: usize,
-    /// The condition of a `?` waiting for its `:`.
-    pending: Option<i64>,
 }
 
 impl Evaluator<'_> {
-    fn binary(&mut self, min_precedence: u8) -> Result<i64, ExpressionError> {
-        let mut left = self.unary()?;
+    fn is_next(&self, punct: Punct) -> bool {
+        self.tokens
+            .get(self.next)
+            .is_some_and(|token| token.is(punct))
+    }
+
+    /// `condition ? then : else`, or a binary expression on its own.
+    fn conditional(&mut self, live: bool) -> Result<i64, ExpressionError> {
+        let condition = self.binary(0, live)?;
+        if !self.is_next(Punct::Question) {
+            return Ok(condition);
+        }
+        self.next += 1;
+        let then = self.conditional(live && condition != 0)?;
+        if !self.is_next(Punct::Colon) {
+            return Err(ExpressionError::QuestionWithoutColon);
+        }
+        self.next += 1;
+        let otherwise = self.conditional(live && condition == 0)?;
+        Ok(if condition != 0 { then } else { otherwise })
+    }
+
+    fn binary(&mut self, min_precedence: u8, live: bool) -> Result<i64, ExpressionError> {
+        let mut left = self.unary(live)?;
         while let Some(token) = self.tokens.get(self.next) {
             let Some(precedence) = precedence(token.punct).filter(|&p| p > min_precedence) else {
                 break;
             };
             let punct = token.punct;
             self.next += 1;
-            let right = self.binary(precedence)?;
-            left = self.apply(punct, left, right)?;
+            // `&&` and `||` evaluate their right side only when the left one
+            // does not decide.
+            let right_live = match punct {
+                Punct::LogicAnd => live && left != 0,
+                Punct::LogicOr => live && left == 0,
+                _ => live,
+            };
+            let right = self.binary(precedence, right_live)?;
+            left = apply(punct, left, right, live)?;
         }
         Ok(left)
     }
 
-    fn unary(&mut self) -> Result<i64, ExpressionError> {
+    fn unary(&mut self, live: bool) -> Result<i64, ExpressionError> {
         let token = &self.tokens[self.next];
         self.next += 1;
         match token.punct {
-            Punct::Add => self.unary(),
-            Punct::Sub => Ok(self.unary()?.wrapping_neg()),
-            Punct::BitNot => Ok(!self.unary()?),
-            Punct::LogicNot => Ok(i64::from(self.unary()? == 0)),
+            Punct::Add => self.unary(live),
+            Punct::Sub => Ok(self.unary(live)?.wrapping_neg()),
+            Punct::BitNot => Ok(!self.unary(live)?),
+            Punct::LogicNot => Ok(i64::from(self.unary(live)? == 0)),
             Punct::OpenParen => {
-                let value = self.binary(0)?;
+                let value = self.conditional(live)?;
+                if self.is_next(Punct::Colon) {
+                    return Err(ExpressionError::ColonWithoutQuestion);
+                }
                 // check() has balanced the parentheses.
                 self.next += 1;
                 Ok(value)
@@ -233,46 +266,37 @@ impl Evaluator<'_> {
             _ => number_value(&token.text),
         }
     }
+}
 
-    fn apply(&mut self, punct: Punct, left: i64, right: i64) -> Result<i64, ExpressionError> {
-        use Punct::*;
-        let truth = |value: bool| i64::from(value);
-        Ok(match punct {
-            Question => {
-                if self.pending.is_some() {
-                    return Err(ExpressionError::QuestionAfterQuestion);
-                }
-                self.pending = Some(left);
-                right
-            }
-            Colon => match self.pending.take() {
-                Some(condition) if condition != 0 => left,
-                Some(_) => right,
-                Option::None => return Err(ExpressionError::ColonWithoutQuestion),
-            },
-            LogicOr => truth(left != 0 || right != 0),
-            LogicAnd => truth(left != 0 && right != 0),
-            BitOr => left | right,
-            BitXor => left ^ right,
-            BitAnd => left & right,
-            Equal => truth(left == right),
-            NotEqual => truth(left != right),
-            Less => truth(left < right),
-            LessEqual => truth(left <= right),
-            Greater => truth(left > right),
-            GreaterEqual => truth(left >= right),
-            // The amount counts modulo 64, as wrapping shifts do.
-            ShiftLeft => left.wrapping_shl(right as u32),
-            ShiftRight => left.wrapping_shr(right as u32),
-            Add => left.wrapping_add(right),
-            Sub => left.wrapping_sub(right),
-            Mul => left.wrapping_mul(right),
-            Div | Mod if right == 0 => return Err(ExpressionError::DivisionByZero),
-            Div => left.wrapping_div(right),
-            Mod => left.wrapping_rem(right),
-            _ => unreachable!("check() lets only binary operators through"),
-        })
-    }
+/// A binary operator's value. Dividing by zero is an error only where the
+/// operand is evaluated (`live`).
+fn apply(punct: Punct, left: i64, right: i64, live: bool) -> Result<i64, ExpressionError> {
+    use Punct::*;
+    let truth = |value: bool| i64::from(value);
+    Ok(match punct {
+        LogicOr => truth(left != 0 || right != 0),
+        LogicAnd => truth(left != 0 && right != 0),
+        BitOr => left | right,
+        BitXor => left ^ right,
+        BitAnd => left & right,
+        Equal => truth(left == right),
+        NotEqual => truth(left != right),
+        Less => truth(left < right),
+        LessEqual => truth(left <= right),
+        Greater => truth(left > right),
+        GreaterEqual => truth(left >= right),
+        // The amount counts modulo 64, as wrapping shifts do.
+        ShiftLeft => left.wrapping_shl(right as u32),
+        ShiftRight => left.wrapping_shr(right as u32),
+        Add => left.wrapping_add(right),
+        Sub => left.wrapping_sub(right),
+        Mul => left.wrapping_mul(right),
+        Div | Mod if right == 0 && live => return Err(ExpressionError::DivisionByZero),
+        Div | Mod if right == 0 => 0,
+        Div => left.wrapping_div(right),
+        Mod => left.wrapping_rem(right),
+        _ => unreachable!("check() lets only binary operators through"),
+    })
 }
 
 /// An integer literal's value, wrapping to 64 bits; its suffix is ignored.
@@ -385,57 +409,77 @@ mod tests {
     }
 
     #[test]
-    fn conditionals_group_to_the_left_and_share_one_pending_condition() {
+    fn conditionals_work_as_in_c() {
         for (text, value) in [
             ("1 ? 2 : 3", 2),
             ("0 ? 2 : 3", 3),
-            ("1 ? 2", 2),
-            ("0 ? 2", 2),
-            ("1 ? 0 : 1 ? 1 : 1", 1),
-            ("1 ? 1 : 0 ? 0 : 0", 0),
+            // They group to the right.
+            ("1 ? 0 : 1 ? 1 : 1", 0),
+            ("1 ? 1 : 0 ? 0 : 0", 1),
             ("0 ? 2 : 3 ? 0 : 5", 0),
             ("0 ? 1 : 0 ? 1 : 0 ? 1 : 1", 1),
-            ("1 || 0 ? 0 : 6", 0),
-            ("0 ? 1 : 0 || 1", 1),
+            ("0 ? 1 : 0 ? 2 : 3", 3),
+            // Either branch can be another one.
+            ("2 ? 3 ? 4 : 5 : 6", 4),
+            ("2 ? 0 ? 4 : 5 : 6", 5),
+            ("1 ? 2 : (3 ? 4 : 5)", 2),
+            ("0 ? 2 : (3 ? 4 : 5)", 4),
+            ("1 ? 2 : 3 + (4 ? 5 : 6)", 2),
+            ("0 ? 2 : 3 + (4 ? 5 : 6)", 8),
+            ("1 ? (2 ? 3 : 4) : (5 ? 6 : 7)", 3),
             ("1 ? (2 ? 3 : 4) : 5", 3),
-            ("1 ? (2 ? 3 : 4) : (5)", 3),
             ("(1 ? 2 : 3) + (4 ? 5 : 6)", 7),
             ("(1 ? 0 : 3) ? 4 : 0", 0),
             ("1 ? ((0 ? 1 : 0)) : 1", 0),
             ("(2 ? 3 : 4) * (0 ? 5 : 6)", 18),
+            // Below `||`, above nothing.
+            ("1 || 0 ? 0 : 6", 0),
+            ("0 ? 1 : 0 || 1", 1),
+            ("1 ? 2 : 3 == 3", 2),
+        ] {
+            assert_eq!(eval(text), Ok(value), "{text}");
+        }
+        for text in ["1 ? 2", "0 ? 2", "1 ? 2 ? 3 : 4", "(1 ? 2) : 3"] {
+            assert_eq!(
+                eval(text),
+                Err(ExpressionError::QuestionWithoutColon),
+                "{text}"
+            );
+        }
+        for text in ["1 ? 2 : 3 : 4", "1 : 2", "(1 : 2)"] {
+            assert_eq!(
+                eval(text),
+                Err(ExpressionError::ColonWithoutQuestion),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn operands_c_does_not_evaluate_are_only_checked() {
+        for (text, value) in [
+            ("1 || 1 / 0", 1),
+            ("0 && 1 / 0", 0),
+            ("0 && (1 % 0 || 1 / 0)", 0),
+            ("0 ? 1 / 0 : 2", 2),
+            ("1 ? 2 : 1 / 0", 2),
+            ("1 ? 2 : 0 ? 1 / 0 : 3", 2),
+            ("0 || 0 && 1 / 0", 0),
         ] {
             assert_eq!(eval(text), Ok(value), "{text}");
         }
         for text in [
-            "2 ? 3 ? 4 : 5 : 6",
-            "1 ? 2 : (3 ? 4 : 5)",
-            "1 ? 2 : 3 + (4 ? 5 : 6)",
-            "1 ? (2 ? 3 : 4) : (5 ? 6 : 7)",
-        ] {
-            assert_eq!(
-                eval(text),
-                Err(ExpressionError::QuestionAfterQuestion),
-                "{text}"
-            );
-        }
-        assert_eq!(
-            eval("1 ? 2 : 3 : 4"),
-            Err(ExpressionError::ColonWithoutQuestion)
-        );
-        assert_eq!(eval("1 : 2"), Err(ExpressionError::ColonWithoutQuestion));
-    }
-
-    #[test]
-    fn every_operand_is_evaluated() {
-        for text in [
-            "1 || 1 / 0",
-            "0 && 1 / 0",
-            "0 ? 1 / 0 : 2",
             "1 / 0 * 0",
             "1 % 0",
+            "0 || 1 / 0",
+            "1 && 1 % 0",
+            "1 ? 1 / 0 : 2",
         ] {
             assert_eq!(eval(text), Err(ExpressionError::DivisionByZero), "{text}");
         }
+        // Their syntax still counts.
+        assert_eq!(eval("0 && (1 +)"), Err(ExpressionError::TrailingOperator));
+        assert_eq!(eval("1 || 2 3"), Err(ExpressionError::Syntax));
     }
 
     #[test]
