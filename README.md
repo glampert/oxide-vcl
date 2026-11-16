@@ -44,6 +44,29 @@ upper-pipe arithmetic and from filling latencies with independent work,
 where openvcl issues mostly one pipe at a time and pads with `nop` rows.
 See: [OPENVCL_COMPARISON.md](docs/OPENVCL_COMPARISON.md) for a detailed breakdown.
 
+### Performance comparison on [Quake 2 PS2](https://github.com/glampert/quake2-ps2)
+
+Captured a real PS2 over the gameplay frames of two Quake 2 demos (base2 and
+waste2), with Quake 2's two VU1 programs built three ways: by openvcl from
+the sources written for it, by oxide-vcl (`--mode=oxide --opt=all`) from the
+same sources, and by oxide-vcl from sources restructured for it
+(vertex format and warp flag held in registers, each triangle written out
+before its clip decision, the GS scale folded into the particle transform).
+`GsWait` is the time the EE spends waiting on the GS and VU1 side.
+
+| | openvcl | oxide-vcl | oxide-vcl, restructured VU code |
+| --- | ---: | ---: | ---: |
+| GsWait, gameplay mean | 3.68 ms | 1.93 ms (−48%) | 1.40 ms (−62%) |
+| GsWait, p95 | 6.41 ms | 3.61 ms | 2.71 ms |
+| GsWait, heavy views (≥ 4K triangles) | 4.78 ms | 2.56 ms | 1.86 ms |
+| GsWait per triangle | 0.87 µs | 0.46 µs | 0.33 µs |
+| Dropped steady frames | 30 (0.44%) | 5 | 2 |
+| Frames with no margin (EE work 15–16.7 ms) | 262 (3.8%) | 16 | 10 |
+| EE work p95, base2 / waste2 | 14.5 / 15.0 ms | 11.8 / 12.4 ms | 10.9 / 11.4 ms |
+
+VU1 was the main thing the EE waited on, so the cycles saved show up directly
+in frame times.
+
 ## Original artifact (not included here)
 
 - `vcl` (SHA-256 `83bee75205b5b0f37dbefc2c2769eba2c353befa532472c49aedb2ebaf168274`).
