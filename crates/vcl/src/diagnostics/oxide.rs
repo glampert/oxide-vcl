@@ -37,12 +37,13 @@ impl Wording {
 }
 
 /// The long options oxide-vcl adds, for "did you mean" suggestions.
-const LONG_OPTIONS: [&str; 12] = [
+const LONG_OPTIONS: [&str; 13] = [
     "--help",
     "--version",
     "--mode=vcl",
     "--mode=oxide",
     "--warnings-as-errors",
+    "--color=auto",
     "--define=",
     "--vcl-boilerplate",
     "--fold-constants",
@@ -349,6 +350,11 @@ fn cli(message: &CliMessage) -> Wording {
             let name = argument.strip_prefix("--mode=").unwrap_or(argument);
             Wording::new(format!("unknown mode '{name}'"))
                 .help("use --mode=vcl (the default) or --mode=oxide")
+        }
+        BadColor { argument } => {
+            let name = argument.strip_prefix("--color=").unwrap_or(argument);
+            Wording::new(format!("unknown color setting '{name}'"))
+                .help("use --color=auto (the default), --color=always or --color=never")
         }
         BadFix { name, .. } => {
             let names: Vec<_> = crate::Fix::ALL.iter().map(|fix| fix.name()).collect();

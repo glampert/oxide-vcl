@@ -283,6 +283,8 @@ pub enum CliMessage {
     BadArgument { argument: String },
     /// `--mode=` with an unknown mode.
     BadMode { argument: String },
+    /// `--color=` naming neither `auto`, `always` nor `never`.
+    BadColor { argument: String },
     /// `--fix=` naming no fix, or an unknown one (`name`).
     BadFix { argument: String, name: String },
     /// `--opt=` naming no optimization, or an unknown one (`name`).
@@ -906,8 +908,22 @@ pub struct Reporter<O: Write = io::Stdout, E: Write = io::Stderr> {
     /// preprocessor made it.
     line_origins: Vec<Option<SourceLocation>>,
     warnings_as_errors: bool,
+    /// Whether diagnostics carry ANSI colors ([`Reporter::set_color`]).
+    color: bool,
     errors: usize,
     warnings: usize,
+}
+
+/// The ANSI styles of a colored diagnostic, as clang and gcc color theirs:
+/// the place and the message bold, the severity in its color, the caret
+/// green.
+mod style {
+    pub const BOLD: &str = "1";
+    pub const ERROR: &str = "1;31";
+    pub const WARNING: &str = "1;33";
+    pub const NOTE: &str = "1;36";
+    pub const HELP: &str = "1;36";
+    pub const CARET: &str = "1;32";
 }
 
 /// The program being compiled, for locations and source lines.
@@ -932,6 +948,7 @@ impl<O: Write, E: Write> Reporter<O, E> {
             files: Vec::new(),
             line_origins: Vec::new(),
             warnings_as_errors: false,
+            color: false,
             errors: 0,
             warnings: 0,
         }
@@ -966,6 +983,21 @@ impl<O: Write, E: Write> Reporter<O, E> {
     /// `--warnings-as-errors`: each warning is printed as an error.
     pub fn set_warnings_as_errors(&mut self, enabled: bool) {
         self.warnings_as_errors = enabled;
+    }
+
+    /// `--color`: diagnostics in ANSI colors, for a terminal. Only what goes
+    /// to standard error is colored; the listing never is.
+    pub fn set_color(&mut self, enabled: bool) {
+        self.color = enabled;
+    }
+
+    /// `text` in the ANSI style `code` when colors are on, else as it is.
+    fn paint(&self, text: &str, code: &str) -> String {
+        if self.color && !text.is_empty() {
+            format!("\x1b[{code}m{text}\x1b[0m")
+        } else {
+            text.to_string()
+        }
     }
 
     /// The warnings printed so far, before `--warnings-as-errors` promotes
@@ -1065,7 +1097,8 @@ impl<O: Write, E: Write> Reporter<O, E> {
         for note in &diagnostic.notes {
             // A note with no place of its own reads as part of the message.
             if note.location.is_none() {
-                text.push_str(&format!("{indent}= note: {}\n", note.message.text()));
+                let label = self.paint("note", style::NOTE);
+                text.push_str(&format!("{indent}= {label}: {}\n", note.message.text()));
                 continue;
             }
             let line = note.location.as_ref().map_or(0, |location| location.line);
@@ -1094,9 +1127,9 @@ impl<O: Write, E: Write> Reporter<O, E> {
         line: usize,
     ) -> String {
         let label = match severity {
-            Severity::Info => "note",
-            Severity::Warning => "warning",
-            Severity::Error => "error",
+            Severity::Info => self.paint("note", style::NOTE),
+            Severity::Warning => self.paint("warning", style::WARNING),
+            Severity::Error => self.paint("error", style::ERROR),
         };
         let wording = message.wording();
         let in_source = matches!(
@@ -1129,7 +1162,9 @@ impl<O: Write, E: Write> Reporter<O, E> {
             Some(file) => file.to_string(),
             None => "oxide-vcl".to_string(),
         };
-        text.push_str(&format!("{place}: {label}: {}{suffix}\n", wording.text));
+        let place = self.paint(&format!("{place}:"), style::BOLD);
+        let headline = self.paint(&format!("{}{suffix}", wording.text), style::BOLD);
+        text.push_str(&format!("{place} {label}: {headline}\n"));
         let raw = source.and_then(|source| source.lines.get(line.checked_sub(1)?));
         let quoted = raw.map(|line| expand_tabs(line.trim_end()));
         let gutter = " ".repeat(line.to_string().len() + 4);
@@ -1151,7 +1186,7 @@ impl<O: Write, E: Write> Reporter<O, E> {
                 text.push_str(&format!(
                     "{gutter}| {}{}\n",
                     " ".repeat(start),
-                    "^".repeat(length)
+                    self.paint(&"^".repeat(length), style::CARET)
                 ));
             }
         }
@@ -1161,7 +1196,8 @@ impl<O: Write, E: Write> Reporter<O, E> {
             "  ".to_string()
         };
         if let Some(help) = &wording.help {
-            text.push_str(&format!("{indent}= help: {help}\n"));
+            let label = self.paint("help", style::HELP);
+            text.push_str(&format!("{indent}= {label}: {help}\n"));
         }
         indent
     }
@@ -1320,6 +1356,32 @@ mod tests {
              |     ^^\n     \
              = help: did you mean 'add'?\n\
              oxide-vcl: 1 error; no output written\n"
+        );
+    }
+
+    #[test]
+    fn colors_mark_the_severity_the_message_and_the_caret() {
+        let error = Diagnostic::error(ParseMessage::UnknownInstruction {
+            opcode: "ad".into(),
+        })
+        .at(2);
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.set_source("prog.vcl", "--enter\n\tad res, src, src\n--endenter\n");
+        reporter.set_color(true);
+        reporter.compile_errors(&[error]);
+        reporter.report(&Diagnostic::warning(ParseMessage::NoExit));
+        reporter.report(&Diagnostic::info(CliMessage::AlwaysOn));
+        let (_, err) = reporter.into_inner();
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "\x1b[1mprog.vcl(2):\x1b[0m \x1b[1;31merror\x1b[0m: \x1b[1munknown instruction 'ad'\x1b[0m\n   \
+             2 |     ad res, src, src\n     \
+             |     \x1b[1;32m^^\x1b[0m\n     \
+             = \x1b[1;36mhelp\x1b[0m: did you mean 'add'?\n\
+             oxide-vcl: 1 error; no output written\n\
+             \x1b[1mprog.vcl:\x1b[0m \x1b[1;33mwarning\x1b[0m: \x1b[1mthe program has no --exit block\x1b[0m\n  \
+             = \x1b[1;36mhelp\x1b[0m: end it with --exit ... --endexit (or --cont), declaring its outputs with out_vf/out_vi\n\
+             \x1b[1moxide-vcl:\x1b[0m \x1b[1;36mnote\x1b[0m: \x1b[1m-a has no effect: what it enabled is always on\x1b[0m\n"
         );
     }
 

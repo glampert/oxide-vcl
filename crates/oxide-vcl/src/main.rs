@@ -211,11 +211,23 @@ fn write_all_or_nothing(files: &[(&str, &[u8])]) -> Result<(), DriverMessage> {
     Ok(())
 }
 
+/// Whether diagnostics are colored: `--color=`, and for `auto` whether
+/// standard error is a terminal and the environment allows it (`NO_COLOR`
+/// set to anything but an empty string turns colors off, as does
+/// `TERM=dumb`).
+fn colored(color: cli::Color) -> bool {
+    use std::io::IsTerminal;
+    let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
+    let dumb = std::env::var_os("TERM").is_some_and(|term| term == "dumb");
+    color.enabled(io::stderr().is_terminal(), !no_color && !dumb)
+}
+
 fn main() {
     let mut reporter = Reporter::stdio();
     let arguments = match cli::parse(std::env::args().skip(1)) {
         Ok(arguments) => arguments,
         Err(error) => {
+            reporter.set_color(colored(error.color));
             for notice in &error.notices {
                 reporter.report(notice);
             }
@@ -224,6 +236,7 @@ fn main() {
         }
     };
     reporter.set_warnings_as_errors(arguments.warnings_as_errors);
+    reporter.set_color(colored(arguments.color));
 
     for notice in &arguments.notices {
         reporter.report(notice);

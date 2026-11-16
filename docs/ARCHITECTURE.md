@@ -196,7 +196,9 @@ the help screen and the assembly). It prints each diagnostic as
 `file(line): severity: text` with the source line it was given
 (`Reporter::set_source`), a caret under the token and the fix, counts
 warnings and errors for `--warnings-as-errors` and the closing count, and
-prints nothing on standard output for a failure. `CompileError` and
+prints nothing on standard output for a failure. With
+`Reporter::set_color` (`--color`, decided in the driver) the place, severity,
+message, caret and `help`/`note` labels of each diagnostic carry ANSI styles. `CompileError` and
 `Compiled::warnings` carry these values; their `Display` is `line N: text`.
 Developer traces print through `vcl::trace!`, or `vcl::trace_if!` with the
 name of a switch; the switches are the `VCL_*` environment variables, read

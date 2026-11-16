@@ -223,6 +223,63 @@ fn driver_failures_name_the_file() {
 }
 
 #[test]
+fn colors_follow_the_color_option() {
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  --endenter\n\
+                  ad vf01, vf01, vf01\n\
+                  --exit\n\
+                  --endexit\n";
+    let files = [("bad.vcl", source)];
+    // Standard error is a pipe here: auto leaves the output plain.
+    let plain = run("color-auto", &["bad.vcl"], &files);
+    assert!(!plain.stderr.contains('\x1b'), "{}", plain.stderr);
+    assert!(
+        plain
+            .stderr
+            .starts_with("bad.vcl(5): error: unknown instruction 'ad'\n")
+    );
+    let never = run("color-never", &["--color=never", "bad.vcl"], &files);
+    assert_eq!(never.stderr, plain.stderr);
+    let always = run("color-always", &["--color=always", "bad.vcl"], &files);
+    assert_eq!(always.status, plain.status);
+    assert!(
+        always.stderr.starts_with(
+            "\x1b[1mbad.vcl(5):\x1b[0m \x1b[1;31merror\x1b[0m: \x1b[1munknown instruction 'ad'\x1b[0m\n"
+        ),
+        "{:?}",
+        always.stderr
+    );
+    assert!(
+        always.stderr.contains("| \x1b[1;32m^^\x1b[0m\n"),
+        "{:?}",
+        always.stderr
+    );
+    // Removing the escapes gives the plain output back.
+    let mut stripped = always.stderr.clone();
+    for code in [
+        "\x1b[1m",
+        "\x1b[1;31m",
+        "\x1b[1;32m",
+        "\x1b[1;36m",
+        "\x1b[0m",
+    ] {
+        stripped = stripped.replace(code, "");
+    }
+    assert_eq!(stripped, plain.stderr);
+    // A bad setting is itself a command-line error.
+    let bad = run("color-bad", &["--color=sometimes", "bad.vcl"], &files);
+    assert_eq!(bad.status, 255);
+    assert!(
+        bad.stderr
+            .starts_with("oxide-vcl: error: unknown color setting 'sometimes'\n"),
+        "{}",
+        bad.stderr
+    );
+}
+
+#[test]
 fn loop_hint_warnings_carry_their_line() {
     let source = ".init_vf_all\n\
                   .init_vi_all\n\

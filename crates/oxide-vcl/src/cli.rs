@@ -45,6 +45,8 @@ pub struct Arguments {
     pub quiet: bool,
     /// Fail the run when it prints a warning (`--warnings-as-errors`).
     pub warnings_as_errors: bool,
+    /// When diagnostics are colored (`--color=`).
+    pub color: Color,
     /// Preprocess in standard mode first (`-G`).
     pub preprocess_cpp: bool,
     /// Preprocess in MASP mode first (`-g`).
@@ -83,6 +85,39 @@ impl Arguments {
     }
 }
 
+/// When diagnostics carry ANSI colors (`--color=`), as with clang and gcc.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Color {
+    /// On when standard error is a terminal, unless `NO_COLOR` is set or
+    /// `TERM` is `dumb`.
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
+impl Color {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "auto" => Some(Self::Auto),
+            "always" => Some(Self::Always),
+            "never" => Some(Self::Never),
+            _ => None,
+        }
+    }
+
+    /// Whether to color: for `Auto`, whether standard error is a terminal
+    /// and the environment allows colors (no `NO_COLOR`, `TERM` not
+    /// `dumb`).
+    pub fn enabled(self, terminal: bool, environment_allows: bool) -> bool {
+        match self {
+            Self::Auto => terminal && environment_allows,
+            Self::Always => true,
+            Self::Never => false,
+        }
+    }
+}
+
 /// A command line the driver rejects, with the notices printed before it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CliError {
@@ -90,6 +125,8 @@ pub struct CliError {
     pub output: Option<String>,
     pub quiet: bool,
     pub mode: vcl::Mode,
+    /// The `--color=` setting, for printing the error.
+    pub color: Color,
     pub notices: Vec<Diagnostic>,
 }
 
@@ -100,6 +137,7 @@ impl CliError {
             output: options.output,
             quiet: options.quiet,
             mode: options.compile.mode,
+            color: options.color,
             notices: options.notices,
         }
     }
@@ -142,6 +180,15 @@ where
     {
         options.compile.mode = mode;
     }
+    // So is the color setting, for the error to be printed with it.
+    if let Some(color) = arguments
+        .iter()
+        .filter_map(|argument| argument.strip_prefix("--color="))
+        .filter_map(Color::from_name)
+        .next_back()
+    {
+        options.color = color;
+    }
     let mut index = 0;
     while let Some(argument) = arguments.get(index).filter(|value| value.starts_with('-')) {
         // oxide-vcl's own options, in both modes; vcl 1.4beta7 has no long
@@ -161,6 +208,19 @@ where
                 continue;
             }
             _ => {}
+        }
+        if let Some(name) = argument.strip_prefix("--color=") {
+            let Some(color) = Color::from_name(name) else {
+                return Err(CliError::new(
+                    CliMessage::BadColor {
+                        argument: argument.clone(),
+                    },
+                    options,
+                ));
+            };
+            options.color = color;
+            index += 1;
+            continue;
         }
         // oxide-vcl's own options: vclpp's settings for the preprocessor.
         if let Some(handled) = preprocessor_option(argument, &mut options) {
@@ -663,6 +723,27 @@ mod tests {
                 vcl::Message::Cli(CliMessage::BadArgument { .. })
             ));
         }
+    }
+
+    #[test]
+    fn color_is_auto_unless_chosen() {
+        assert_eq!(parse(["file.vcl"]).unwrap().color, Color::Auto);
+        let options = parse(["--color=never", "--color=always", "file.vcl"]).unwrap();
+        assert_eq!(options.color, Color::Always);
+        let error = parse(["--color=never", "--color=sometimes", "file.vcl"]).unwrap_err();
+        assert_eq!(
+            error.message(),
+            &CliMessage::BadColor {
+                argument: "--color=sometimes".into()
+            }
+        );
+        // The error is printed with the valid setting.
+        assert_eq!(error.color, Color::Never);
+        assert!(Color::Auto.enabled(true, true));
+        assert!(!Color::Auto.enabled(false, true));
+        assert!(!Color::Auto.enabled(true, false));
+        assert!(Color::Always.enabled(false, false));
+        assert!(!Color::Never.enabled(true, true));
     }
 
     #[test]

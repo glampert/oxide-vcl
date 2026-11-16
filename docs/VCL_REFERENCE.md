@@ -1038,6 +1038,7 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `--opt=<names>` | With `--mode=oxide` only: run just the named optimizations, separated by commas; `--opt=all` (the default) runs every one, `--opt=none` none. May be repeated. See [Optimizations](#optimizations). |
 | `--no-opt=<names>` | With `--mode=oxide` only: do not run the named optimizations, whatever `--opt=` chose, in any order. May be repeated. |
 | `--warnings-as-errors` | Fail the run when it prints a warning, from the command line or the program. Not in vcl 1.4beta7. |
+| `--color=<when>` | Color diagnostics as clang and gcc do: `error` in red, `warning` in yellow, `note` and `help` in cyan, the caret in green, the place and the message in bold. `auto` (the default) colors only when standard error is a terminal, `NO_COLOR` is unset or empty and `TERM` is not `dumb`; `always` and `never` decide regardless. Standard output and `-o` files are never colored. Not in vcl 1.4beta7. |
 
 `-g` with `-G` is MASP mode, which runs C's directives too. The
 preprocessor's own long options are listed under [Preprocessor
@@ -1045,8 +1046,8 @@ options](#preprocessor-options). vcl 1.4beta7 runs `gcc -P -E -C -x
 assembler-with-cpp` for `-G` and `gasp` for `-g`; oxide-vcl runs no external
 program.
 
-`--mode`, `--fix`, `--opt`, `--no-opt`, `--warnings-as-errors` and the
-preprocessor's options are oxide-vcl's own; vcl 1.4beta7 has no long options
+`--mode`, `--fix`, `--opt`, `--no-opt`, `--warnings-as-errors`, `--color`
+and the preprocessor's options are oxide-vcl's own; vcl 1.4beta7 has no long options
 and rejects them as unknown switches.
 
 Accepted for compatibility, without effect: `-t<seconds>` (vcl's optimizer

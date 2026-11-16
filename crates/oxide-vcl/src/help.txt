@@ -93,6 +93,8 @@ diagnostics (file(line): severity: message, with the source line and a fix):
   -q             quiet mode: prints only warnings and errors
   --warnings-as-errors
                  fail the run when it prints a warning
+  --color=<when> color diagnostics: auto (the default: when standard error is
+                 a terminal and NO_COLOR is not set), always or never
   -h, --help     print this help
   -v, --version  print the version
 
