@@ -614,6 +614,21 @@ fn lpgen_wrangle_table(
     Some(table)
 }
 
+/// The work budget of a loop the `loops` optimization pipelines, in
+/// position checks. On a loop body of 50 to 70 instructions, a strategy's
+/// setter drags can make tens of millions of them (seconds of compile) in a
+/// period it cannot schedule. Over the public and
+/// local corpora no strategy that wins needs more than about 311,000 and
+/// almost all far fewer, so a strategy stops at 200,000, and the
+/// whole search, every period and strategy, at 20,000,000: about two
+/// seconds of a release build. It counts work, not time, so the result is
+/// the same on every host.
+const DERIVED_LOOP_WORK: crate::scheduler::wrangle::WorkBudget =
+    crate::scheduler::wrangle::WorkBudget {
+        strategy: 200_000,
+        total: 20_000_000,
+    };
+
 /// Search the loop periods for the table, starting at the loop bound.
 fn lpgen_optimize_loop(
     table: &WrangledTable,
@@ -657,7 +672,10 @@ fn lpgen_optimize_loop(
         first,
         last,
         hints.safe as i32,
-        crate::debug::switches().lpgen_budget.unwrap_or(20_000),
+        crate::scheduler::wrangle::LoopBudget {
+            steps: crate::debug::switches().lpgen_budget.unwrap_or(20_000),
+            work: hints.derived.then_some(DERIVED_LOOP_WORK),
+        },
         Some(&table.pools),
     )?;
     crate::trace_if!(

@@ -39,6 +39,15 @@ linear and `to_do/40+3` for loops, at least the `-t` value; wrangler A
 every strategy times out. The port cannot reproduce a CPU alarm, so it uses a
 deterministic budget of 20 000 steps that also counts wrangler A re-ranking.
 
+Loops the `loops` optimization pipelines, which have no hint in the source, also
+have a work budget (`LoopBudget::work`, `DERIVED_LOOP_WORK` in
+`software_loops.rs`). It counts position checks (`Work::checks`): 200 000 per
+strategy, and 20 000 000 for the search. A step can make thousands of checks
+when the setter drags recurse, so the step budget alone does not bound the
+time on a large body. A strategy over its share fails like one out of steps.
+Once the search has spent its share, it ends with what the current period has
+found. See [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md#o1-pipeline-unannotated-loops).
+
 Observations from the original's runs (tools under `local/tools`, evidence
 under `local/evidence/lpgen/watchdog` and `local/evidence/native`, local, not
 tracked):

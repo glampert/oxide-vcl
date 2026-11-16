@@ -13,12 +13,23 @@ pub(super) fn compile_region(
     if options.optimizes(Optimization::Loops) && !options.disable_loops {
         let hinted = with_derived_loop_hints(program, region);
         if hinted.blocks.iter().any(|block| block.loop_hints.derived) {
-            // Pipelined loops grow the program: they must still fit in
-            // VU1 micro memory, or the region is compiled without them.
+            // Pipelined loops grow the program and change what is live
+            // around them: the region is compiled without them when it no
+            // longer fits in VU1 micro memory or its registers no longer
+            // allocate. Other errors are the program's, and are reported.
             let initial = output.clone();
-            compile_hinted_region(program, &hinted, unique, options, output)?;
-            if output.instruction_pairs <= program_size::MICRO_MEMORY {
-                return Ok(());
+            match compile_hinted_region(program, &hinted, unique, options, output) {
+                Ok(()) if output.instruction_pairs <= program_size::MICRO_MEMORY => {
+                    return Ok(());
+                }
+                Ok(()) => {}
+                Err(failure) if failure.kind == CompileErrorKind::Allocation => {
+                    crate::trace_if!(
+                        lpgen_trace,
+                        "derived loop hints do not allocate: {failure:?}"
+                    );
+                }
+                Err(failure) => return Err(failure),
             }
             *output = initial;
         }
@@ -2488,7 +2499,9 @@ fn with_derived_loop_hints(program: &Source, region: &Region) -> Region {
     let mut region = region.clone();
     for id in 0..region.blocks.len() {
         let block = &region.blocks[id];
-        if block.loop_hints.minimum.is_some() || !loop_entry::is_ordinary_self_loop(&region, block)
+        if block.loop_hints.minimum.is_some()
+            || block.loop_hints.declined
+            || !loop_entry::is_ordinary_self_loop(&region, block)
         {
             continue;
         }

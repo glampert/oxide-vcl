@@ -236,6 +236,9 @@ struct LoopHints {
     /// Set by the `loops` optimization, not by the source: the loop is
     /// pipelined only when that makes an iteration shorter.
     derived: bool,
+    /// `--LoopCS 0,0` in oxide mode: the `loops` optimization leaves the
+    /// loop as it is.
+    declined: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1159,6 +1162,9 @@ impl Source {
     // so `--LoopCS 0,0` sets nothing and `--LoopCS 1,-1`
     // keeps the count. The messages are the original's,
     // including `--LoopAbs`'s ">=2" for a minimum of 3.
+    // In oxide mode a minimum of 0 is the way to keep the `loops`
+    // optimization off one loop: the original sets nothing for it, so the
+    // loop compiles as vcl compiles it, and there is nothing to warn about.
     /// Applies a `--LoopCS` hint to the open block.
     fn apply_loop_count(
         &mut self,
@@ -1168,6 +1174,10 @@ impl Source {
     ) -> Result<(), CompileError> {
         let minimum = immediate_i32(instruction, 0, line)?;
         let safe = immediate_i32(instruction, 1, line)?;
+        if minimum == 0 && self.mode == crate::Mode::Oxide {
+            state.current.block().loop_hints.declined = true;
+            return Ok(());
+        }
         if minimum < 1 {
             self.warnings
                 .push(Diagnostic::warning(CompileMessage::LoopCsKnownCount).at(line));

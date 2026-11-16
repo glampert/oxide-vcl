@@ -130,7 +130,10 @@ arguments before it applied (observed from vcl 1.4beta7 in
 `--LoopCS 0,0` sets nothing, `--LoopCS 1,-1` keeps the count, and
 `--LoopAbs 2` is ignored, with the message "value must be >=2". A negative
 `--LoopExtra` is reported the same way, but the original then fails in loop
-scheduling (`loop-hint-extra-negative`); the port rejects it.
+scheduling (`loop-hint-extra-negative`); the port rejects it. In oxide mode
+a `--LoopCS` count of 0 is not reported: it marks the loop for the `loops`
+optimization to leave alone (`LoopHints::declined`), and a negative count
+is still reported.
 
 ## Masks, scalar operands and new syntax
 

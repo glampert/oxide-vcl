@@ -235,17 +235,30 @@ fn loop_hint_warnings_carry_their_line() {
                   ibne cnt, vi00, top\n\
                   --exit\n\
                   --endexit\n";
-    let files = [("loop.vcl", source)];
-    for mode in MODES {
+    // In oxide mode a count of 0 keeps the `loops` optimization off the
+    // loop, without a warning; a negative count still warns.
+    let negative = source.replace("--LoopCS 0, 0", "--LoopCS -1, 0");
+    let cases = [
+        ("--mode=vcl", source, "0, 0"),
+        ("--mode=oxide", negative.as_str(), "-1, 0"),
+    ];
+    for (mode, source, counts) in cases {
+        let files = [("loop.vcl", source)];
         let run = run("warnings", &[mode, "-q", "loop.vcl"], &files);
         assert_eq!(run.status, 0);
         assert_eq!(
             run.stderr,
-            "loop.vcl(7): warning: --LoopCS: the minimum known count (argument 1) must be at least 1\n   \
-             7 | --LoopCS 0, 0\n"
+            format!(
+                "loop.vcl(7): warning: --LoopCS: the minimum known count (argument 1) must be at least 1\n   \
+                 7 | --LoopCS {counts}\n"
+            )
         );
         assert!(run.stdout.contains(".vu"));
     }
+    let files = [("loop.vcl", source)];
+    let run = run("warnings", &["--mode=oxide", "-q", "loop.vcl"], &files);
+    assert_eq!((run.status, run.stderr.as_str()), (0, ""));
+    assert!(run.stdout.contains(".vu"));
 }
 
 /// vcl's copy detector rejects a copy into VI00 but exits with status 0

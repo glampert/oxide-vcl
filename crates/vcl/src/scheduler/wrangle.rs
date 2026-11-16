@@ -689,6 +689,9 @@ pub struct Table<'a> {
     failed_trace: Vec<(usize, i32, u8)>,
     /// Work done by the current search, for watchdog calibration.
     pub work: Work,
+    /// Position checks after which the search gives up as out of budget
+    /// (the `loops` optimization's work budget; unlimited otherwise).
+    check_limit: usize,
     /// To-do length when the search started.
     pub todo_at_start: usize,
     /// Side-effect line floors without a placed branch.
@@ -861,6 +864,7 @@ impl<'a> Table<'a> {
             branch_placed: None,
             failed_trace: Vec::new(),
             work: Work::default(),
+            check_limit: usize::MAX,
             todo_at_start: 0,
             effect_floors: [0, 0],
             reserved: None,
@@ -2981,7 +2985,7 @@ impl<'a> Table<'a> {
         loop {
             steps += 1;
             self.work.steps = steps;
-            if steps > budget {
+            if steps > budget || self.work.checks > self.check_limit {
                 self.failed_trace = trace;
                 return Err(Failure::Budget);
             }
@@ -3081,7 +3085,7 @@ impl<'a> Table<'a> {
             if self.period > 0 {
                 *steps += 1;
                 self.work.steps = *steps;
-                if *steps > budget {
+                if *steps > budget || self.work.checks > self.check_limit {
                     self.failed_trace = std::mem::take(trace);
                     return Err(Failure::Budget);
                 }
@@ -5366,10 +5370,32 @@ pub struct LoopOutcome {
     pub allocation: Vec<(usize, usize)>,
 }
 
+/// What one loop search may spend.
+#[derive(Clone, Copy, Debug)]
+pub struct LoopBudget {
+    /// Wrangler steps per strategy: the original's per-strategy watchdog.
+    pub steps: usize,
+    /// Position checks, for loops the source did not hint: `None` for a
+    /// hinted loop, which searches as vcl does.
+    pub work: Option<WorkBudget>,
+}
+
+/// A bound on the position checks of a loop search. A strategy's setter
+/// drags can make millions of checks within the step budget, so on a large
+/// loop body the checks, not the steps, are what take the time.
+#[derive(Clone, Copy, Debug)]
+pub struct WorkBudget {
+    /// Checks per strategy: a strategy that needs more gives up.
+    pub strategy: usize,
+    /// Checks of the whole search, every period and strategy: once spent,
+    /// the search ends with what the current period has found.
+    pub total: usize,
+}
+
 /// The loop optimizer: from `first_period` upward, try every
 /// strategy (index 10 down to 0) and keep the successful table with the
 /// smallest maximum iteration ID, a later tie replacing an earlier one. The
-/// original's per-strategy watchdog is `budget` wrangler steps.
+/// original's per-strategy watchdog is `budget.steps` wrangler steps.
 ///
 /// Not yet ported: loop local allocation (every wrangled candidate is
 /// accepted; see `docs/LPGEN_PORT.md`).
@@ -5378,15 +5404,29 @@ pub fn optimize_loop(
     first_period: i32,
     last_period: i32,
     known_safe: i32,
-    budget: usize,
+    budget: LoopBudget,
     pools: Option<&Pools>,
 ) -> Option<LoopOutcome> {
     let statics = statics(problem);
+    let mut spent = 0usize;
     for period in first_period.max(2)..=last_period {
         let mut kept: Option<LoopOutcome> = None;
         for strategy in Strategy::ALL.into_iter().rev() {
             let mut table = Table::new_loop(problem, &statics, period, known_safe);
-            let result = table.wrangle(strategy, budget);
+            if let Some(work) = budget.work {
+                let left = work.total.saturating_sub(spent);
+                if left == 0 {
+                    crate::trace_if!(
+                        lpgen_trace,
+                        "lpgen {} period {period} work budget spent",
+                        trace_block()
+                    );
+                    return kept;
+                }
+                table.check_limit = work.strategy.min(left);
+            }
+            let result = table.wrangle(strategy, budget.steps);
+            spent = spent.saturating_add(table.work.checks);
             if crate::debug::switches().lpgen_trace {
                 let (status, trace) = match &result {
                     Ok(trace) => ("ok", trace.clone()),

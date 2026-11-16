@@ -372,6 +372,95 @@ fn loops_leaves_a_loop_that_pipelining_does_not_shorten() {
     assert_eq!(compile(source, &[]), compile(source, &["--opt=exit"]));
 }
 
+#[test]
+fn loops_leaves_a_loop_marked_loopcs_zero() {
+    // `--LoopCS 0,0` keeps the optimization off one loop: in oxide mode
+    // without the warning vcl mode prints for it.
+    let source = SCALE_LOOP.replace("loop:\n", "loop:\n--LoopCS 0,0\n");
+    let options = cli::parse(["-t1", "-uOPT", "--mode=oxide"])
+        .unwrap()
+        .compile;
+    let compiled = vcl::compile(&source, "/work/opt.vcl", &options).unwrap();
+    assert!(compiled.warnings.is_empty(), "{:?}", compiled.warnings);
+    assert!(!pipelined(&compiled.assembly), "{}", compiled.assembly);
+    assert_eq!(compiled.assembly, compile(&source, &["--no-opt=loops"]));
+    let options = cli::parse(["-t1", "-uOPT"]).unwrap().compile;
+    let vcl = vcl::compile(&source, "/work/opt.vcl", &options).unwrap();
+    assert_eq!(vcl.warnings.len(), 1);
+}
+
+/// A transform loop of `vertices` vertices an iteration: 14 instructions
+/// each, with a DIV and a MULQ.
+fn transform_loop(vertices: usize) -> String {
+    let mut source = String::from(
+        ".init_vf_all\n\
+         .init_vi_all\n\
+         --enter\n\
+         in_vi src(vi01)\n\
+         in_vi count(vi02)\n\
+         in_vi dst(vi03)\n\
+         in_vf row0(vf01)\n\
+         in_vf row1(vf02)\n\
+         in_vf row2(vf03)\n\
+         in_vf row3(vf04)\n\
+         in_vf bias(vf05)\n\
+         --endenter\n\
+         loop:\n",
+    );
+    for k in 0..vertices {
+        let (first, second) = (2 * k, 2 * k + 1);
+        source += &format!(
+            "lq pos{k},{first}(src)\n\
+             lq col{k},{second}(src)\n\
+             mulax acc,row0,pos{k}.x\n\
+             madday acc,row1,pos{k}.y\n\
+             maddaz acc,row2,pos{k}.z\n\
+             maddw clp{k},row3,vf00.w\n\
+             div Q,vf00.w,clp{k}.w\n\
+             mulq scr{k},clp{k},Q\n\
+             add scr{k},scr{k},bias\n\
+             ftoi4 fix{k},scr{k}\n\
+             mul col{k},col{k},bias\n\
+             ftoi0 col{k},col{k}\n\
+             sq col{k},{first}(dst)\n\
+             sq fix{k},{second}(dst)\n"
+        );
+    }
+    let step = 2 * vertices;
+    source += &format!(
+        "iaddiu src,src,{step}\n\
+         iaddiu dst,dst,{step}\n\
+         iaddi count,count,-1\n\
+         ibgtz count,loop\n\
+         --exit\n\
+         --endexit\n"
+    );
+    source
+}
+
+#[test]
+fn loops_bounds_the_search_on_a_large_loop() {
+    // 60 instructions: without the work budget, the strategies that find
+    // no schedule search for about 20 seconds in a release build before
+    // their step budgets end them; with it, the whole compile takes well
+    // under one. The strategy that wins is one of the cheap ones, so the
+    // schedule is the one the unbounded search finds: a period of 36.
+    let source = transform_loop(4);
+    let start = std::time::Instant::now();
+    let (plain, optimized) = same_results(&source);
+    let bound = if cfg!(debug_assertions) { 120 } else { 10 };
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(bound),
+        "{:?}",
+        start.elapsed()
+    );
+    assert!(!pipelined(&plain));
+    assert!(
+        optimized.contains("_LPOPT_w=[ dUp ] 36 [36 36] 36"),
+        "{optimized}"
+    );
+}
+
 // ----------------------------------------------
 // unswitch
 // ----------------------------------------------

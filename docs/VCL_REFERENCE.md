@@ -506,8 +506,11 @@ has a `--LoopCS` hint. Put the hints right after the loop's label.
 An out-of-range hint argument is reported and skipped, as vcl does, and the
 program still compiles: `--LoopCS 0,0` sets nothing (the loop is not
 pipelined), `--LoopCS 4,-1` keeps the count of 4, and `--LoopAbs 2` is
-ignored. The `--LoopAbs` message says `value must be >=2`, vcl's wording,
-although 2 is refused. A negative `--LoopExtra` is an error.
+ignored. In oxide mode a count of 0 is not reported: `--LoopCS 0,0` is how
+a program keeps the `loops` optimization off one loop (see
+[Optimizations](#optimizations)), and the original compiles the same source
+with that loop as written. The `--LoopAbs` message says `value must be >=2`,
+vcl's wording, although 2 is refused. A negative `--LoopExtra` is an error.
 
 ```text
 .init_vf_all
@@ -1087,7 +1090,7 @@ all; `--opt=none` runs none, `--opt=NAME,...` exactly those named, and
 
 | Optimization | Improves |
 | --- | --- |
-| `loops` | Loops without `--LoopCS`. A loop vcl would software-pipeline if it had the hint is pipelined as if it had `--LoopCS 1,0`, which every such loop satisfies: it runs at least once, and no store runs past its last iteration. A loop stays as it is when pipelining does not shorten its iterations, or when the program would no longer fit in VU1 micro memory. A loop that reads Q, P or a flag set before it gets the `entry` fix's wait, and is left alone when a branch to its label could pass the wait. `-L` turns it off with the rest of loop pipelining. |
+| `loops` | Loops without `--LoopCS`. A loop vcl would software-pipeline if it had the hint is pipelined as if it had `--LoopCS 1,0`, which every such loop satisfies: it runs at least once, and no store runs past its last iteration. A loop stays as it is when pipelining does not shorten its iterations, when the search finds no schedule within its work budget, when the program would no longer fit in VU1 micro memory, or when it has `--LoopCS 0,0`. The budget counts the scheduler's work, not time, so the output is the same on every host: on a large loop body a search takes about two seconds at most, where an unbounded one can take minutes. A loop that reads Q, P or a flag set before it gets the `entry` fix's wait, and is left alone when a branch to its label could pass the wait. `-L` turns it off with the rest of loop pipelining. |
 | `unswitch` | Loops that test a mode the loop never changes, such as a lighting or vertex format flag the host sets for a batch. A branch on registers that the loop's usual path does not write (`ibeq`, `ibne`, `ibgtz`, `iblez`, `ibltz`, `ibgez`) is decided once before the loop, which then runs in one of two copies of its usual path, each without that branch or the others with the same test. The code between the tests joins into longer streams, which schedule better, and a copy that becomes a loop of one block can be pipelined. The *special cases* stay as one copy: an arm of a branch that leads to an inner loop the other arm does not reach (a clipping pass, say). Code that enters the usual path from outside it, a special case included, tests the mode again, so a special case may change it. Each copy that tests a second such mode gets a copy per outcome of it too, four copies in all, and no more. The program grows by the copied code: when four copies would not fit in VU1 micro memory it gets two, when two would not it is compiled without unswitching, and `--no-opt=unswitch` turns it off for programs that must stay small. |
 | `exit` | The end of a program and of each `--cont` stream. vcl puts the E bit and its delay slot on rows after the last instruction, usually both empty. With `exit` the last instruction runs in the delay slot when the hardware allows it there, and otherwise carries the E bit itself; the program is a row and a cycle shorter. An XGKICK before `--barrier` and an exit takes the E bit the same way. No instruction moves, and with `-e` nothing changes. |
 

@@ -82,7 +82,7 @@ pub(super) fn entry_waits(program: &Source, options: &Options) -> Vec<EntryWait>
             let wanted = if annotated {
                 options.fixes(Fix::Entry)
             } else {
-                options.optimizes(Optimization::Loops)
+                options.optimizes(Optimization::Loops) && !block.loop_hints.declined
             };
             if !wanted || !is_ordinary_self_loop(region, block) {
                 continue;

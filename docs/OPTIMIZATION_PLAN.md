@@ -232,13 +232,29 @@ code ending in a conditional branch to its own label) always runs its body
 at least once, so `--LoopCS 1,0` promises nothing it does not do, and
 vcl's expansion with a count of 1 keeps the early exits in the prologue:
 no separate guard is needed. The optimization gives such loops that hint,
-with three limits:
+with these limits:
 
 - **Profit.** The loop search tries only periods shorter than an iteration
   of the loop scheduled as straight-line code (`lpgen_optimize_loop`); if
   none is found, the loop stays as it is.
+- **Compile time.** The search has a work budget in position checks
+  (`DERIVED_LOOP_WORK`): 200,000 per strategy and 20,000,000 for the whole
+  search, every period and strategy, which is about two seconds of a release
+  build. A loop hinted in the source searches as vcl does, with the step
+  budget alone. Most of the cost is the wrangler's setter drags: in a period
+  it cannot schedule, one strategy can make tens of millions of checks within
+  its 20,000 steps on a body of 50 to 70 instructions. The strategies that
+  win make far fewer, at most about 311,000 over the public and local
+  corpora. With the budget, every derived loop in them gets the same period
+  as without it, and all but two get the same schedule. A 70-instruction
+  branch-free clip pass, which takes four minutes to search unbounded, gives
+  up within the budget and stays as it is.
+- **Opt-out.** `--LoopCS 0,0` in a loop leaves it as it is, without the
+  warning vcl mode prints for a count of 0. The original reads the same source
+  as a loop without a hint.
 - **Size.** A region whose pipelined loops would take the program past the
-  2048 instructions of VU1 micro memory is compiled without them.
+  2048 instructions of VU1 micro memory is compiled without them, and so is
+  a region whose registers no longer allocate with them.
 - **Values from before the loop.** vcl's pipeliner times Q, P and the MAC,
   status and clip flags, which are not interlocked, between iterations but
   not from the code before the loop (defect F7 in
