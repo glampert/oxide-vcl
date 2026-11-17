@@ -1,0 +1,10 @@
+// One LQ serves every lane read from a qword until a store may change it.
+struct Block { uint32 color; vec3 pos; uvec4 out0; vec4 out1; };
+
+void main(layout(address = 0) inout Block block)
+{
+    block.out0.x = block.color;
+    block.out1.yzw = block.pos * 2.0;
+    block.pos.y = 1.0;
+    block.out1.x = block.pos.y;
+}

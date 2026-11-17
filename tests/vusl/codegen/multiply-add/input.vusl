@@ -1,0 +1,11 @@
+// A sum of products is one ACC chain: MULA, MADDA, MSUB. VU1 rounds each
+// product before adding it, so the chain computes what the separate
+// operations would.
+struct In { vec4 a; vec4 b; vec4 c; vec4 d; };
+struct Out { vec4 sum; };
+
+void main(layout(address = 0) in In data,
+          layout(address = 4) out Out result)
+{
+    result.sum = data.a * data.b + data.c * data.d.x - data.a * data.c;
+}

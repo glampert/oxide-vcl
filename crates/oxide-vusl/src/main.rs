@@ -128,13 +128,13 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
         reflection_files(&checked, None, arguments, &mut files);
         return write_files(&files);
     }
-    let vcl = checked
-        .generate()
-        .map_err(|failure| RunError::Check(Box::new(failure.error)))?;
-    if let Some(path) = &arguments.emit_vcl {
-        files.push((path.clone(), vcl.text.clone().into_bytes()));
-    }
     if arguments.stop_at_vcl {
+        let vcl = checked
+            .generate()
+            .map_err(|failure| RunError::Check(Box::new(failure.error)))?;
+        if let Some(path) = &arguments.emit_vcl {
+            files.push((path.clone(), vcl.text.clone().into_bytes()));
+        }
         reflection_files(&checked, None, arguments, &mut files);
         if let Some(path) = &arguments.output {
             files.push((path.clone(), vcl.text.clone().into_bytes()));
@@ -145,19 +145,26 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
         }
         return Ok(());
     }
-    let name = checked.program.name.clone();
-    let listing = format!("{name}.vcl");
-    let compiled = match vusl::assemble(&vcl, &name, &arguments.compile) {
+    let listing = format!("{}.vcl", checked.program.name);
+    let (vcl, compiled) = match vusl::compile(&checked, &arguments.compile) {
         Ok(compiled) => compiled,
-        Err(errors) => {
-            // The generated lines are shown where they came from.
-            reporter.set_source(&listing, &vcl.text);
-            reporter.set_line_origins(vcl.origins.clone());
-            return Err(RunError::Compile(
-                errors.iter().map(|error| error.diagnostic()).collect(),
-            ));
-        }
+        Err(failure) => match *failure {
+            vusl::CompileFailure::Generate(failure) => {
+                return Err(RunError::Check(Box::new(failure.error)));
+            }
+            vusl::CompileFailure::Vcl { vcl, errors } => {
+                // The generated lines are shown where they came from.
+                reporter.set_source(&listing, &vcl.text);
+                reporter.set_line_origins(vcl.origins.clone());
+                return Err(RunError::Compile(
+                    errors.iter().map(|error| error.diagnostic()).collect(),
+                ));
+            }
+        },
     };
+    if let Some(path) = &arguments.emit_vcl {
+        files.push((path.clone(), vcl.text.clone().into_bytes()));
+    }
     if !compiled.warnings.is_empty() {
         reporter.set_source(&listing, &vcl.text);
         reporter.set_line_origins(vcl.origins.clone());

@@ -1,0 +1,14 @@
+// Elements of two arrays with the same stride and base step one pointer,
+// with different offsets.
+struct In { vec4 a; vec4 b; };
+struct Out { vec4 sum; vec4 difference; };
+struct Block { In inputs[8]; Out outputs[8]; };
+
+void main(layout(address = 0) inout Block block)
+{
+    for (In x : block.inputs, out Out y : block.outputs)
+    {
+        y.sum = x.a + x.b;
+        y.difference = x.a - x.b;
+    }
+}

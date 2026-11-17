@@ -1,0 +1,9 @@
+// A GIF tag template from the host, its NLOOP and EOP patched: ILW of the
+// count, IOR of the EOP bit, ISW.X (doom3-bfg-ps2's world_strips.vcl).
+struct Batch { layout(lane = w) int16 count; qword tag; };
+
+void main(layout(xtop, vif_base = 0, vif_offset = 400) inout Batch batch)
+{
+    batch.tag.x = batch.count | 0x8000;
+    xgkick(batch.tag);
+}

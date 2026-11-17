@@ -1,0 +1,15 @@
+// The perspective divide and viewport: DIV, then Q read directly by MULQ,
+// and FTOI4 (quake2-ps2's textured_triangles.vcl: div, mulq.xyz, add or
+// madd, ftoi4). The copy of Q lowering makes is dropped once unread.
+struct Frame { vec4 scale; vec4 offset; };
+struct Vertex { vec4 clip; };
+struct Out { ivec3 xyz; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 2) in Vertex vertex,
+          layout(address = 3) out Out result)
+{
+    float q = 1.0 / vertex.clip.w;
+    vec3 screen = frame.offset.xyz + vertex.clip.xyz * q * frame.scale.xyz;
+    result.xyz = ftoi4(screen);
+}

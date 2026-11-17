@@ -36,13 +36,12 @@ fn compile_with(source: &str, files: &MemoryFiles) -> Compiled {
         Ok(checked) => checked,
         Err(failure) => panic!("{}", failure.error),
     };
-    let vcl = match checked.generate() {
-        Ok(vcl) => vcl,
-        Err(failure) => panic!("{}", failure.error),
-    };
-    let compiled = match vusl::assemble(&vcl, &checked.program.name, &options) {
+    let (vcl, compiled) = match vusl::compile(&checked, &options) {
         Ok(compiled) => compiled,
-        Err(errors) => panic!("{}\n{errors:?}", vcl.text),
+        Err(failure) => match *failure {
+            vusl::CompileFailure::Generate(failure) => panic!("{}", failure.error),
+            vusl::CompileFailure::Vcl { vcl, errors } => panic!("{}\n{errors:?}", vcl.text),
+        },
     };
     Compiled {
         checked,
@@ -327,6 +326,173 @@ fn inlined_functions_with_memory_and_out_parameters() {
 
 /// The check suite's particle program (quake2-ps2's particles.vcl in VUSL),
 /// on a batch of three particles with a matrix that leaves w at 1.
+#[test]
+fn values_are_reused_only_while_they_hold() {
+    let source = "struct Block {\n\
+                  \x20   vec4 a;\n\
+                  \x20   float f; float g; vec2 h;\n\
+                  \x20   vec4 out0; vec4 out1; vec4 out2;\n\
+                  \x20   int16 n; int16 m; int16 o0; int16 o1;\n\
+                  };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   vec4 first = block.a;\n\
+                  \x20   block.a.y = block.f;\n\
+                  \x20   vec4 second = block.a;\n\
+                  \x20   block.out0 = first + second;\n\
+                  \x20   float f = block.f;\n\
+                  \x20   block.f = block.g;\n\
+                  \x20   block.out2.x = f + block.f;\n\
+                  \x20   float s = 1.0;\n\
+                  \x20   for (int16 i = 0; i < block.n; ++i)\n\
+                  \x20   {\n\
+                  \x20       block.out1 = block.out1 + block.a;\n\
+                  \x20       s = s * 2.0;\n\
+                  \x20       block.out2.y = s + block.g * 3.0;\n\
+                  \x20       if (i == 1)\n\
+                  \x20           continue;\n\
+                  \x20       block.out2.z = s + block.g * 3.0;\n\
+                  \x20   }\n\
+                  \x20   if (block.m > 2)\n\
+                  \x20       block.out0 = block.a * 2.0;\n\
+                  \x20   else\n\
+                  \x20       block.a = block.out1;\n\
+                  \x20   block.out1 = block.a * 2.0;\n\
+                  \x20   int16 m = block.m;\n\
+                  \x20   block.m = m + 1;\n\
+                  \x20   block.o0 = block.m + 1;\n\
+                  \x20   block.o1 = m + 1;\n\
+                  }\n";
+    agree(source, 12, |memory, _, _| {
+        // m above 2 on some seeds and not on others.
+        let m = (memory[0][0] >> 23 & 3) as u16 + 1;
+        set_int(memory, 5, 0, 3);
+        set_int(memory, 5, 1, m);
+    });
+}
+
+#[test]
+fn elements_and_loop_invariants() {
+    let source = "struct Item { vec3 v; float k; };\n\
+                  struct Row { vec4 weight; int16 n; Item items[4]; };\n\
+                  struct Batch {\n\
+                  \x20   layout(lane = w) int16 count;\n\
+                  \x20   vec4 scale;\n\
+                  \x20   Row rows[count];\n\
+                  };\n\
+                  void main(layout(xtop, vif_base = 100, vif_offset = 300) inout Batch batch)\n\
+                  {\n\
+                  \x20   for (inout Row row : batch.rows)\n\
+                  \x20   {\n\
+                  \x20       for (inout Item item : row.items)\n\
+                  \x20       {\n\
+                  \x20           item.v = item.v * batch.scale.xyz + row.weight.xyz;\n\
+                  \x20           item.k = item.v.y;\n\
+                  \x20           row.weight.x = item.k + 1.0;\n\
+                  \x20       }\n\
+                  \x20       row.n = row.n + 1;\n\
+                  \x20       batch.scale.y = row.weight.x;\n\
+                  \x20   }\n\
+                  }\n";
+    agree(source, 6, |memory, top, _| {
+        *top = 100;
+        set_int(memory, 100, 3, 3);
+    });
+}
+
+#[test]
+fn multiply_adds_lanes_and_shared_pointers() {
+    let source = "struct V { vec4 a; vec4 b; };\n\
+                  struct O { vec4 sum; vec4 lanes; };\n\
+                  struct Block {\n\
+                  \x20   vec4 s; vec4 t;\n\
+                  \x20   V vs[3];\n\
+                  \x20   O os[3];\n\
+                  \x20   vec4 out0; vec4 out1;\n\
+                  \x20   int16 n;\n\
+                  };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   for (V v : block.vs, out O o : block.os)\n\
+                  \x20   {\n\
+                  \x20       o.sum = v.a * block.s + v.b * block.t - v.a * v.b.x;\n\
+                  \x20       o.lanes.x = 2.0;\n\
+                  \x20       o.lanes.y = -v.a.z;\n\
+                  \x20       o.lanes.z = 1.0 / v.b.w;\n\
+                  \x20       o.lanes.w = -v.b.y;\n\
+                  \x20   }\n\
+                  \x20   vec4 k;\n\
+                  \x20   k.w = 3.0;\n\
+                  \x20   k.x = -block.t.y;\n\
+                  \x20   k.y = float(block.n);\n\
+                  \x20   k.z = sqrt(block.s.x * block.s.x);\n\
+                  \x20   block.out0 = k;\n\
+                  \x20   block.out1.xy = block.s.xy * block.t.x + block.t.xy * block.s.y;\n\
+                  }\n";
+    let compiled = compile(source);
+    // One pointer for both arrays, whose elements are both two qwords; one
+    // chain of multiply-adds; one store for the four lanes.
+    assert!(!compiled.vcl.contains("io_"), "{}", compiled.vcl);
+    assert!(compiled.vcl.contains("msub.xyzw"), "{}", compiled.vcl);
+    assert!(
+        compiled.vcl.contains("sq.xyzw    fqword"),
+        "{}",
+        compiled.vcl
+    );
+    agree_compiled(compiled, 8, |memory, _, _| {
+        for (element, divisor) in [2.0, 0.5, 4.0].into_iter().enumerate() {
+            set_float(memory, 3 + 2 * element, 3, divisor);
+        }
+        set_int(memory, 16, 0, 5);
+    });
+}
+
+#[test]
+fn loops_keep_fewer_invariants_when_registers_run_out() {
+    // 24 uniform qwords read in a loop that keeps 24 products live: with
+    // every invariant in a register the VF registers do not suffice.
+    let mut source = String::from(
+        "struct Uniforms { vec4 u[24]; };\n\
+         struct In { vec4 v; };\n\
+         struct Out { vec4 o[12]; };\n\
+         struct Batch { layout(lane = w) int16 count; In items[count]; Out outs[count]; };\n\
+         void main(layout(address = 0) uniform Uniforms k,\n\
+         \x20         layout(xtop, vif_base = 100, vif_offset = 400) inout Batch batch)\n\
+         {\n\
+         \x20   for (In e : batch.items, out Out r : batch.outs)\n\
+         \x20   {\n",
+    );
+    for index in 0..24 {
+        source.push_str(&format!("        vec4 a{index} = e.v * k.u[{index}];\n"));
+    }
+    for index in 0..12 {
+        source.push_str(&format!(
+            "        r.o[{index}] = a{index} + a{};\n",
+            23 - index
+        ));
+    }
+    source.push_str("    }\n}\n");
+    let compiled = compile(&source);
+    let options = vusl::Options::default();
+    let Ok(all_hoisted) = compiled.checked.generate() else {
+        panic!("the code is generated");
+    };
+    let Err(errors) = vusl::assemble(&all_hoisted, "test", &options) else {
+        panic!("too many registers with every invariant hoisted");
+    };
+    assert!(
+        errors.iter().any(|error| matches!(
+            error.message,
+            vcl::Message::Compile(vcl::diagnostics::CompileMessage::AllocationPoolFull { .. })
+        )),
+        "{errors:?}"
+    );
+    agree_compiled(compiled, 3, |memory, top, _| {
+        *top = 100;
+        set_int(memory, 100, 3, 2);
+    });
+}
+
 #[test]
 fn the_particle_program() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/vusl");

@@ -1,0 +1,18 @@
+// The guard-band judgement: MUL then CLIPW; the ADC bit is FCAND of the
+// last judgement's six flags and IADDIU 0x7fff (quake2-ps2's vu_common.i,
+// JudgeTriangleAdc, for three judgements: fcand 0x3ffff).
+struct Corner { vec4 clip; };
+struct Frame { vec3 guard; float pad; };
+struct Out { int16 adc; int16 pad0; int16 pad1; int16 pad2; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 1) in Corner a,
+          layout(address = 2) in Corner b,
+          layout(address = 3) in Corner c,
+          layout(address = 4) out Out result)
+{
+    clipflags ja = clipw(a.clip.xyz * frame.guard, a.clip.w);
+    clipflags jb = clipw(b.clip.xyz * frame.guard, b.clip.w);
+    clipflags jc = clipw(c.clip.xyz * frame.guard, c.clip.w);
+    result.adc = adc(ja, jb, jc);
+}

@@ -9,8 +9,15 @@
 //!   address for a fixed parameter, the XTOP register for the double
 //!   buffer, a pointer for a range element. Lengths read from memory and
 //!   run-time indices add to the base.
-//! - A range-for counts down from its length; each element's pointer steps
-//!   by its stride, so the body addresses elements with immediates.
+//! - A range-for steps a pointer per element stride by that stride, so the
+//!   body addresses elements with immediates, and ends when the pointer
+//!   with the smallest stride reaches the end of its array.
+//! - What registers hold is recorded (`values`), so a value is computed
+//!   once while it holds and a loop's invariants once before it. A
+//!   division's readers take Q directly, sums of products are ACC chains,
+//!   and stores to the lanes of one qword can be one store.
+//! - `peephole` then writes a temporary's value straight into the register
+//!   it was moved to.
 //! - Matrix products are MULA/MADDA/MADD chains on the vector's components
 //!   as broadcast operands; a component that is the constant 1 is VF00's w
 //!   and a 0 drops its term.
@@ -18,10 +25,13 @@
 //!   comparisons of `int16` values branch on them or on their difference.
 
 mod emit;
+mod peephole;
+mod values;
 
 pub use emit::{Vf, Vi};
 
 use emit::{Output, mask_of};
+use values::{Cache, Effects, Entry, Key, Read, Value};
 
 use crate::diagnostics::VuslMessage;
 use crate::sema::hir::*;
@@ -40,7 +50,7 @@ pub struct Generated {
 type Lowered<T> = Result<T, Box<Problem>>;
 
 /// A VF value: the register holding it and the lanes of its components.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Fv {
     reg: Vf,
     placement: Placement,
@@ -82,9 +92,24 @@ enum LocalReg {
     Clip(usize),
 }
 
+/// Choices lowering leaves to its caller.
+#[derive(Clone, Copy, Debug)]
+pub struct Settings {
+    /// The most values a loop's invariants may keep in registers across
+    /// it.
+    pub hoist_limit: usize,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { hoist_limit: 16 }
+    }
+}
+
 /// Lowers `program` to VCL source; `source` is the file it came from.
-pub fn generate(program: &Program, source: &str) -> Lowered<Generated> {
+pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<Generated> {
     let mut lowering = Lowering {
+        settings,
         program,
         out: Output::default(),
         locals: vec![LocalReg::Unset; program.locals.len()],
@@ -95,6 +120,8 @@ pub fn generate(program: &Program, source: &str) -> Lowered<Generated> {
         exit: String::new(),
         clips: 0,
         clips_reachable_from: 0,
+        cache: Cache::default(),
+        q_holds: None,
     };
     lowering.program_text(source)?;
     let (text, origins) = lowering.out.finish();
@@ -103,12 +130,14 @@ pub fn generate(program: &Program, source: &str) -> Lowered<Generated> {
 
 struct Lowering<'p> {
     program: &'p Program,
+    settings: Settings,
     out: Output,
     locals: Vec<LocalReg>,
     /// Where each local's value is now, as the code goes.
     placements: Vec<Option<Placement>>,
-    /// Each range element's pointer, inside its loop.
-    elements: Vec<Option<Vi>>,
+    /// Each range element's pointer and its offset from it, inside its
+    /// loop.
+    elements: Vec<Option<(Vi, i64)>>,
     xtop: Option<Vi>,
     /// The `break` and `continue` labels of the loops being lowered.
     loops: Vec<(String, String)>,
@@ -117,6 +146,11 @@ struct Lowering<'p> {
     /// readable: a branch or a loop boundary loses track of the flags.
     clips: usize,
     clips_reachable_from: usize,
+    /// The values registers hold that the code can use again.
+    cache: Cache,
+    /// The register lane whose value Q holds too, while no FDIV operation
+    /// or label has come since: its readers take Q directly.
+    q_holds: Option<(Vf, Lane)>,
 }
 
 fn float_text(value: f32) -> String {
@@ -194,6 +228,108 @@ impl Lowering<'_> {
         dest.unwrap_or_else(|| self.out.vi("t"))
     }
 
+    /// A label here. Q may differ on the paths that meet at it.
+    fn label_here(&mut self, label: &str) {
+        self.q_holds = None;
+        self.out.place_label(label);
+    }
+
+    /// An FDIV unit operation: Q changes.
+    fn fdiv(&mut self, mnemonic: &str, operands: &[String]) {
+        self.q_holds = None;
+        self.out.inst(mnemonic, None, operands);
+    }
+
+    /// Whether `value` is the one Q holds too.
+    fn is_q(&self, value: Fv) -> bool {
+        value.is_scalar() && self.q_holds == Some((value.reg, value.lane()))
+    }
+
+    /// Local `id`'s registers, VF and VI.
+    fn local_regs(&self, id: LocalId) -> (Vec<Vf>, Vec<Vi>) {
+        match &self.locals[id] {
+            LocalReg::Vf(reg) => (vec![*reg], Vec::new()),
+            LocalReg::Mat(regs) => (regs.clone(), Vec::new()),
+            LocalReg::Vi(reg) => (Vec::new(), vec![*reg]),
+            LocalReg::Unset | LocalReg::Clip(_) => (Vec::new(), Vec::new()),
+        }
+    }
+
+    /// VF register `reg` written: values it held from before cache entry
+    /// `since` are gone, and so is Q's copy unless it came since.
+    fn clobber_vf(&mut self, reg: Vf, since: u64, q_before: Option<(Vf, Lane)>) {
+        self.cache.clobber_vf(reg, since);
+        if self.q_holds.is_some_and(|(q_reg, _)| q_reg == reg) && self.q_holds == q_before {
+            self.q_holds = None;
+        }
+    }
+
+    /// Cache entries that `effects` may change are gone.
+    fn forget(&mut self, effects: &Effects) {
+        if effects.yields {
+            self.cache.forget_memory();
+        }
+        for region in &effects.stores {
+            self.cache.stored(self.program, region, None);
+        }
+        for &id in &effects.locals {
+            let (vf, vi) = self.local_regs(id);
+            for reg in vf {
+                self.clobber_vf(reg, u64::MAX, self.q_holds);
+            }
+            for reg in vi {
+                self.cache.clobber_vi(reg, u64::MAX);
+            }
+            self.cache.clobber_local(id);
+        }
+    }
+
+    /// A store of `qwords` qwords to `place` at `base` and `offset`.
+    fn stored(&mut self, place: &Place, base: Vi, offset: i64, qwords: i64) {
+        let region = values::region(self.program, place);
+        self.cache
+            .stored(self.program, &region, Some((base, offset, qwords)));
+    }
+
+    /// Lowers the invariants of a loop with `effects` before it, so the
+    /// loop finds them in registers.
+    fn hoist(&mut self, stmts: &[&[Stmt]], conds: &[&Expr], effects: &Effects) -> Lowered<()> {
+        let program = self.program;
+        let mut found = Vec::new();
+        {
+            let elements = &self.elements;
+            let bound = |element: ElementId| elements[element].is_some();
+            for stmts in stmts {
+                values::invariants(program, stmts, &[], effects, &bound, &mut found);
+            }
+            values::invariants(program, &[], conds, effects, &bound, &mut found);
+        }
+        let mut kept = 0;
+        for expr in found {
+            if kept >= self.settings.hoist_limit {
+                break;
+            }
+            let before = self.out.instructions();
+            self.out.pos = Some(expr.pos);
+            match expr.ty {
+                Type::Int16 => {
+                    self.vi(expr)?;
+                }
+                Type::Mat { size, .. } => {
+                    self.mat(expr)?;
+                    kept += usize::from(size) - 1;
+                }
+                _ => {
+                    self.vf(expr)?;
+                }
+            }
+            if self.out.instructions() > before {
+                kept += 1;
+            }
+        }
+        Ok(())
+    }
+
     // ----------------------------------------------
     // The program
     // ----------------------------------------------
@@ -229,16 +365,145 @@ impl Lowering<'_> {
         self.stmts(&program.body)?;
         let exit = self.exit.clone();
         self.out.pos = None;
-        self.out.place_label(&exit);
+        self.label_here(&exit);
         self.out.line("--exit");
         self.out.line("--endexit");
         Ok(())
     }
 
     fn stmts(&mut self, stmts: &[Stmt]) -> Lowered<()> {
-        for stmt in stmts {
-            self.stmt(stmt)?;
+        let mut index = 0;
+        while index < stmts.len() {
+            let parts = self.qword_run(&stmts[index..]);
+            if parts > 1 {
+                self.assemble_qword(&stmts[index..index + parts])?;
+                index += parts;
+            } else {
+                self.stmt(&stmts[index])?;
+                index += 1;
+            }
         }
+        Ok(())
+    }
+
+    /// How many stores from the first of `stmts` go to lanes of one qword
+    /// and are worth one store: VF values in distinct lanes, none reading
+    /// the qword, needing fewer extra lane moves in one register than the
+    /// stores they save.
+    fn qword_run(&self, stmts: &[Stmt]) -> usize {
+        let mut lanes = 0u8;
+        let mut extra = 0;
+        let mut count = 0;
+        let mut first: Option<&Place> = None;
+        for stmt in stmts {
+            let Stmt::Store {
+                place,
+                components,
+                value,
+                ..
+            } = stmt
+            else {
+                break;
+            };
+            let Some(target) = store_lanes(place, components.as_deref()) else {
+                break;
+            };
+            if let Some(first) = first
+                && !same_qword(first, place)
+            {
+                break;
+            }
+            let mask = target
+                .lanes()
+                .iter()
+                .fold(0, |mask, lane| mask | 1 << lane.index());
+            if lanes & mask != 0 || self.reads_qword(value, place) {
+                break;
+            }
+            // A part that a store of its own would take straight from its
+            // register costs a move here.
+            let in_place = (target.len() == 1 && any_lane(value))
+                || (target.len() > 1 && value.placement == Some(target) && !passes_through(value));
+            let direct = self.predicted(value) == Some(target);
+            if !in_place && direct {
+                extra += 1;
+            }
+            first = Some(first.unwrap_or(place));
+            lanes |= mask;
+            count += 1;
+        }
+        if count > 1 && extra < count - 1 {
+            count
+        } else {
+            1
+        }
+    }
+
+    /// Where `value`'s lanes are before lowering, when known.
+    fn predicted(&self, value: &Expr) -> Option<Placement> {
+        match &value.kind {
+            ExprKind::Local(id) => self.placements[*id].or(value.placement),
+            _ => value.placement,
+        }
+    }
+
+    /// Whether `value` loads from memory that may be `place`'s qword.
+    fn reads_qword(&self, value: &Expr, place: &Place) -> bool {
+        let mut locals = Vec::new();
+        let mut places = Vec::new();
+        values::inputs(value, &mut locals, &mut places);
+        let effects = Effects {
+            stores: vec![values::region(self.program, place)],
+            ..Effects::default()
+        };
+        places
+            .iter()
+            .any(|read| effects.stores_to(self.program, read))
+    }
+
+    /// Stores to lanes of one qword, as one: each part built in one
+    /// register, then one SQ of their lanes.
+    fn assemble_qword(&mut self, stores: &[Stmt]) -> Lowered<()> {
+        let qword = self.out.vf("qword");
+        let mut lanes: Vec<Lane> = Vec::new();
+        let mut first = None;
+        for stmt in stores {
+            let Stmt::Store {
+                place,
+                components,
+                value,
+                pos,
+            } = stmt
+            else {
+                unreachable!("a run of stores");
+            };
+            self.out.pos = Some(*pos);
+            first.get_or_insert((place, *pos));
+            let target = store_lanes(place, components.as_deref()).expect("a store to lanes");
+            let into = if target.len() == 1 {
+                self.vf_in_lane(value, Some(qword), target.lane(0))?
+            } else if value.placement == Some(target) && !passes_through(value) {
+                self.vf_into(value, Some(qword))?
+            } else {
+                self.vf(value)?
+            };
+            if into.reg == qword && into.placement != target {
+                return self.not_yet("a part of a qword computed in other lanes");
+            }
+            self.write_lanes(into, qword, target, place.ty.is_raw())?;
+            lanes.extend(target.lanes());
+        }
+        let (place, pos) = first.expect("stores");
+        self.out.pos = Some(pos);
+        let (base, offset) = self.address(place)?;
+        let mask = Self::mask(&Placement::from_lanes(&lanes).expect("distinct lanes"));
+        let names = [self.name(qword), self.iname(base)];
+        self.out.inst(
+            "sq",
+            Some(&mask),
+            &[names[0].clone(), format!("{offset}({})", names[1])],
+        );
+        self.stored(place, base, offset, 1);
         Ok(())
     }
 
@@ -252,7 +517,24 @@ impl Lowering<'_> {
                 pos,
             } => {
                 self.out.pos = Some(*pos);
-                self.set_local(*local, *column, components.as_deref(), value)
+                let since = self.cache.mark();
+                let q_before = self.q_holds;
+                self.set_local(*local, *column, components.as_deref(), value)?;
+                // What the local's registers held before is gone; what the
+                // value left in them holds.
+                let (vf, vi) = self.local_regs(*local);
+                let vf = match column {
+                    Some(column) => vec![vf[*column]],
+                    None => vf,
+                };
+                for reg in vf {
+                    self.clobber_vf(reg, since, q_before);
+                }
+                for reg in vi {
+                    self.cache.clobber_vi(reg, since);
+                }
+                self.cache.clobber_local(*local);
+                Ok(())
             }
             Stmt::Store {
                 place,
@@ -273,22 +555,14 @@ impl Lowering<'_> {
                 let (from_base, from_offset) = self.address(from)?;
                 let (to_base, to_offset) = self.address(to)?;
                 for qword in 0..i64::from(*qwords) {
-                    let value = self.out.vf("copy");
-                    let (value_name, from_name, to_name) =
-                        (self.name(value), self.iname(from_base), self.iname(to_base));
-                    self.out.inst(
-                        "lq",
-                        None,
-                        &[
-                            value_name.clone(),
-                            format!("{}({from_name})", from_offset + qword),
-                        ],
-                    );
+                    let value = self.load_qword(from, from_base, from_offset + qword, None);
+                    let (value_name, to_name) = (self.name(value), self.iname(to_base));
                     self.out.inst(
                         "sq",
                         None,
                         &[value_name, format!("{}({to_name})", to_offset + qword)],
                     );
+                    self.stored(to, to_base, to_offset + qword, 1);
                 }
                 Ok(())
             }
@@ -320,18 +594,29 @@ impl Lowering<'_> {
                 self.out.pos = Some(*pos);
                 let otherwise_label = self.out.label("else");
                 let end = self.out.label("endif");
+                // Values from the condition hold on both paths and after,
+                // unless `&&` or `||` skips part of it on some path.
+                let mut before = self.cache.clone();
                 self.branch(cond, false, &otherwise_label)?;
+                if !short_circuits(cond) {
+                    before = self.cache.clone();
+                }
                 self.clips_reachable_from = self.clips;
                 self.stmts(then)?;
                 if !otherwise.is_empty() {
                     self.out.pos = Some(*pos);
                     self.out.inst("b", None, std::slice::from_ref(&end));
                 }
-                self.out.place_label(&otherwise_label);
+                self.cache = before.clone();
+                self.label_here(&otherwise_label);
                 self.clips_reachable_from = self.clips;
                 self.stmts(otherwise)?;
-                self.out.place_label(&end);
+                self.label_here(&end);
                 self.clips_reachable_from = self.clips;
+                self.cache = before;
+                let mut effects = Effects::of(self.program, then);
+                effects.add(self.program, otherwise);
+                self.forget(&effects);
                 Ok(())
             }
             Stmt::Loop {
@@ -365,6 +650,9 @@ impl Lowering<'_> {
             Stmt::Yield { pos } => {
                 self.out.pos = Some(*pos);
                 self.out.line("--cont");
+                // The host may write memory before MSCNT resumes.
+                self.cache.forget_memory();
+                self.q_holds = None;
                 Ok(())
             }
             Stmt::Barrier { pos } => {
@@ -403,10 +691,35 @@ impl Lowering<'_> {
         hints: &LoopHints,
         pos: Pos,
     ) -> Lowered<()> {
+        let program = self.program;
         let top = self.out.label("loop");
         let next = self.out.label("next");
         let exit = self.out.label("done");
         self.clips_reachable_from = self.clips;
+        let mut effects = Effects::of(program, body);
+        if let LoopKind::Condition {
+            cond_stmts, step, ..
+        } = kind
+        {
+            effects.add(program, cond_stmts);
+            effects.add(program, step);
+        }
+        // What the loop changes is not known at its top; its invariants
+        // are computed once, before it.
+        self.forget(&effects);
+        match kind {
+            LoopKind::Condition {
+                cond_stmts,
+                cond,
+                step,
+                ..
+            } => self.hoist(&[cond_stmts, body, step], &[cond], &effects)?,
+            LoopKind::Range { .. } => self.hoist(&[body], &[], &effects)?,
+        }
+        self.out.pos = Some(pos);
+        // The values every path to the exit has.
+        let at_exit;
+        let at_top;
         match kind {
             LoopKind::Condition {
                 cond_stmts,
@@ -414,55 +727,54 @@ impl Lowering<'_> {
                 test_first,
                 step,
             } => {
+                at_exit = self.cache.clone();
                 if *test_first {
                     self.stmts(cond_stmts)?;
                     self.out.pos = Some(pos);
                     self.branch(cond, false, &exit)?;
                 }
-                self.out.place_label(&top);
+                self.forget(&effects);
+                at_top = self.cache.clone();
+                self.label_here(&top);
                 self.loop_hints(hints);
                 self.loops.push((exit.clone(), next.clone()));
                 let result = self.stmts(body);
                 self.loops.pop();
                 result?;
-                self.out.place_label(&next);
+                self.reach_next(body, &next, &at_top);
                 self.stmts(step)?;
                 self.stmts(cond_stmts)?;
                 self.out.pos = Some(pos);
                 self.branch(cond, true, &top)?;
             }
             LoopKind::Range { elements, count } => {
-                let counter = self.out.vi("count");
-                let counter_name = self.iname(counter);
-                let guarded = match count {
-                    Count::Fixed(n) => {
-                        self.materialize(i64::from(*n), Some(counter));
-                        false
-                    }
+                let trips = match count {
+                    // No iterations: no loop.
+                    Count::Fixed(0) => return Ok(()),
+                    Count::Fixed(n) => Trips::Fixed(i64::from(*n)),
                     Count::Member(place) => {
                         let (base, offset) = self.address(place)?;
-                        let base_name = self.iname(base);
-                        self.out.inst(
-                            "ilw",
-                            Some(&place.lane.letter().to_string()),
-                            &[counter_name.clone(), format!("{offset}({base_name})")],
-                        );
-                        true
+                        Trips::Counted(self.load_int16(place, base, offset, None))
                     }
                     Count::Param(_) => return self.not_yet("a range counted by xitop"),
                 };
-                if guarded {
-                    self.out.inst(
-                        "ibeq",
-                        None,
-                        &[counter_name.clone(), "vi00".into(), exit.clone()],
-                    );
-                }
-                let mut pointers = Vec::new();
-                let program = self.program;
+                // A pointer per element stride and base, stepping by the
+                // stride; elements whose arrays differ by a constant share
+                // one. The loop ends when the pointer with the smallest
+                // stride reaches its end, so no counter steps too.
+                let mut pointers: Vec<(Vi, u32)> = Vec::new();
+                let mut starts: Vec<(Vi, i64, Vi, u32)> = Vec::new();
                 for &element in elements {
                     let array = &program.elements[element].array;
+                    let stride = program.elements[element].stride;
                     let (base, offset) = self.address(array)?;
+                    let shared = starts.iter().find(|(start_base, _, _, start_stride)| {
+                        *start_base == base && *start_stride == stride
+                    });
+                    if let Some(&(_, start, pointer, _)) = shared {
+                        self.elements[element] = Some((pointer, offset - start));
+                        continue;
+                    }
                     let pointer = self.out.vi(&program.elements[element].name);
                     let (pointer_name, base_name) = (self.iname(pointer), self.iname(base));
                     self.out.inst(
@@ -470,33 +782,65 @@ impl Lowering<'_> {
                         None,
                         &[pointer_name, base_name, offset.to_string()],
                     );
-                    self.elements[element] = Some(pointer);
-                    pointers.push((pointer, program.elements[element].stride));
+                    self.elements[element] = Some((pointer, 0));
+                    starts.push((base, offset, pointer, stride));
+                    pointers.push((pointer, stride));
                 }
-                self.out.place_label(&top);
+                let &(lead, stride) = pointers
+                    .iter()
+                    .min_by_key(|(_, stride)| *stride)
+                    .expect("a range has an element");
+                let end = self.out.vi("end");
+                match trips {
+                    Trips::Fixed(n) => {
+                        self.add_immediate(lead, n * i64::from(stride), Some(end));
+                    }
+                    Trips::Counted(count) => {
+                        let scaled = self.scale(count, stride);
+                        let names = [self.iname(end), self.iname(lead), self.iname(scaled)];
+                        self.out.inst("iadd", None, &names);
+                        let count_name = self.iname(count);
+                        self.out
+                            .inst("ibeq", None, &[count_name, "vi00".into(), exit.clone()]);
+                    }
+                }
+                self.forget(&effects);
+                at_exit = self.cache.clone();
+                at_top = at_exit.clone();
+                self.label_here(&top);
                 self.loop_hints(hints);
                 self.loops.push((exit.clone(), next.clone()));
                 let result = self.stmts(body);
                 self.loops.pop();
                 result?;
-                self.out.place_label(&next);
+                self.reach_next(body, &next, &at_top);
                 self.out.pos = Some(pos);
                 for (pointer, stride) in pointers {
                     let name = self.iname(pointer);
                     self.out
                         .inst("iaddiu", None, &[name.clone(), name, stride.to_string()]);
                 }
-                self.out.inst(
-                    "iaddi",
-                    None,
-                    &[counter_name.clone(), counter_name.clone(), "-1".into()],
-                );
-                self.out.inst("ibgtz", None, &[counter_name, top]);
+                let (lead_name, end_name) = (self.iname(lead), self.iname(end));
+                self.out.inst("ibne", None, &[lead_name, end_name, top]);
+                // The elements exist only inside their loop.
+                for &element in elements {
+                    self.elements[element] = None;
+                }
             }
         }
-        self.out.place_label(&exit);
+        self.label_here(&exit);
+        self.cache = at_exit;
         self.clips_reachable_from = self.clips;
         Ok(())
+    }
+
+    /// The `next` label after a loop's body: a `continue` reaches it with
+    /// only the values the top has.
+    fn reach_next(&mut self, body: &[Stmt], next: &str, at_top: &Cache) {
+        if continues(body) {
+            self.cache = at_top.clone();
+        }
+        self.label_here(next);
     }
 
     // ----------------------------------------------
@@ -521,9 +865,12 @@ impl Lowering<'_> {
                     self.branch(rhs, when, label)
                 } else {
                     let skip = self.out.label("skip");
+                    // The path through `skip` may not evaluate `rhs`.
+                    let before = self.cache.clone();
                     self.branch(lhs, !when, &skip)?;
                     self.branch(rhs, when, label)?;
-                    self.out.place_label(&skip);
+                    self.label_here(&skip);
+                    self.cache = before;
                     Ok(())
                 }
             }
@@ -791,7 +1138,7 @@ impl Lowering<'_> {
         match components {
             None => {
                 if let Some(target) = fixed {
-                    let value = self.vf(value)?;
+                    let value = self.vf_toward(value, reg, target)?;
                     self.write_lanes(value, reg, target, raw)?;
                     return Ok(target);
                 }
@@ -818,10 +1165,19 @@ impl Lowering<'_> {
                 let Some(target) = base.select(components) else {
                     return self.not_yet("these components");
                 };
-                let value = self.vf(value)?;
+                let value = self.vf_toward(value, reg, target)?;
                 self.write_lanes(value, reg, target, raw)?;
                 Ok(base)
             }
+        }
+    }
+
+    /// `value`, for `reg`'s lanes `target`: a scalar that can go in any
+    /// lane goes there.
+    fn vf_toward(&mut self, value: &Expr, reg: Vf, target: Placement) -> Lowered<Fv> {
+        match target.len() {
+            1 => self.vf_in_lane(value, Some(reg), target.lane(0)),
+            _ => self.vf(value),
         }
     }
 
@@ -915,6 +1271,15 @@ impl Lowering<'_> {
                     &[dest_name, "vf00".into(), "vf00[w]".into()],
                 );
             }
+            Component::Lane(source, from) if self.q_holds == Some((source, from)) => {
+                // From Q: 0 + Q, or 1 * Q in w.
+                let mnemonic = if target == Lane::W { "mulq" } else { "addq" };
+                self.out.inst(
+                    mnemonic,
+                    Some(&lane),
+                    &[dest_name, "vf00".into(), "q".into()],
+                );
+            }
             Component::Lane(source, from) if from == target => {
                 let source = self.name(source);
                 self.out.inst("move", Some(&lane), &[dest_name, source]);
@@ -939,6 +1304,7 @@ impl Lowering<'_> {
                     Some(&place.lane.letter().to_string()),
                     &[names[0].clone(), format!("{offset}({})", names[1])],
                 );
+                self.stored(place, base, offset, 1);
                 Ok(())
             }
             Type::Mat { size, .. } => {
@@ -956,6 +1322,7 @@ impl Lowering<'_> {
                         ],
                     );
                 }
+                self.stored(place, base, offset, i64::from(*size));
                 Ok(())
             }
             ty => {
@@ -966,7 +1333,10 @@ impl Lowering<'_> {
                     Some(components) => whole.select(components).expect("checked components"),
                     None => whole,
                 };
-                let value = self.vf(value)?;
+                let value = match target.len() {
+                    1 => self.vf_in_lane(value, None, target.lane(0))?,
+                    _ => self.vf(value)?,
+                };
                 let value = if value.placement == target {
                     value
                 } else {
@@ -984,6 +1354,7 @@ impl Lowering<'_> {
                     Some(&Self::mask(&target)),
                     &[names[0].clone(), format!("{offset}({})", names[1])],
                 );
+                self.stored(place, base, offset, 1);
                 Ok(())
             }
         }
@@ -1040,7 +1411,7 @@ impl Lowering<'_> {
                 ParamPlacement::Xitop => return self.not_yet("the address of an xitop count"),
             },
             Base::Element(element) => match self.elements[element] {
-                Some(pointer) => (pointer, 0),
+                Some(at) => at,
                 None => return self.not_yet("an element outside its loop"),
             },
         };
@@ -1050,13 +1421,7 @@ impl Lowering<'_> {
                 return self.not_yet("a length read through this place");
             };
             let (count_base, count_offset) = self.address(&count_place)?;
-            let count = self.out.vi("length");
-            let names = [self.iname(count), self.iname(count_base)];
-            self.out.inst(
-                "ilw",
-                Some(&count_place.lane.letter().to_string()),
-                &[names[0].clone(), format!("{count_offset}({})", names[1])],
-            );
+            let count = self.load_int16(&count_place, count_base, count_offset, None);
             let scaled = self.scale(count, term.stride);
             base = self.add_regs(base, scaled);
         }
@@ -1099,10 +1464,80 @@ impl Lowering<'_> {
         if b == Vi::Zero {
             return a;
         }
+        let key = Key::Sum(a.min(b), a.max(b));
+        if let Some(Value::Vi(sum)) = self.cache.find(&key) {
+            return sum;
+        }
         let sum = self.out.vi("address");
         let names = [self.iname(sum), self.iname(a), self.iname(b)];
         self.out.inst("iadd", None, &names);
+        self.cache.insert(Entry {
+            key,
+            value: Value::Vi(sum),
+            reads: Vec::new(),
+            locals: Vec::new(),
+        });
         sum
+    }
+
+    /// The `int16` at `place`, at `base` and `offset`: ILW, or the
+    /// register that already holds it.
+    fn load_int16(&mut self, place: &Place, base: Vi, offset: i64, dest: Option<Vi>) -> Vi {
+        let key = Key::Int16 {
+            base,
+            offset,
+            lane: place.lane,
+        };
+        if let Some(Value::Vi(reg)) = self.cache.find(&key) {
+            return reg;
+        }
+        let reg = self.idest(dest);
+        let names = [self.iname(reg), self.iname(base)];
+        self.out.inst(
+            "ilw",
+            Some(&place.lane.letter().to_string()),
+            &[names[0].clone(), format!("{offset}({})", names[1])],
+        );
+        self.cache.insert(Entry {
+            key,
+            value: Value::Vi(reg),
+            reads: vec![Read {
+                region: values::region(self.program, place),
+                at: Some((base, offset)),
+            }],
+            locals: Vec::new(),
+        });
+        reg
+    }
+
+    /// The qword at `base` and `offset`, read through `place`: LQ of all
+    /// four lanes, or the register that already holds them. VCL narrows
+    /// the lanes no one reads.
+    fn load_qword(&mut self, place: &Place, base: Vi, offset: i64, dest: Option<Vf>) -> Vf {
+        let key = Key::Qword { base, offset };
+        if let Some(Value::Vf(value)) = self.cache.find(&key) {
+            return value.reg;
+        }
+        let reg = self.dest(dest);
+        let names = [self.name(reg), self.iname(base)];
+        self.out.inst(
+            "lq",
+            Some("xyzw"),
+            &[names[0].clone(), format!("{offset}({})", names[1])],
+        );
+        self.cache.insert(Entry {
+            key,
+            value: Value::Vf(Fv {
+                reg,
+                placement: Placement::identity(4),
+            }),
+            reads: vec![Read {
+                region: values::region(self.program, place),
+                at: Some((base, offset)),
+            }],
+            locals: Vec::new(),
+        });
+        reg
     }
 
     // ----------------------------------------------
@@ -1175,7 +1610,50 @@ impl Lowering<'_> {
         reg
     }
 
+    /// Puts a pure expression's value in the cache under `key`.
+    fn remember(&mut self, expr: &Expr, key: String, value: Value) {
+        let mut locals = Vec::new();
+        let mut places = Vec::new();
+        values::inputs(expr, &mut locals, &mut places);
+        let reads = places
+            .into_iter()
+            .map(|place| Read {
+                region: values::region(self.program, place),
+                at: None,
+            })
+            .collect();
+        self.cache.insert(Entry {
+            key: Key::Expr(key),
+            value,
+            reads,
+            locals,
+        });
+    }
+
     fn vi_into(&mut self, expr: &Expr, dest: Option<Vi>) -> Lowered<Vi> {
+        let cacheable = match &expr.kind {
+            ExprKind::Const(Const::Int(value)) => value & 0xffff != 0,
+            ExprKind::Binary { .. } | ExprKind::Neg(_) | ExprKind::Convert { .. } => true,
+            _ => false,
+        };
+        let key = if cacheable {
+            values::expr_key(expr)
+        } else {
+            None
+        };
+        if let Some(key) = &key
+            && let Some(Value::Vi(reg)) = self.cache.find(&Key::Expr(key.clone()))
+        {
+            return Ok(reg);
+        }
+        let reg = self.vi_lower(expr, dest)?;
+        if let Some(key) = key {
+            self.remember(expr, key, Value::Vi(reg));
+        }
+        Ok(reg)
+    }
+
+    fn vi_lower(&mut self, expr: &Expr, dest: Option<Vi>) -> Lowered<Vi> {
         match &expr.kind {
             ExprKind::Const(Const::Int(value)) => Ok(self.materialize(*value, dest)),
             ExprKind::Local(id) => match self.locals[*id] {
@@ -1184,14 +1662,7 @@ impl Lowering<'_> {
             },
             ExprKind::Load(place) => {
                 let (base, offset) = self.address(place)?;
-                let reg = self.idest(dest);
-                let names = [self.iname(reg), self.iname(base)];
-                self.out.inst(
-                    "ilw",
-                    Some(&place.lane.letter().to_string()),
-                    &[names[0].clone(), format!("{offset}({})", names[1])],
-                );
-                Ok(reg)
+                Ok(self.load_int16(place, base, offset, dest))
             }
             ExprKind::Binary { op, lhs, rhs } => {
                 let constant = |expr: &Expr| match expr.kind {
@@ -1289,7 +1760,7 @@ impl Lowering<'_> {
 
     /// A float constant as an operand: VF00's x for 0 and w for 1, else
     /// LOI into a lane.
-    fn float_constant(&mut self, value: f32, dest: Option<Vf>) -> Fv {
+    fn float_constant(&mut self, value: f32, dest: Option<Vf>, lane: Lane) -> Fv {
         if dest.is_none() {
             if value == 0.0 && value.is_sign_positive() {
                 return Fv::scalar(Vf::Zero, Lane::X);
@@ -1301,15 +1772,76 @@ impl Lowering<'_> {
         let reg = self.dest(dest);
         self.out.inst("loi", None, &[float_text(value)]);
         let name = self.name(reg);
+        let field = lane.letter().to_string();
+        // VF00's w is 1, not 0: I times 1 there.
+        let mnemonic = if lane == Lane::W { "muli" } else { "addi" };
         self.out
-            .inst("addi", Some("x"), &[name, "vf00".into(), "i".into()]);
-        Fv::scalar(reg, Lane::X)
+            .inst(mnemonic, Some(&field), &[name, "vf00".into(), "i".into()]);
+        Fv::scalar(reg, lane)
     }
 
     fn vf_into(&mut self, expr: &Expr, dest: Option<Vf>) -> Lowered<Fv> {
+        self.vf_full(expr, dest, Lane::X)
+    }
+
+    /// A scalar in `lane`, when its instruction can put it in any lane;
+    /// in `dest` then too, which keeps its other lanes.
+    fn vf_in_lane(&mut self, expr: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
+        let dest = dest.filter(|_| any_lane(expr));
+        self.vf_full(expr, dest, lane)
+    }
+
+    /// `expr`'s value, in `dest` when it can, and a scalar that can go in
+    /// any lane in `lane`.
+    fn vf_full(&mut self, expr: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
+        let cacheable = match &expr.kind {
+            ExprKind::Const(Const::Float(value)) => {
+                !(*value == 0.0 && value.is_sign_positive()) && *value != 1.0
+            }
+            ExprKind::Const(Const::Int(value)) => *value != 0 && *value != 1,
+            ExprKind::Local(_)
+            | ExprKind::Load(_)
+            | ExprKind::Swizzle { .. }
+            | ExprKind::Column { .. }
+            | ExprKind::Convert {
+                conversion: Conversion::Bits,
+                ..
+            } => false,
+            _ => !matches!(expr.ty, Type::Mat { .. }),
+        };
+        let key = if cacheable {
+            values::expr_key(expr)
+        } else {
+            None
+        };
+        if let Some(key) = &key
+            && let Some(Value::Vf(value)) = self.cache.find(&Key::Expr(key.clone()))
+        {
+            return Ok(value);
+        }
+        let value = self.vf_lower(expr, dest, lane)?;
+        if let Some(key) = key {
+            self.remember(expr, key, Value::Vf(value));
+        }
+        Ok(value)
+    }
+
+    fn vf_lower(&mut self, expr: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
+        if matches!(
+            expr.kind,
+            ExprKind::Binary {
+                op: BinOp::Add | BinOp::Sub,
+                ..
+            }
+        ) && let Some(value) = self.contract(expr, dest)?
+        {
+            return Ok(value);
+        }
         match &expr.kind {
-            ExprKind::Const(Const::Float(value)) => Ok(self.float_constant(*value, dest)),
-            ExprKind::Const(Const::Int(value)) => Ok(self.float_constant(*value as f32, dest)),
+            ExprKind::Const(Const::Float(value)) => Ok(self.float_constant(*value, dest, lane)),
+            ExprKind::Const(Const::Int(value)) => {
+                Ok(self.float_constant(*value as f32, dest, lane))
+            }
             ExprKind::Local(id) => match self.locals[*id] {
                 LocalReg::Vf(reg) => {
                     let placement = self.placements[*id]
@@ -1324,13 +1856,7 @@ impl Lowering<'_> {
                     return self.not_yet("loading a value of this type");
                 };
                 let (base, offset) = self.address(place)?;
-                let reg = self.dest(dest);
-                let names = [self.name(reg), self.iname(base)];
-                self.out.inst(
-                    "lq",
-                    Some(&Self::mask(&placement)),
-                    &[names[0].clone(), format!("{offset}({})", names[1])],
-                );
+                let reg = self.load_qword(place, base, offset, dest);
                 Ok(Fv { reg, placement })
             }
             ExprKind::Swizzle { base, components } => {
@@ -1343,14 +1869,14 @@ impl Lowering<'_> {
                     placement,
                 })
             }
-            ExprKind::Neg(operand) => self.negate(operand, dest),
+            ExprKind::Neg(operand) => self.negate(operand, dest, lane),
             ExprKind::Binary { op, lhs, rhs } => match op {
                 BinOp::Add => self.elementwise("add", lhs, rhs, dest, true),
                 BinOp::Sub => self.elementwise("sub", lhs, rhs, dest, false),
                 BinOp::Mul => self.elementwise("mul", lhs, rhs, dest, true),
                 BinOp::Min => self.elementwise("mini", lhs, rhs, dest, true),
                 BinOp::Max => self.elementwise("max", lhs, rhs, dest, true),
-                BinOp::Div => self.divide(lhs, rhs, dest),
+                BinOp::Div => self.divide(lhs, rhs, dest, lane),
                 BinOp::MatVec => self.transform(lhs, rhs, dest),
                 BinOp::VecMat => self.transform(rhs, lhs, dest),
                 _ => self.not_yet("this operation on VF values"),
@@ -1359,28 +1885,48 @@ impl Lowering<'_> {
             ExprKind::Convert {
                 conversion,
                 operand,
-            } => self.convert(*conversion, operand, dest),
+            } => self.convert(*conversion, operand, dest, lane),
             ExprKind::Column { matrix, index } => {
+                let Type::Mat { size, .. } = matrix.ty else {
+                    return self.not_yet("a column of this type");
+                };
+                let placement = Placement::identity(usize::from(size).min(4));
+                if let ExprKind::Load(place) = &matrix.kind {
+                    // One qword of a matrix in memory.
+                    let (base, offset) = self.address(place)?;
+                    let reg = self.load_qword(place, base, offset + *index as i64, dest);
+                    return Ok(Fv { reg, placement });
+                }
                 let regs = self.mat(matrix)?;
-                let size = regs.len();
                 Ok(Fv {
                     reg: regs[*index],
-                    placement: Placement::identity(size.min(4)),
+                    placement,
                 })
             }
-            ExprKind::Call { builtin, args } => self.builtin(*builtin, args, dest),
+            ExprKind::Call { builtin, args } => self.builtin(*builtin, args, dest, lane),
             _ => self.not_yet("this expression as a VF value"),
         }
     }
 
-    fn negate(&mut self, operand: &Expr, dest: Option<Vf>) -> Lowered<Fv> {
+    fn negate(&mut self, operand: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
         let value = self.vf(operand)?;
         let reg = self.dest(dest);
         if value.is_scalar() {
-            // 0 - x lands in lane x, whatever x's lane.
-            let operands = [self.name(reg), "vf00".into(), self.field(value)];
-            self.out.inst("sub", Some("x"), &operands);
-            return Ok(Fv::scalar(reg, Lane::X));
+            // 0 - x, in any lane but w (VF00's w is 1): 0 - x * 1 there.
+            if lane == Lane::W {
+                self.out.inst(
+                    "mula",
+                    Some("w"),
+                    &["acc".into(), "vf00".into(), "vf00[x]".into()],
+                );
+                let operands = [self.name(reg), "vf00".into(), self.field(value)];
+                self.out.inst("msub", Some("w"), &operands);
+            } else {
+                let operands = [self.name(reg), "vf00".into(), self.field(value)];
+                self.out
+                    .inst("sub", Some(&lane.letter().to_string()), &operands);
+            }
+            return Ok(Fv::scalar(reg, lane));
         }
         let (xyz, w): (Vec<Lane>, Vec<Lane>) = value
             .placement
@@ -1434,37 +1980,112 @@ impl Lowering<'_> {
                 return self.not_yet("a scalar minus a vector");
             }
             (b, a)
+        } else if commutative && self.is_q(a) && !self.is_q(b) {
+            // Two scalars: Q as the broadcast operand.
+            (b, a)
         } else {
             (a, b)
         };
         let reg = self.dest(dest);
-        let operand = if b.is_scalar() {
-            self.field(b)
+        let q_form = self.is_q(b) && matches!(mnemonic, "add" | "sub" | "mul");
+        let (mnemonic, operand) = if q_form {
+            (format!("{mnemonic}q"), "q".to_string())
+        } else if b.is_scalar() {
+            (mnemonic.to_string(), self.field(b))
         } else {
-            self.name(b.reg)
+            (mnemonic.to_string(), self.name(b.reg))
         };
         let operands = [self.name(reg), self.name(a.reg), operand];
         self.out
-            .inst(mnemonic, Some(&Self::mask(&a.placement)), &operands);
+            .inst(&mnemonic, Some(&Self::mask(&a.placement)), &operands);
         Ok(Fv {
             reg,
             placement: a.placement,
         })
     }
 
-    fn divide(&mut self, lhs: &Expr, rhs: &Expr, dest: Option<Vf>) -> Lowered<Fv> {
+    /// A sum of two or more products, and any other terms, as one
+    /// MULA/MADDA/MSUBA chain: n products and k other terms take n + k
+    /// instructions instead of 2n + k - 1. VU1 rounds each product before
+    /// adding it, so the chain's value is the separate operations' exactly.
+    /// `None` when `expr` is not such a sum.
+    fn contract(&mut self, expr: &Expr, dest: Option<Vf>) -> Lowered<Option<Fv>> {
+        let mut terms = Vec::new();
+        flatten_sum(expr, false, &mut terms);
+        let is_product = |term: &Expr| matches!(term.kind, ExprKind::Binary { op: BinOp::Mul, .. });
+        let products = terms.iter().filter(|(_, term)| is_product(term)).count();
+        if products < 2 || terms[0].0 {
+            return Ok(None);
+        }
+        // Each term as a lane-wise operand and a broadcast or lane-wise
+        // one; a term that is not a product is times VF00's w.
+        let mut operands = Vec::new();
+        for &(negative, term) in &terms {
+            let (a, b) = match &term.kind {
+                ExprKind::Binary {
+                    op: BinOp::Mul,
+                    lhs,
+                    rhs,
+                } => {
+                    let (a, b) = (self.vf(lhs)?, self.vf(rhs)?);
+                    if a.is_scalar() && !b.is_scalar() {
+                        (b, a)
+                    } else {
+                        (a, b)
+                    }
+                }
+                _ => (self.vf(term)?, Fv::scalar(Vf::Zero, Lane::W)),
+            };
+            operands.push((negative, a, b));
+        }
+        let placement = operands[0].1.placement;
+        let fits = operands.iter().all(|(_, a, b)| {
+            a.placement == placement
+                && (b.is_scalar() || b.placement == placement)
+                && !self.is_q(*a)
+                && !self.is_q(*b)
+        });
+        if !fits {
+            return Ok(None);
+        }
+        let reg = self.dest(dest);
+        let mask = Self::mask(&placement);
+        let last = operands.len() - 1;
+        for (index, (negative, a, b)) in operands.into_iter().enumerate() {
+            let mnemonic = match (index, negative) {
+                (0, _) => "mula",
+                (index, false) if index == last => "madd",
+                (index, true) if index == last => "msub",
+                (_, false) => "madda",
+                (_, true) => "msuba",
+            };
+            let target = if index == last {
+                self.name(reg)
+            } else {
+                "acc".to_string()
+            };
+            let operand = if b.is_scalar() {
+                self.field(b)
+            } else {
+                self.name(b.reg)
+            };
+            let operands = [target, self.name(a.reg), operand];
+            self.out.inst(mnemonic, Some(&mask), &operands);
+        }
+        Ok(Some(Fv { reg, placement }))
+    }
+
+    fn divide(&mut self, lhs: &Expr, rhs: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
         let divisor = self.vf(rhs)?;
         let dividend = self.vf(lhs)?;
         let reg = self.dest(dest);
         if dividend.is_scalar() {
             let operands = ["q".into(), self.field(dividend), self.field(divisor)];
-            self.out.inst("div", None, &operands);
-            let operands = [self.name(reg), "vf00".into(), "q".into()];
-            self.out.inst("addq", Some("x"), &operands);
-            return Ok(Fv::scalar(reg, Lane::X));
+            self.fdiv("div", &operands);
+            return Ok(self.q_to_lane(Some(reg), lane));
         }
         let operands = ["q".into(), "vf00[w]".into(), self.field(divisor)];
-        self.out.inst("div", None, &operands);
+        self.fdiv("div", &operands);
         let operands = [self.name(reg), self.name(dividend.reg), "q".into()];
         self.out
             .inst("mulq", Some(&Self::mask(&dividend.placement)), &operands);
@@ -1591,7 +2212,13 @@ impl Lowering<'_> {
         })
     }
 
-    fn convert(&mut self, conversion: Conversion, operand: &Expr, dest: Option<Vf>) -> Lowered<Fv> {
+    fn convert(
+        &mut self,
+        conversion: Conversion,
+        operand: &Expr,
+        dest: Option<Vf>,
+        lane: Lane,
+    ) -> Lowered<Fv> {
         match conversion {
             Conversion::FloatToFixed(bits) | Conversion::FixedToFloat(bits) => {
                 let value = self.vf(operand)?;
@@ -1615,17 +2242,18 @@ impl Lowering<'_> {
                 } else {
                     self.out.vf("lane")
                 };
+                let field = lane.letter().to_string();
                 let names = [self.name(lane_reg), self.iname(value)];
-                self.out.inst("mfir", Some("x"), &names);
+                self.out.inst("mfir", Some(&field), &names);
                 if conversion == Conversion::IntToLane {
-                    return Ok(Fv::scalar(lane_reg, Lane::X));
+                    return Ok(Fv::scalar(lane_reg, lane));
                 }
                 let reg = self.dest(dest);
                 let names = [self.name(reg), self.name(lane_reg)];
-                self.out.inst("itof0", Some("x"), &names);
-                Ok(Fv::scalar(reg, Lane::X))
+                self.out.inst("itof0", Some(&field), &names);
+                Ok(Fv::scalar(reg, lane))
             }
-            Conversion::Bits => self.vf_into(operand, dest),
+            Conversion::Bits => self.vf_full(operand, dest, lane),
             Conversion::LaneToInt | Conversion::FloatToInt => {
                 self.not_yet("an int16 as a VF value")
             }
@@ -1666,16 +2294,29 @@ impl Lowering<'_> {
         ))
     }
 
-    /// Q into a VF register's x: ADDQ of VF00's 0.
-    fn q_to_lane(&mut self, dest: Option<Vf>) -> Fv {
+    /// Q into a VF register's x: ADDQ of VF00's 0. Readers that take Q
+    /// read it there instead while it lasts, and the copy is dead.
+    fn q_to_lane(&mut self, dest: Option<Vf>, lane: Lane) -> Fv {
         let reg = self.dest(dest);
         let name = self.name(reg);
-        self.out
-            .inst("addq", Some("x"), &[name, "vf00".into(), "q".into()]);
-        Fv::scalar(reg, Lane::X)
+        // 0 + Q, or 1 * Q in w.
+        let mnemonic = if lane == Lane::W { "mulq" } else { "addq" };
+        self.out.inst(
+            mnemonic,
+            Some(&lane.letter().to_string()),
+            &[name, "vf00".into(), "q".into()],
+        );
+        self.q_holds = Some((reg, lane));
+        Fv::scalar(reg, lane)
     }
 
-    fn builtin(&mut self, builtin: Builtin, args: &[Expr], dest: Option<Vf>) -> Lowered<Fv> {
+    fn builtin(
+        &mut self,
+        builtin: Builtin,
+        args: &[Expr],
+        dest: Option<Vf>,
+        lane: Lane,
+    ) -> Lowered<Fv> {
         match builtin {
             Builtin::Dot => self.dot(&args[0], &args[1], dest),
             Builtin::Cross => {
@@ -1695,7 +2336,7 @@ impl Lowering<'_> {
                 let value = self.vf(&args[0])?;
                 let length = self.dot(&args[0], &args[0], None)?;
                 let operands = ["q".into(), "vf00[w]".into(), self.field(length)];
-                self.out.inst("rsqrt", None, &operands);
+                self.fdiv("rsqrt", &operands);
                 let reg = self.dest(dest);
                 let operands = [self.name(reg), self.name(value.reg), "q".into()];
                 self.out
@@ -1708,20 +2349,20 @@ impl Lowering<'_> {
             Builtin::Length => {
                 let squared = self.dot(&args[0], &args[0], None)?;
                 let operands = ["q".into(), self.field(squared)];
-                self.out.inst("sqrt", None, &operands);
-                Ok(self.q_to_lane(dest))
+                self.fdiv("sqrt", &operands);
+                Ok(self.q_to_lane(dest, lane))
             }
             Builtin::Sqrt => {
                 let value = self.vf(&args[0])?;
                 let operands = ["q".into(), self.field(value)];
-                self.out.inst("sqrt", None, &operands);
-                Ok(self.q_to_lane(dest))
+                self.fdiv("sqrt", &operands);
+                Ok(self.q_to_lane(dest, lane))
             }
             Builtin::Rsqrt => {
                 let value = self.vf(&args[0])?;
                 let operands = ["q".into(), "vf00[w]".into(), self.field(value)];
-                self.out.inst("rsqrt", None, &operands);
-                Ok(self.q_to_lane(dest))
+                self.fdiv("rsqrt", &operands);
+                Ok(self.q_to_lane(dest, lane))
             }
             Builtin::Abs => {
                 let value = self.vf(&args[0])?;
@@ -1752,7 +2393,7 @@ impl Lowering<'_> {
                 };
                 let name = self.name(value.reg);
                 self.out.inst(mnemonic, None, &["p".into(), name]);
-                Ok(self.p_to_lane(dest))
+                Ok(self.p_to_lane(dest, lane))
             }
             Builtin::Ercpr
             | Builtin::Esqrt
@@ -1771,17 +2412,18 @@ impl Lowering<'_> {
                 };
                 let operand = self.field(value);
                 self.out.inst(mnemonic, None, &["p".into(), operand]);
-                Ok(self.p_to_lane(dest))
+                Ok(self.p_to_lane(dest, lane))
             }
             _ => self.not_yet("this built-in as a VF value"),
         }
     }
 
-    fn p_to_lane(&mut self, dest: Option<Vf>) -> Fv {
+    fn p_to_lane(&mut self, dest: Option<Vf>, lane: Lane) -> Fv {
         let reg = self.dest(dest);
         let name = self.name(reg);
-        self.out.inst("mfp", Some("x"), &[name, "p".into()]);
-        Fv::scalar(reg, Lane::X)
+        self.out
+            .inst("mfp", Some(&lane.letter().to_string()), &[name, "p".into()]);
+        Fv::scalar(reg, lane)
     }
 
     // ----------------------------------------------
@@ -1808,20 +2450,8 @@ impl Lowering<'_> {
                 let (base, offset) = self.address(place)?;
                 let mut regs = Vec::new();
                 for qword in 0..i64::from(size) {
-                    let reg = match dest {
-                        Some(dest) => dest[qword as usize],
-                        None => self.out.vf("matrix"),
-                    };
-                    let names = [self.name(reg), self.iname(base)];
-                    self.out.inst(
-                        "lq",
-                        Some(&mask),
-                        &[
-                            names[0].clone(),
-                            format!("{}({})", offset + qword, names[1]),
-                        ],
-                    );
-                    regs.push(reg);
+                    let reg = dest.map(|dest| dest[qword as usize]);
+                    regs.push(self.load_qword(place, base, offset + qword, reg));
                 }
                 Ok(regs)
             }
@@ -1877,6 +2507,137 @@ impl Lowering<'_> {
             _ => self.not_yet("this matrix expression"),
         }
     }
+}
+
+/// A range-for's trip count.
+#[derive(Clone, Copy)]
+enum Trips {
+    Fixed(i64),
+    /// Read from memory, possibly 0.
+    Counted(Vi),
+}
+
+/// The lanes a store of VF lanes writes in its qword; `None` for other
+/// stores.
+fn store_lanes(place: &Place, components: Option<&[usize]>) -> Option<Placement> {
+    if matches!(place.ty, Type::Qword | Type::Int16 | Type::Mat { .. }) {
+        return None;
+    }
+    let whole = memory_lanes(&place.ty, place.lane)?;
+    match components {
+        Some(components) => whole.select(components),
+        None => Some(whole),
+    }
+}
+
+/// Whether two places are in the same qword.
+fn same_qword(a: &Place, b: &Place) -> bool {
+    let indices = |place: &Place| -> Option<Vec<String>> {
+        place
+            .offset
+            .indices
+            .iter()
+            .map(|(index, stride)| values::expr_key(index).map(|key| format!("{key}*{stride}")))
+            .collect()
+    };
+    a.base == b.base
+        && a.offset.extent == b.offset.extent
+        && indices(a).is_some()
+        && indices(a) == indices(b)
+}
+
+/// Whether lowering `value` costs nothing: it names a register that
+/// already holds it.
+fn passes_through(value: &Expr) -> bool {
+    match &value.kind {
+        ExprKind::Local(_) | ExprKind::Load(_) => true,
+        ExprKind::Swizzle { base, .. }
+        | ExprKind::Column { matrix: base, .. }
+        | ExprKind::Convert {
+            conversion: Conversion::Bits,
+            operand: base,
+        } => passes_through(base),
+        _ => false,
+    }
+}
+
+/// Whether a scalar expression's last instruction can put it in any lane
+/// and writes only that lane.
+fn any_lane(expr: &Expr) -> bool {
+    match &expr.kind {
+        ExprKind::Const(Const::Float(_) | Const::Int(_)) => true,
+        ExprKind::Neg(operand) => operand.ty.vf_lanes() == Some(1),
+        ExprKind::Binary {
+            op: BinOp::Div,
+            lhs,
+            ..
+        } => lhs.ty.vf_lanes() == Some(1),
+        ExprKind::Call { builtin, .. } => matches!(
+            builtin,
+            Builtin::Length
+                | Builtin::Sqrt
+                | Builtin::Rsqrt
+                | Builtin::Esadd
+                | Builtin::Ersadd
+                | Builtin::Eleng
+                | Builtin::Erleng
+                | Builtin::Esum
+                | Builtin::Ercpr
+                | Builtin::Esqrt
+                | Builtin::Ersqrt
+                | Builtin::Esin
+                | Builtin::Eatan
+                | Builtin::Eexp
+        ),
+        ExprKind::Convert {
+            conversion: Conversion::IntToLane | Conversion::IntToFloat,
+            ..
+        } => true,
+        ExprKind::Convert {
+            conversion: Conversion::Bits,
+            operand,
+        } => any_lane(operand),
+        _ => false,
+    }
+}
+
+/// The terms of a sum of floats, each with whether it is subtracted:
+/// through additions and subtractions whose operands have the sum's type.
+fn flatten_sum<'e>(expr: &'e Expr, negative: bool, terms: &mut Vec<(bool, &'e Expr)>) {
+    if let ExprKind::Binary {
+        op: op @ (BinOp::Add | BinOp::Sub),
+        lhs,
+        rhs,
+    } = &expr.kind
+        && lhs.ty == expr.ty
+        && rhs.ty == expr.ty
+        && expr.ty.is_float()
+    {
+        flatten_sum(lhs, negative, terms);
+        flatten_sum(rhs, negative != (*op == BinOp::Sub), terms);
+        return;
+    }
+    terms.push((negative, expr));
+}
+
+/// Whether a condition has parts that some paths skip.
+fn short_circuits(cond: &Expr) -> bool {
+    match &cond.kind {
+        ExprKind::And(..) | ExprKind::Or(..) => true,
+        ExprKind::Not(inner) => short_circuits(inner),
+        _ => false,
+    }
+}
+
+/// Whether `body` has a `continue` of its own loop.
+fn continues(body: &[Stmt]) -> bool {
+    body.iter().any(|stmt| match stmt {
+        Stmt::Continue { .. } => true,
+        Stmt::If {
+            then, otherwise, ..
+        } => continues(then) || continues(otherwise),
+        _ => false,
+    })
 }
 
 fn negated(op: CompareOp) -> CompareOp {

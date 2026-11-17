@@ -10,7 +10,7 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 | 1. Front end | Done |
 | 2. Reflection | Done |
 | 3. End-to-end baseline | Done |
-| 4. Optimizer | In progress |
+| 4. Optimizer | Done |
 | 5. VU features | Not started |
 | 6. Ports and benchmarks | Not started |
 | 7. Docs | Not started |
@@ -262,9 +262,10 @@ The GLSL statement set is supported, plus these:
 - Struct and array copies between memory (`batch.packet.tags = batch.tags;` costs an `lq` and an
   `sq` per qword).
 
-**Contraction:** `a * b ± c` may fuse into `madd`/`msub`/ACC chains unless the value is declared
-`precise`. Constant expressions fold in IEEE single precision; the docs note that the VU is not
-IEEE.
+**Contraction:** a sum of two or more products is one ACC chain (`mula`, `madda`, `msuba`, then
+`madd` or `msub`). VU1 rounds each product before adding it, so the chain computes what the
+separate operations would; `precise` is accepted and changes nothing. Constant expressions fold in
+IEEE single precision; the docs note that the VU is not IEEE.
 
 **Literals:**
 
@@ -741,7 +742,9 @@ It could also use `vusl::VU1Prog_Particles::Particle` directly.
 ```
 crates/vusl/src/
   lib.rs, options.rs        preprocess(), check() -> Checked, Checked::generate() -> Vcl,
-                            Checked::reflection(), assemble() (vcl::compile on the generated VCL)
+                            Checked::reflection(), assemble() (vcl::compile on the generated VCL),
+                            compile() (generate and assemble, with fewer hoisted invariants when
+                            the registers do not fit)
   diagnostics.rs            VuslMessage enum + wording (no printing)
   syntax/                   lexer.rs (on preprocessed text; #pragma lines become tokens), ast.rs,
                             parser.rs (recursive descent, C precedence), print.rs (the tree as text)
@@ -749,8 +752,10 @@ crates/vusl/src/
                             check.rs (declarations, main's bindings), consteval.rs,
                             elaborate.rs (main with every call inlined: types, placements, the
                             strict rules), hir.rs (the checked program)
-  codegen/                  mod.rs (the checked program lowered to VCL), emit.rs (the text, its
-                            registers and labels, a source place per line)
+  codegen/                  mod.rs (the checked program lowered to VCL), values.rs (what registers
+                            hold: reuse, invariants, alias regions), peephole.rs (passes over the
+                            instructions), emit.rs (the instructions, their registers and labels,
+                            a source place per line)
   reflect/                  model.rs, json.rs, cpp.rs
   interp.rs                 the reference interpreter of the checked program (the test oracle)
 crates/oxide-vusl/src/      main.rs, cli.rs (lib target vusl_cli), help.txt; build.rs (build date)
@@ -763,8 +768,8 @@ crates/oxide-vusl/src/      main.rs, cli.rs (lib target vusl_cli), help.txt; bui
    evaluation, layout, and `#pragma unroll`'s constant-count loops repeated.
 3. **Reflect.** This needs only the checked program, so `--check` writes it too.
 4. **Lower to VCL**, destination-driven, from the checked program. There is no separate IR: the
-   optimizations below work on the checked program before lowering and on the lowered
-   instructions after it. The VCL has:
+   optimizations below work while lowering, through a record of what each register holds, and on
+   the lowered instructions after it. The VCL has:
    - `.syntax new`, `.name`, `.init_vf_all`, `.init_vi_all`, empty `--enter`/`--exit`;
    - `fcset 0` when clipping is used, and XTOP read once into a register;
    - loop hints, and `.vu_work_area` from a `spill` parameter.
@@ -777,55 +782,71 @@ crates/oxide-vusl/src/      main.rs, cli.rs (lib target vusl_cli), help.txt; bui
 
 ### Optimizations the frontend owns
 
-Each of these is ordered, and each is justified by an idiom in the hand-written programs:
+Lowering records what each register holds (`codegen/values.rs`), and a peephole pass runs over
+the instructions it produces (`codegen/peephole.rs`). Each optimization is justified by an idiom in
+the hand-written programs:
 
-1. **Folding.** SCCP, DCE and copy propagation.
-2. **GVN/CSE,** including load CSE between stores, using alias classes.
+1. **Folding.** Constant expressions fold in the checker, which also repeats `#pragma unroll`'s
+   constant-count loops.
+2. **Value reuse.** A register's contents are recorded as one of: a whole qword loaded with `lq`;
+   an `int16` loaded with `ilw`; a sum of two VI registers; or a pure expression's value, by its
+   text. A second use takes the register. A record ends at:
+   - a store that may change its memory. Distinct parameters never alias unless one says
+     `alias =`, distinct members never do, and the same base register with different offsets
+     never does. A member that takes lanes stands for its qword;
+   - a write to a local its expression reads, or to the register holding it;
+   - a label where paths that did not compute it join;
+   - a `yield`, after which the host may have written memory.
 3. **Loop shaping:**
-   - rotation with a guard;
-   - induction variables, with element indexing reduced to pointer increments (`lq k(p)` /
-     `iaddiu p,p,stride`);
-   - pointers with the same stride merged into one pointer with different offsets;
-   - the cheaper exit test chosen: end pointer or countdown;
-   - unrolling as the pragmas ask.
-4. **LICM:** constants, uniform loads, products of invariants (the GS-scale fold) and invariant
-   lanes of built qwords. It is pressure-aware: 31 VF, and 15 VI (14 with `fcand`).
+   - a range-for is a do-while behind a guard on its count;
+   - there is one pointer per element stride and base, stepping by the stride, and elements of
+     arrays a constant apart share it with different offsets;
+   - the loop ends when the pointer with the smallest stride reaches its end (`ibne`), so no
+     counter steps.
+4. **LICM.** Before a loop, the largest pure parts of its body that read nothing the loop changes
+   and cost an instruction are lowered once: loads, constants and products of invariants. The loop
+   then finds them in registers. At most 16 values are kept; when vcl runs out of registers, the
+   program is generated again with 6, then none (`vusl::compile`).
 5. **Memory:**
-   - one `lq` for every lane read from a qword;
-   - qword assembly, so lanes stored to one qword are built in one register and stored with one
-     masked `sq`;
-   - store coalescing;
-   - precise alias classes. Distinct parameters never alias, and the same base with different
-     constant offsets never aliases. Unknown cases get VCL memory tags, never blanket barriers.
-6. **Contraction:** `mula`/`madda`/`madd`, `mulaw` + `maddq` (offset plus scale times Q) and `msub`.
+   - one `lq` of all four lanes serves every lane read from a qword, and VCL narrows its mask;
+   - qword assembly: consecutive stores to lanes of one qword become one masked `sq` when their
+     values can be made in one register's lanes with fewer extra moves than the stores saved.
+6. **Contraction.** A sum of two or more products is one ACC chain. n products and k other terms
+   take n + k instructions instead of 2n + k − 1.
 7. **Units:**
-   - one Q in flight. Consumers get Q forms (`mulq`/`addq`/`maddq`/`subq`), and a copy only when a
-     later FDIV would overwrite Q.
-   - P for EFU.
-   - I literals: `loi` per use inside loops, or hoisted into a register.
-   - `vf00` for 0 and 1.
-8. **Scalar lane solver.** It places scalars to remove lane moves.
-9. **Pressure check** before emitting. It reduces hoisting first, then spills to a `spill` region through
-   `.vu_work_area`, and otherwise errors.
+   - Q: after a division or root, its readers take Q directly (`mulq`, `addq`, `subq`, and
+     `addq`/`mulq` into a lane) until the next FDIV operation or label. Lowering's copy of Q is
+     dropped when nothing reads it;
+   - I literals: `loi` and an `addi`/`muli` into the lane wanted, hoisted out of loops;
+   - VF00 for 0 and 1.
+8. **Lanes.** A scalar whose instruction can put it in any lane (Q and P copies, constants,
+   `mfir`, negation) is made in the lane its store or component write wants.
+9. **Peephole.** A temporary written by one instruction and then moved whole into a register is
+   written there directly.
 
-Scheduling, pairing, register allocation and field narrowing are left to oxide-vcl.
+Scheduling, pairing, register allocation, field narrowing and dead code are left to oxide-vcl.
 
 ### Instruction selection
 
-There is a pattern per idiom, each with a golden test:
+Each idiom has a case in `tests/vusl/codegen`, which names the hand-written sequence it stands for:
 
-- matrix transform with a w=1 term;
-- 3×3 transform;
-- perspective divide and viewport (`div`, `mulq`, `mulaw`/`maddq`, `ftoi4`);
-- dot product;
-- normalize;
-- guard-band judgement (`mul` + `clipw`) and ADC;
-- colour clamp and pack (`mini`/`max`/`ftoi0`);
-- Q into a lane (`addq.z`);
-- lane moves (`mr32`, masked broadcast adds);
-- `int` immediates and the 0x8000 constant;
-- the `isw.x` NLOOP/EOP patch;
-- raw bit copies (`lq`/`sq` only).
+| Case | Idiom |
+|---|---|
+| `transform` | Matrix products: the w=1 term as VF00's w, and a 3×3 product |
+| `perspective` | The perspective divide and viewport: `div`, `mulq`, `ftoi4` |
+| `dot-normalize` | A dot product, and normalize with `rsqrt` and `mulq` |
+| `clip-adc` | The guard-band judgement (`mul` + `clipw`) and ADC (`fcand` + `iaddiu 0x7fff`) |
+| `color-pack` | A colour clamped and packed: `max`, `mini`, `ftoi0` |
+| `q-into-lane` | Q into a lane (`addq.y`), and a constant into a lane |
+| `lane-moves` | `mr32` rotations and masked broadcast adds |
+| `int-constants` | `int16` immediates, and 0x8000 in two instructions |
+| `gif-tag` | The `isw.x` NLOOP/EOP patch |
+| `loop-invariants` | Invariants hoisted, and the end-pointer exit test |
+| `shared-pointers` | Two arrays stepped by one pointer |
+| `multiply-add` | A sum of products as one ACC chain |
+| `qword-assembly` | Lane stores built in one register and stored once |
+| `load-reuse` | One `lq` for every lane of a qword, again after a store, and raw bits copied |
+| `particles` | The particles port: 16 upper and 16 lower instructions in its loop, where the hand-written loop has 19 and 17 |
 
 ### Diagnostics
 
@@ -880,7 +901,7 @@ Data goes under `tests/vusl/`. Runners live in `crates/vusl/tests/` (library lev
 | Unit tests | Lexer, parser round trip, placements, layout, lane solver |
 | `errors/<case>/` | `input.vusl` plus `expected.stderr`: every strict rule, type and layout error |
 | `reflect/<case>/` | `expected.json` and `expected.h`. When a `c++` is on PATH, the header is also compiled with `-std=c++17 -fsyntax-only` together with a second header that shares a struct |
-| `codegen/<case>/` | `expected.vcl`, one per idiom. The instruction counts must not grow past the hand-written sequence the case cites |
+| `codegen/<case>/` | `expected.vcl`, the `--stop-at-vcl` output, one per idiom (`crates/oxide-vusl/tests/codegen.rs`). Each also compiles through vcl. The instruction counts must not grow past the hand-written sequence the case cites |
 | `crates/vusl/tests/semantics.rs` | Differential test: programs compiled through oxide-vcl run in `vu_model`'s `Config::TIMED` (VCL's schedules rely on Q, P and the flags landing at their latency, which the logical model does not keep), on seeded memories of exactly representable values. Their data memory and kick addresses must be the interpreter's. The particles program runs on a crafted batch. Later, a small random program generator |
 | `programs/<case>/` | Ports of the four scene programs (GPL-3.0 sources, with licence notes like the corpus). In `Config::TIMED` on every scene: packets identical to the hand-written program's and cycles ≤ its cycles, both compiled with `--mode=oxide --opt=all`. An ignored report test prints the table |
 

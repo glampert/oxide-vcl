@@ -1,0 +1,10 @@
+// int16 constants: IADDIU takes 15 bits, ISUBIU makes small negative
+// values, and 0x8000 takes two instructions.
+struct Out { int16 small; int16 negative; int16 top; int16 pad; };
+
+void main(layout(address = 0) out Out result)
+{
+    result.small = 300;
+    result.negative = -2;
+    result.top = 0x8000;
+}

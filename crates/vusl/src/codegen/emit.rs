@@ -1,5 +1,6 @@
 //! VCL source being written: its lines, each with the place in the
 //! preprocessed program it came from, and the registers it names.
+//! Instructions stay structured until the end, for the peephole passes.
 
 use crate::sema::types::{Lane, Placement};
 use crate::syntax::Pos;
@@ -13,17 +14,48 @@ pub enum Vf {
 }
 
 /// A VI register: VI00, VI01 (where FCAND writes), or a VCL variable.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub enum Vi {
     Zero,
     Flags,
     Var(usize),
 }
 
+/// A line of VCL source.
+#[derive(Clone, Debug)]
+pub enum Line {
+    /// A directive or comment, as it is.
+    Text(String),
+    Label(String),
+    Inst(Inst),
+}
+
+/// An instruction: its mnemonic, field mask and operands.
+#[derive(Clone, Debug)]
+pub struct Inst {
+    pub mnemonic: String,
+    pub mask: Option<String>,
+    pub operands: Vec<String>,
+}
+
+impl Inst {
+    fn text(&self) -> String {
+        let mnemonic = match &self.mask {
+            Some(mask) => format!("{}.{mask}", self.mnemonic),
+            None => self.mnemonic.clone(),
+        };
+        if self.operands.is_empty() {
+            format!("        {mnemonic}")
+        } else {
+            format!("        {mnemonic:<10} {}", self.operands.join(", "))
+        }
+    }
+}
+
 /// The text being written.
 #[derive(Default)]
 pub struct Output {
-    lines: Vec<(String, Option<Pos>)>,
+    lines: Vec<(Line, Option<Pos>)>,
     /// The place of the statement or expression being lowered.
     pub pos: Option<Pos>,
     vf_names: Vec<String>,
@@ -88,33 +120,44 @@ impl Output {
 
     /// A line as it is, at the current place.
     pub fn line(&mut self, text: impl Into<String>) {
-        self.lines.push((text.into(), self.pos));
+        self.lines.push((Line::Text(text.into()), self.pos));
     }
 
     /// An instruction: its mnemonic, a field mask if any, and operands.
     pub fn inst(&mut self, mnemonic: &str, mask: Option<&str>, operands: &[String]) {
-        let mnemonic = match mask {
-            Some(mask) if !mask.is_empty() => format!("{mnemonic}.{mask}"),
-            _ => mnemonic.to_string(),
+        let inst = Inst {
+            mnemonic: mnemonic.to_string(),
+            mask: mask.filter(|mask| !mask.is_empty()).map(str::to_string),
+            operands: operands.to_vec(),
         };
-        let text = if operands.is_empty() {
-            format!("        {mnemonic}")
-        } else {
-            format!("        {mnemonic:<10} {}", operands.join(", "))
-        };
-        self.line(text);
+        self.lines.push((Line::Inst(inst), self.pos));
+    }
+
+    /// How many lines are written so far: a count that grows with every
+    /// instruction.
+    pub fn instructions(&self) -> usize {
+        self.lines.len()
     }
 
     pub fn place_label(&mut self, label: &str) {
-        self.line(format!("{label}:"));
+        self.lines.push((Line::Label(label.to_string()), self.pos));
     }
 
-    /// The text, and for each of its lines the place it came from.
-    pub fn finish(self) -> (String, Vec<Option<Pos>>) {
+    /// The text, after the peephole passes, and for each of its lines the
+    /// place it came from.
+    pub fn finish(mut self) -> (String, Vec<Option<Pos>>) {
+        super::peephole::run(&mut self.lines);
         let mut text = String::new();
         let mut origins = Vec::with_capacity(self.lines.len());
         for (line, pos) in self.lines {
-            text.push_str(&line);
+            match line {
+                Line::Text(line) => text.push_str(&line),
+                Line::Label(label) => {
+                    text.push_str(&label);
+                    text.push(':');
+                }
+                Line::Inst(inst) => text.push_str(&inst.text()),
+            }
             text.push('\n');
             origins.push(pos);
         }

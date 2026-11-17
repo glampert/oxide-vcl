@@ -86,8 +86,12 @@ impl Checked {
 
     /// Generates the program's VCL source.
     pub fn generate(&self) -> Result<Vcl, Box<Failure>> {
+        self.generate_with(codegen::Settings::default())
+    }
+
+    pub fn generate_with(&self, settings: codegen::Settings) -> Result<Vcl, Box<Failure>> {
         let locator = self.locator();
-        match codegen::generate(&self.program, &self.source) {
+        match codegen::generate(&self.program, &self.source, settings) {
             Ok(generated) => Ok(Vcl {
                 text: generated.text,
                 origins: generated
@@ -117,6 +121,56 @@ pub fn assemble(
         ..vcl::Options::default()
     };
     vcl::compile(&vcl.text, &format!("{program}.vcl"), &vcl_options)
+}
+
+/// Why a checked program did not compile.
+pub enum CompileFailure {
+    /// Its code could not be generated.
+    Generate(Box<Failure>),
+    /// vcl rejected the generated VCL.
+    Vcl {
+        vcl: Vcl,
+        errors: Vec<vcl::CompileError>,
+    },
+}
+
+/// How many loop invariants lowering may keep in registers, in the order
+/// tried: fewer when the registers do not fit.
+const HOIST_LIMITS: [usize; 3] = [16, 6, 0];
+
+/// Generates `checked`'s VCL and compiles it with `vcl`. When vcl runs out
+/// of registers, the VCL is generated again with fewer of the loops'
+/// invariants kept in registers across them.
+pub fn compile(
+    checked: &Checked,
+    options: &Options,
+) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
+    let mut failure = None;
+    for hoist_limit in HOIST_LIMITS {
+        let vcl = checked
+            .generate_with(codegen::Settings { hoist_limit })
+            .map_err(|failure| Box::new(CompileFailure::Generate(failure)))?;
+        match assemble(&vcl, &checked.program.name, options) {
+            Ok(compiled) => return Ok((vcl, compiled)),
+            Err(errors) => {
+                let out_of_registers = errors.iter().any(|error| {
+                    matches!(
+                        error.message,
+                        vcl::Message::Compile(
+                            vcl::diagnostics::CompileMessage::AllocationPoolFull { .. }
+                                | vcl::diagnostics::CompileMessage::WorkAreaFull { .. }
+                        )
+                    )
+                });
+                let done = !out_of_registers;
+                failure = Some(CompileFailure::Vcl { vcl, errors });
+                if done {
+                    break;
+                }
+            }
+        }
+    }
+    Err(Box::new(failure.expect("at least one attempt")))
 }
 
 /// Why a program did not check: the first error, and the warnings before
