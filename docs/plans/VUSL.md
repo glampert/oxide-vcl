@@ -9,8 +9,8 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 | 0. Branch and groundwork | Done |
 | 1. Front end | Done |
 | 2. Reflection | Done |
-| 3. End-to-end baseline | Not started |
-| 4. Optimizer | Not started |
+| 3. End-to-end baseline | Done |
+| 4. Optimizer | In progress |
 | 5. VU features | Not started |
 | 6. Ports and benchmarks | Not started |
 | 7. Docs | Not started |
@@ -740,44 +740,40 @@ It could also use `vusl::VU1Prog_Particles::Particle` directly.
 
 ```
 crates/vusl/src/
-  lib.rs, options.rs        compile(name, text, &Options, &dyn SourceLoader) -> Result<Compiled, Failure>
-                            Compiled { vcl, line_origins, vsm, reflection_json, header, warnings }
+  lib.rs, options.rs        preprocess(), check() -> Checked, Checked::generate() -> Vcl,
+                            Checked::reflection(), assemble() (vcl::compile on the generated VCL)
   diagnostics.rs            VuslMessage enum + wording (no printing)
   syntax/                   lexer.rs (on preprocessed text; #pragma lines become tokens), ast.rs,
-                            parser.rs (recursive descent, Pratt expressions), print.rs (round trip)
-  sema/                     scope.rs, types.rs (placements), check.rs (strict rules), consteval.rs,
-                            layout.rs (VU packing, placement, overlap and size checks), builtins.rs
-  ir/                       mod.rs (SSA values with type, placement and origin, in structured regions:
-                            Seq / If / Loop with facts and pragmas), build.rs (inlining, SSA), verify.rs, print.rs
-  opt/                      fold.rs, gvn.rs, dce.rs, loops.rs (rotation, IV, strength reduction,
-                            pointer merging, exit test, unroll), licm.rs, memory.rs (alias classes,
-                            load/store coalescing, qword assembly), lanes.rs (scalar placement solver),
-                            contract.rs (madd/ACC)
-  isel/                     mod.rs, patterns.rs (idiom catalogue), units.rs (Q, P, I, ACC), flags.rs (clip, MAC)
-  emit.rs                   VCL text + a SourceLocation per line
-  reflect/                  json.rs, cpp.rs
-  interp.rs                 reference interpreter of the checked tree (the test oracle)
-crates/oxide-vusl/src/      main.rs, cli.rs (lib target vusl_cli, like vcl_cli), help.txt; build.rs (build date)
+                            parser.rs (recursive descent, C precedence), print.rs (the tree as text)
+  sema/                     types.rs (types, lanes, placements), layout.rs (VU packing),
+                            check.rs (declarations, main's bindings), consteval.rs,
+                            elaborate.rs (main with every call inlined: types, placements, the
+                            strict rules), hir.rs (the checked program)
+  codegen/                  mod.rs (the checked program lowered to VCL), emit.rs (the text, its
+                            registers and labels, a source place per line)
+  reflect/                  model.rs, json.rs, cpp.rs
+  interp.rs                 the reference interpreter of the checked program (the test oracle)
+crates/oxide-vusl/src/      main.rs, cli.rs (lib target vusl_cli), help.txt; build.rs (build date)
 ```
 
 ### Pipeline
 
-1. **Preprocess.** `vcl::preprocessor::preprocess` in a new C-syntax mode, with `__VUSL__` defined.
+1. **Preprocess.** `vcl::preprocessor::preprocess` in its C-syntax mode, with `__VUSL__` defined.
 2. **Parse, then check.** Name resolution, types and placements, the strict rules, constant
-   evaluation and layout.
-3. **Reflect.** This needs only the checked tree, so reflection works before codegen does.
-4. **Tree-level work.** Inlining, constant folding and unrolling.
-5. **IR, SSA, then the optimization passes.**
-6. **Instruction selection** to VCL operations on virtual names.
-7. **Emit VCL.** `.syntax new`, `.name`, `.init_vf_all`, `.init_vi_all`, empty `--enter`/`--exit`,
-   `fcset 0` when clipping is used, `.vu_work_area` from a `spill` parameter, and loop hints.
-   - Generated names are prefixed with `v`/`i`, the source name and a number, which keeps them off
-     hardware names and field letters.
-   - With `--annotate`, each line carries a `; file:line` comment.
-8. **Compile with oxide-vcl.** `vcl::compile` with `Mode::Oxide`, all optimizations, and `-u` set to
-   the program name; `--mode=vcl` is available for cross-checks. A vcl error on generated code is
-   reported at the VUSL line through the line origins. Register exhaustion gets a VUSL-level
-   message that names the live values.
+   evaluation, layout, and `#pragma unroll`'s constant-count loops repeated.
+3. **Reflect.** This needs only the checked program, so `--check` writes it too.
+4. **Lower to VCL**, destination-driven, from the checked program. There is no separate IR: the
+   optimizations below work on the checked program before lowering and on the lowered
+   instructions after it. The VCL has:
+   - `.syntax new`, `.name`, `.init_vf_all`, `.init_vi_all`, empty `--enter`/`--exit`;
+   - `fcset 0` when clipping is used, and XTOP read once into a register;
+   - loop hints, and `.vu_work_area` from a `spill` parameter.
+
+   Generated names are `f`/`i`, the source name and a number, which keeps them off hardware
+   names and field letters.
+5. **Compile with oxide-vcl.** `vcl::compile` with `Mode::Oxide` (all fixes and optimizations) and
+   `-u` set to the program name; `--mode=vcl` is available for cross-checks. A vcl error on the
+   generated code is reported at the VUSL line through the line origins.
 
 ### Optimizations the frontend owns
 
@@ -885,7 +881,7 @@ Data goes under `tests/vusl/`. Runners live in `crates/vusl/tests/` (library lev
 | `errors/<case>/` | `input.vusl` plus `expected.stderr`: every strict rule, type and layout error |
 | `reflect/<case>/` | `expected.json` and `expected.h`. When a `c++` is on PATH, the header is also compiled with `-std=c++17 -fsyntax-only` together with a second header that shares a struct |
 | `codegen/<case>/` | `expected.vcl`, one per idiom. The instruction counts must not grow past the hand-written sequence the case cites |
-| `semantics/<case>/` | Differential test: the interpreter against `vu_model` in `Config::LOGICAL` on seeded exact-valued inputs, comparing data memory and kicks. Later, a small random program generator |
+| `crates/vusl/tests/semantics.rs` | Differential test: programs compiled through oxide-vcl run in `vu_model`'s `Config::TIMED` (VCL's schedules rely on Q, P and the flags landing at their latency, which the logical model does not keep), on seeded memories of exactly representable values. Their data memory and kick addresses must be the interpreter's. The particles program runs on a crafted batch. Later, a small random program generator |
 | `programs/<case>/` | Ports of the four scene programs (GPL-3.0 sources, with licence notes like the corpus). In `Config::TIMED` on every scene: packets identical to the hand-written program's and cycles ≤ its cycles, both compiled with `--mode=oxide --opt=all`. An ignored report test prints the table |
 
 ## Milestones (each ends with fmt, clippy, the full release suite and the public corpus 52/52)

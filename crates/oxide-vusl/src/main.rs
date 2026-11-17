@@ -1,6 +1,6 @@
 //! `oxide-vusl`: the VUSL driver. It reads a program, preprocesses it in C
-//! syntax and checks it; code generation through `vcl::compile` is being
-//! built (`docs/plans/VUSL.md`). Exit statuses are oxide-vcl's in oxide
+//! syntax, checks it, generates VCL and compiles that with `vcl::compile`,
+//! writing the listing and the reflection files (`docs/plans/VUSL.md`). Exit statuses are oxide-vcl's in oxide
 //! mode: 1 when a run fails, 2 for a bad command line.
 //!
 //! Everything it prints goes through [`vcl::diagnostics::Reporter`].
@@ -9,7 +9,6 @@ use std::io::{self, Read};
 use vcl::diagnostics::{Diagnostic, DriverMessage, OXIDE_EXIT_FAILURE, Reporter};
 use vcl::driver::write_all_or_nothing;
 use vcl::preprocessor::{FileSystem, PreprocessFailure};
-use vusl::diagnostics::VuslMessage;
 use vusl_cli::{self as cli, Arguments};
 
 /// The driver's name, which locates its diagnostics.
@@ -21,8 +20,10 @@ enum RunError {
     Driver(Box<Diagnostic>),
     /// The preprocessor stopped at an error.
     Preprocess(Box<PreprocessFailure>),
-    /// The program did not check.
+    /// The program did not check, or its code could not be generated.
     Check(Box<Diagnostic>),
+    /// vcl rejected the generated VCL.
+    Compile(Vec<Diagnostic>),
     /// `--warnings-as-errors`, and warnings were printed.
     Warnings,
 }
@@ -121,24 +122,101 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
     if arguments.warnings_as_errors && reporter.warnings() > 0 {
         return Err(RunError::Warnings);
     }
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     if arguments.check {
         // The reflection needs only the checked program.
-        let reflection = checked.reflection(None);
-        let json = vusl::reflect::json::write(&reflection);
-        let header = vusl::reflect::cpp::write(&reflection);
-        let mut files: Vec<(&str, &[u8])> = Vec::new();
-        if let Some(path) = &arguments.reflect {
-            files.push((path.as_str(), json.as_bytes()));
+        reflection_files(&checked, None, arguments, &mut files);
+        return write_files(&files);
+    }
+    let vcl = checked
+        .generate()
+        .map_err(|failure| RunError::Check(Box::new(failure.error)))?;
+    if let Some(path) = &arguments.emit_vcl {
+        files.push((path.clone(), vcl.text.clone().into_bytes()));
+    }
+    if arguments.stop_at_vcl {
+        reflection_files(&checked, None, arguments, &mut files);
+        if let Some(path) = &arguments.output {
+            files.push((path.clone(), vcl.text.clone().into_bytes()));
         }
-        if let Some(path) = &arguments.header {
-            files.push((path.as_str(), header.as_bytes()));
+        write_files(&files)?;
+        if arguments.output.is_none() {
+            write_text(&vcl.text, arguments, reporter)?;
         }
-        write_all_or_nothing(&files)?;
         return Ok(());
     }
-    Err(RunError::Driver(Box::new(Diagnostic::error(
-        VuslMessage::CompileUnfinished,
-    ))))
+    let name = checked.program.name.clone();
+    let listing = format!("{name}.vcl");
+    let compiled = match vusl::assemble(&vcl, &name, &arguments.compile) {
+        Ok(compiled) => compiled,
+        Err(errors) => {
+            // The generated lines are shown where they came from.
+            reporter.set_source(&listing, &vcl.text);
+            reporter.set_line_origins(vcl.origins.clone());
+            return Err(RunError::Compile(
+                errors.iter().map(|error| error.diagnostic()).collect(),
+            ));
+        }
+    };
+    if !compiled.warnings.is_empty() {
+        reporter.set_source(&listing, &vcl.text);
+        reporter.set_line_origins(vcl.origins.clone());
+        for warning in &compiled.warnings {
+            reporter.report(warning);
+        }
+    }
+    if arguments.warnings_as_errors && reporter.warnings() > 0 {
+        return Err(RunError::Warnings);
+    }
+    reflection_files(
+        &checked,
+        Some(compiled.instruction_pairs),
+        arguments,
+        &mut files,
+    );
+    if let Some(path) = &arguments.output {
+        files.push((path.clone(), compiled.assembly.clone().into_bytes()));
+    }
+    write_files(&files)?;
+    if arguments.output.is_none() {
+        write_text(&compiled.assembly, arguments, reporter)?;
+    }
+    Ok(())
+}
+
+/// The reflection files asked for.
+fn reflection_files(
+    checked: &vusl::Checked,
+    instructions: Option<usize>,
+    arguments: &Arguments,
+    files: &mut Vec<(String, Vec<u8>)>,
+) {
+    if arguments.reflect.is_none() && arguments.header.is_none() {
+        return;
+    }
+    let reflection = checked.reflection(instructions);
+    if let Some(path) = &arguments.reflect {
+        files.push((
+            path.clone(),
+            vusl::reflect::json::write(&reflection).into_bytes(),
+        ));
+    }
+    if let Some(path) = &arguments.header {
+        files.push((
+            path.clone(),
+            vusl::reflect::cpp::write(&reflection).into_bytes(),
+        ));
+    }
+}
+
+/// Every output file, or none.
+fn write_files(files: &[(String, Vec<u8>)]) -> Result<(), RunError> {
+    let files: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(path, bytes)| (path.as_str(), bytes.as_slice()))
+        .collect();
+    write_all_or_nothing(&files)?;
+    Ok(())
 }
 
 fn main() {
@@ -173,6 +251,10 @@ fn main() {
         }
         Err(RunError::Check(error)) => {
             reporter.compile_errors(&[*error]);
+            std::process::exit(failure_status);
+        }
+        Err(RunError::Compile(errors)) => {
+            reporter.compile_errors(&errors);
             std::process::exit(failure_status);
         }
         Err(RunError::Warnings) => {

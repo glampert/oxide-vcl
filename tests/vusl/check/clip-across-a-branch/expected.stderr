@@ -1,0 +1,5 @@
+input.vusl(6): error: the clipw judgement is no longer in the clip flags: a branch or a loop boundary lies between
+   6 |         block.adc = adc(judged);
+     |                         ^
+     = help: read a judgement with any() or adc() after its clipw, in the same block and within four judgements
+oxide-vusl: 1 error; no output written

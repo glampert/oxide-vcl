@@ -46,6 +46,9 @@ pub fn program(
         access_set: HashSet::new(),
         called: HashSet::new(),
         warnings,
+        clips: 0,
+        clip_block: 0,
+        clip_judgements: HashMap::new(),
     };
     let mut prologue = Vec::new();
     for (index, param) in params.iter().enumerate() {
@@ -214,6 +217,11 @@ struct Elaborator<'d, 'w> {
     access_set: HashSet<Access>,
     called: HashSet<String>,
     warnings: &'w mut Vec<Problem>,
+    /// CLIPW judgements so far, and the block they are in: a judgement can
+    /// only be read in its own block, while the clip flags still hold it.
+    clips: usize,
+    clip_block: usize,
+    clip_judgements: HashMap<LocalId, (usize, usize)>,
 }
 
 fn err<T>(message: VuslMessage, pos: Pos) -> Checked<T> {
@@ -621,10 +629,13 @@ impl Elaborator<'_, '_> {
 
     /// A branch of an `if`, in a scope of its own.
     fn branch(&mut self, stmt: &ast::Stmt) -> Checked<Vec<Stmt>> {
+        // A branch or a loop body is a block of its own, for the clip flags.
+        self.clip_block += 1;
         self.scopes.push(HashMap::new());
         let mut out = Vec::new();
         let result = self.stmt(stmt, LoopHints::default(), &mut out);
         self.scopes.pop();
+        self.clip_block += 1;
         result.map(|()| out)
     }
 
@@ -1658,6 +1669,10 @@ impl Elaborator<'_, '_> {
                 column,
                 components,
             } => {
+                if self.locals[id].ty == Type::ClipFlags {
+                    self.clip_judgements
+                        .insert(id, (self.clip_block, self.clips.saturating_sub(1)));
+                }
                 let local = &self.locals[id];
                 let whole = full_mask(&local.ty);
                 match (column, &components) {
@@ -3061,12 +3076,29 @@ impl Elaborator<'_, '_> {
                 self.xyz(&judge, "'clipw'")?;
                 self.expect_type(&w, w.ty == Type::Float, &context, "a float w")?;
                 self.uses.clip = true;
+                self.clips += 1;
                 call(Builtin::ClipW, vec![judge, w], Type::ClipFlags, None)
             }
             "any" | "adc" => {
                 self.count(name, "1 to 3 judgements", &args, 1..=3, pos)?;
                 for arg in &args {
                     self.expect_type(arg, arg.ty == Type::ClipFlags, &context, "clipflags")?;
+                    // The clip flags hold the last four judgements, of this
+                    // block (VCL does not carry them across a branch).
+                    if let ExprKind::Local(id) = arg.kind
+                        && let Some(&(block, index)) = self.clip_judgements.get(&id)
+                    {
+                        let reason = if block != self.clip_block {
+                            Some("a branch or a loop boundary lies between")
+                        } else if self.clips - 1 - index >= 4 {
+                            Some("four newer judgements pushed it out")
+                        } else {
+                            None
+                        };
+                        if let Some(reason) = reason {
+                            return err(VuslMessage::ClipOutOfReach { reason }, arg.pos);
+                        }
+                    }
                 }
                 if name == "any" {
                     call(Builtin::Any, args, Type::Bool, None)

@@ -26,6 +26,10 @@ pub enum VuslMessage {
     BadColor {
         value: String,
     },
+    /// `--mode=` with something other than `oxide` or `vcl`.
+    BadMode {
+        value: String,
+    },
     /// `-D` with something other than `NAME` or `NAME=VALUE`, or naming a
     /// built-in macro.
     BadDefine {
@@ -37,11 +41,6 @@ pub enum VuslMessage {
     ExtraInput {
         argument: String,
     },
-
-    // The driver.
-    /// A run that would compile: code generation is not there yet, so only
-    /// `--preprocess-only` and `--check` run.
-    CompileUnfinished,
 
     // Reading the program.
     Lex(LexErrorKind),
@@ -275,6 +274,10 @@ pub enum VuslMessage {
         expected: String,
         found: String,
     },
+    /// A clip judgement read where the clip flags no longer hold it.
+    ClipOutOfReach {
+        reason: &'static str,
+    },
     /// A feature the compiler does not have yet.
     NotYet {
         what: &'static str,
@@ -291,10 +294,10 @@ impl VuslMessage {
             UnknownOption { .. }
                 | MissingValue { .. }
                 | BadColor { .. }
+                | BadMode { .. }
                 | BadDefine { .. }
                 | NoInput
                 | ExtraInput { .. }
-                | CompileUnfinished
         )
     }
 
@@ -348,6 +351,11 @@ fn wording(message: &VuslMessage) -> Wording {
             None,
             Some("use --color=auto, --color=always or --color=never"),
         ),
+        BadMode { value } => (
+            format!("unknown --mode value '{value}'"),
+            None,
+            Some("use --mode=oxide (the default) or --mode=vcl"),
+        ),
         BadDefine { argument } => (
             format!("can't define '{argument}'"),
             None,
@@ -362,11 +370,6 @@ fn wording(message: &VuslMessage) -> Wording {
             format!("more than one input file: '{argument}'"),
             None,
             Some("compile one program per run"),
-        ),
-        CompileUnfinished => (
-            "compiling VUSL is not implemented yet".into(),
-            None,
-            Some("--check checks the program, --preprocess-only runs the preprocessor"),
         ),
         Lex(kind) => lex(kind),
         Syntax(kind) => syntax(kind),
@@ -565,6 +568,13 @@ fn wording(message: &VuslMessage) -> Wording {
         RangeElementType { expected, found } => plain(format!(
             "the elements are {expected}, but the range declares {found}"
         )),
+        ClipOutOfReach { reason } => (
+            format!("the clipw judgement is no longer in the clip flags: {reason}"),
+            None,
+            Some(
+                "read a judgement with any() or adc() after its clipw, in the same block and within four judgements",
+            ),
+        ),
         NotYet { what } => plain(format!("{what} is not implemented yet")),
     }
 }

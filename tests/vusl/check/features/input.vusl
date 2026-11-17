@@ -67,10 +67,11 @@ void main(layout(address = 0) inout State state,
         vec4 position = vec4(place(itof4(v.pos.xyz), scale, batch.offset), 1.0);
         vec4 clip = state.transform * position;
         clipflags judged = clipw(clip.xyz, clip.w);
+        int16 outside = adc(judged);
         if (corner < 3)
         {
             emit(window.corners[0], clip, v.color);
-            window.corners[0].adc = adc(judged);
+            window.corners[0].adc = outside;
         }
         count(total, 1);
         corner = corner + 1;

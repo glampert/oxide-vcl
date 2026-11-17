@@ -5,7 +5,9 @@
 //! frontend checks it and generates VCL source, which [`vcl::compile`]
 //! schedules into the listing that dvp-as assembles.
 
+pub mod codegen;
 pub mod diagnostics;
+pub mod interp;
 mod options;
 pub mod reflect;
 pub mod sema;
@@ -53,6 +55,15 @@ pub struct Checked {
     pub struct_files: Vec<String>,
     /// The file the program was read from.
     pub source: String,
+    /// Where each line of the preprocessed program came from.
+    origins: Vec<Option<SourceLocation>>,
+}
+
+/// The VCL source generated for a program, with the place in the VUSL
+/// source each line came from.
+pub struct Vcl {
+    pub text: String,
+    pub origins: Vec<Option<SourceLocation>>,
 }
 
 impl Checked {
@@ -65,6 +76,47 @@ impl Checked {
             instructions,
         )
     }
+
+    fn locator(&self) -> Locator<'_> {
+        Locator {
+            main: &self.source,
+            origins: &self.origins,
+        }
+    }
+
+    /// Generates the program's VCL source.
+    pub fn generate(&self) -> Result<Vcl, Box<Failure>> {
+        let locator = self.locator();
+        match codegen::generate(&self.program, &self.source) {
+            Ok(generated) => Ok(Vcl {
+                text: generated.text,
+                origins: generated
+                    .origins
+                    .into_iter()
+                    .map(|pos| pos.map(|pos| locator.locate(pos)))
+                    .collect(),
+            }),
+            Err(problem) => Err(Box::new(Failure {
+                error: locator.diagnostic(true, &problem),
+                warnings: Vec::new(),
+            })),
+        }
+    }
+}
+
+/// Compiles generated VCL with `vcl`, in `options.mode`, its generated
+/// labels prefixed with the program's name.
+pub fn assemble(
+    vcl: &Vcl,
+    program: &str,
+    options: &Options,
+) -> Result<vcl::Compiled, Vec<vcl::CompileError>> {
+    let vcl_options = vcl::Options {
+        mode: options.mode,
+        unique: Some(program.to_string()),
+        ..vcl::Options::default()
+    };
+    vcl::compile(&vcl.text, &format!("{program}.vcl"), &vcl_options)
 }
 
 /// Why a program did not check: the first error, and the warnings before
@@ -177,6 +229,7 @@ pub fn check(name: &str, preprocessed: &Preprocessed) -> Result<Checked, Box<Fai
                 warnings,
                 struct_files,
                 source: name.to_string(),
+                origins: preprocessed.line_origins.clone(),
             })
         }
         Err(problem) => Err(Box::new(Failure {

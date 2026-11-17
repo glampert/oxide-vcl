@@ -43,6 +43,10 @@ pub struct Arguments {
     pub reflect: Option<String>,
     /// `--header=FILE`: the reflection as a C++ header.
     pub header: Option<String>,
+    /// `--emit-vcl=FILE`: the generated VCL too.
+    pub emit_vcl: Option<String>,
+    /// `--stop-at-vcl`: write the generated VCL, not the listing.
+    pub stop_at_vcl: bool,
     /// `--warnings-as-errors`.
     pub warnings_as_errors: bool,
     /// `--color=`.
@@ -124,6 +128,7 @@ where
             "-v" | "--version" => parsed.version = true,
             "--preprocess-only" => parsed.preprocess_only = true,
             "--check" => parsed.check = true,
+            "--stop-at-vcl" => parsed.stop_at_vcl = true,
             "--warnings-as-errors" => parsed.warnings_as_errors = true,
             "-" => {
                 if parsed.input.is_some() {
@@ -132,7 +137,16 @@ where
                 parsed.input = Some(argument);
             }
             _ => {
-                if let Some(path) = argument.strip_prefix("--reflect=") {
+                if let Some(path) = argument.strip_prefix("--emit-vcl=") {
+                    parsed.emit_vcl = Some(path.to_string());
+                } else if let Some(name) = argument.strip_prefix("--mode=") {
+                    let Some(mode) = vcl::Mode::from_name(name) else {
+                        return Err(fail(VuslMessage::BadMode {
+                            value: name.to_string(),
+                        }));
+                    };
+                    parsed.compile.mode = mode;
+                } else if let Some(path) = argument.strip_prefix("--reflect=") {
                     parsed.reflect = Some(path.to_string());
                 } else if let Some(path) = argument.strip_prefix("--header=") {
                     parsed.header = Some(path.to_string());
@@ -219,6 +233,11 @@ mod tests {
             (parsed.reflect.as_deref(), parsed.header.as_deref()),
             (Some("p.json"), Some("p.h"))
         );
+        let parsed = parse(["--emit-vcl=p.vcl", "--stop-at-vcl", "--mode=vcl", "p.vusl"]).unwrap();
+        assert_eq!(parsed.emit_vcl.as_deref(), Some("p.vcl"));
+        assert!(parsed.stop_at_vcl);
+        assert_eq!(parsed.compile.mode, vcl::Mode::Vcl);
+        assert_eq!(parse(["p.vusl"]).unwrap().compile.mode, vcl::Mode::Oxide);
         assert!(parse(["--help"]).unwrap().help);
         assert!(parse(["-v"]).unwrap().version);
     }
@@ -240,6 +259,8 @@ mod tests {
             &["--color=sometimes", "a.vusl"],
             VuslMessage::BadColor { value },
         );
+        let value = "fast".to_string();
+        rejects(&["--mode=fast", "a.vusl"], VuslMessage::BadMode { value });
         let option = "-o".to_string();
         rejects(&["a.vusl", "-o"], VuslMessage::MissingValue { option });
         for bad in ["1A", "A-B", "__LINE__", "__VUSL__", ""] {
