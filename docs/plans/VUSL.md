@@ -7,8 +7,8 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 | Milestone | Status |
 |---|---|
 | 0. Branch and groundwork | Done |
-| 1. Front end | In progress |
-| 2. Reflection | Not started |
+| 1. Front end | Done |
+| 2. Reflection | In progress |
 | 3. End-to-end baseline | Not started |
 | 4. Optimizer | Not started |
 | 5. VU features | Not started |
@@ -90,8 +90,9 @@ The following are not constructs. Each is an error with a suggested rewrite:
 
 | Rejected | Suggested rewrite |
 |---|---|
-| Swizzle reads that permute lanes (`a + b.yx`) | An explicit lane move |
-| Operands in different lanes | — |
+| Vector operands of one operation in different lanes (`a.xy + b.zw`) | Assign one to a variable declared with `layout(lane = ...)`, which moves its lanes |
+| A swizzle read that names a component twice (`v.xx`) | The scalar `v.x`, which an operation broadcasts |
+| An instruction's operand outside the lanes it works in (`cross`, `clipw` and the EFU's vector operations take x, y and z) | The same `layout(lane = x)` move |
 | Vector ÷ vector | Per-lane scalar divisions |
 | `int16` `*`, `/`, `%`, `<<`, `>>`, `^`, `~` | VU has no such instructions; write adds |
 | Per-lane selects and `?:` | `if` |
@@ -103,7 +104,7 @@ The following are not constructs. Each is an error with a suggested rewrite:
 | Type | Lives in | Notes |
 |---|---|---|
 | `float`, `vec2`, `vec3`, `vec4` | VF lanes | Every vector value has a **placement**, the lanes holding its components, as part of its static type (printed `vec2@zw`) |
-| `mat3`, `mat4` | 3 or 4 qwords, columns (GLSL) | `layout(row_major)` stores rows. `m[i]` is the i-th stored qword, a row when row_major, so indexing is always direct; this differs from GLSL. The index must be constant |
+| `mat3`, `mat4` | 3 or 4 qwords, columns (GLSL) | `layout(row_major)` stores rows. `m[i]` is the i-th stored qword, a row when row_major, so indexing is always direct; this differs from GLSL. The index must be constant. A local matrix takes its initializer's storage |
 | `int16` | VI, 16-bit wrap | Signed compares. A memory `int16` takes a 32-bit lane: `ilw` reads the low 16 bits, `isw` stores them zero-extended. There is no `int`; writing it is an error that suggests `int16` |
 | `bool` | VI non-zero, or a pending flag test | `||` is `ior`; `&&` and `!` only in conditions |
 | `int32`, `uint32`, `ivec2..4`, `uvec2..4` | VF lanes as raw 32-bit integers | Unpacked integers, `ftoi` results, packed colours: move, store and convert only. Signedness only matters to `itof` and to the reflected C++ type. `uint32(i)` from an `int16` is `mfir` |
@@ -114,16 +115,20 @@ The following are not constructs. Each is an error with a suggested rewrite:
 **Placement rules:**
 
 - **Loads** keep memory's lanes.
-- **Swizzle reads** that are lane subsets (`v.zw`, `v.w`) move nothing.
+- **Swizzle reads move nothing.** The placement follows the components: `v.zw` of a vector in
+  lanes xyzw is in lanes z and w, and `v.yx` in lanes y and x.
 - **Element-wise ops** need equal placements, except a scalar operand. A scalar is always a free
   broadcast (`ft[x]`), and commutative ops swap their operands to allow it.
-- **Lanes change only in a masked assignment** whose left and right lanes differ: `st.xy = uv.zw`.
-  It costs `mr32` steps for a rotation, otherwise one broadcast op per lane, and is rejected for
-  raw bits that cannot rotate.
+- **A plain local takes the lanes of each value assigned to it.** Where paths meet (after an `if`,
+  around a loop), they must agree.
+- **Lanes move only in an assignment into fixed lanes:** a member in memory, components of a
+  variable (`st.xy = uv`), or a local declared with `layout(lane = L)`, whose components then sit
+  in consecutive lanes from L. Such a local may take values from any lanes on any path.
+  - The move costs `mr32` steps for a rotation, otherwise one broadcast op per lane.
+  - Raw bits only move by rotation; any other raw move is rejected.
 - **Scalars are placed by the compiler** in the lane of their store or non-broadcast use. Writing
   a scalar into one lane (`st.z = q`) costs at most one instruction (`addq.z st, vf00, q`) and
   nothing when the scalar was computed there.
-- **Merges** (if/loop joins) need equal placements.
 - **Constructors** cost nothing when the consumer only broadcasts their components:
   `m * vec4(p.pos, 1.0)` uses `p[y..w]` and `vf00[w]`. Otherwise they cost one instruction per
   part not computed in place.
@@ -312,7 +317,7 @@ struct Particle {                         // one qword
 };
 
 struct Sprite {                           // five qwords of the GS packet
-    uint32 color;  float q;  uint32 reg;  // A+D RGBAQ (w unused)
+    uint32 color;  float q;  int16 reg;   // A+D RGBAQ (w unused)
     vec4   uv0;
     ivec3  xyz0;   int16 adc0;            // XYZ2: 12.4 x, y and z; ADC is bit 15 of w
     vec4   uv1;
@@ -360,7 +365,7 @@ void main(layout(address = 0)                         uniform Frame frame,
         vec3 w1 = w0 + quadOffset * k;
         int16 flag = adc(j);                               // fcand vi01, 0x3f + iaddiu
 
-        s.color = p.color;  s.q = q;  s.reg = uint32(1);   // sq.x from p's register; addq.y + sq.yz
+        s.color = p.color;  s.q = q;  s.reg = 1;           // sq.x from p's register; addq.y + sq.yz
         s.uv0  = batch.uv0;          s.uv1  = batch.uv1;   // invariant loads hoisted
         s.xyz0 = ftoi4(w0);          s.adc0 = flag;        // ftoi4.xyz + sq.xyz; isw.w
         s.xyz1 = ftoi4(w1);          s.adc1 = flag;
@@ -523,7 +528,7 @@ struct alignas(16) Sprite
 {
     uint32     color; // qword 0, x
     float      q;     // qword 0, y
-    uint32     reg;   // qword 0, z
+    int16_lane reg;   // qword 0, z
     uint32     _pad0; // qword 0, w: not written
     vec4       uv0;   // qword 1
     ivec3      xyz0;  // qword 2, xyz
@@ -765,6 +770,7 @@ oxide-vusl [options] input.vusl
   --emit-vcl=FILE      also write the generated VCL; --stop-at-vcl writes only that
   --reflect=FILE       reflection JSON          --header=FILE   C++ header
   -I DIR, -D NAME[=V]  preprocessor             --preprocess-only
+  --check              check the program and stop
   --annotate           source comments in the VCL
   --mode=oxide|vcl     back-end mode (oxide by default)   --vcl-option=OPT  pass an oxide-vcl option
   --color=, --warnings-as-errors, --help, --version

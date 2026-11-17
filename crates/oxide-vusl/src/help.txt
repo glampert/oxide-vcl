@@ -11,6 +11,8 @@ argument or glued to it: -o out.vsm or -oout.vsm.
 output:
   -o <file>            write the output to <file>
   --preprocess-only    write the preprocessed program and stop
+  --check              check the program and stop: types, lanes, layouts
+                       and main's parameters, without generating code
 
 input:
   -I <dir>             look for included files in <dir>; may be repeated

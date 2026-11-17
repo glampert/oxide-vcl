@@ -7,10 +7,17 @@
 
 pub mod diagnostics;
 mod options;
+pub mod sema;
+pub mod syntax;
 
 pub use options::Options;
 
+use vcl::diagnostics::{Diagnostic, Note, SourceLocation};
 use vcl::preprocessor::{self, PreprocessFailure, PreprocessOptions, Preprocessed, SourceLoader};
+
+use diagnostics::VuslMessage;
+use sema::Problem;
+use syntax::Pos;
 
 /// The macro every VUSL program sees defined, as 1, so that a header shared
 /// with C or VCL can tell which compiler reads it.
@@ -37,6 +44,119 @@ pub fn preprocess(
     preprocessor::preprocess(name, text, &preprocess_options, loader)
 }
 
+/// A checked program and its warnings, located in the source files.
+pub struct Checked {
+    pub program: sema::hir::Program,
+    pub warnings: Vec<Diagnostic>,
+}
+
+/// Why a program did not check: the first error, and the warnings before
+/// it.
+pub struct Failure {
+    pub error: Diagnostic,
+    pub warnings: Vec<Diagnostic>,
+}
+
+/// Where the lines of the preprocessed program came from.
+struct Locator<'a> {
+    main: &'a str,
+    origins: &'a [Option<SourceLocation>],
+}
+
+impl Locator<'_> {
+    fn locate(&self, pos: Pos) -> SourceLocation {
+        let line = pos.line as usize;
+        let column = pos.column as usize;
+        let origin = line
+            .checked_sub(1)
+            .and_then(|index| self.origins.get(index))
+            .and_then(Option::as_ref);
+        match origin {
+            Some(origin) => SourceLocation::new(origin.file.clone(), origin.line, column),
+            None => SourceLocation::new(self.main, line, column),
+        }
+    }
+
+    fn diagnostic(&self, error: bool, problem: &Problem) -> Diagnostic {
+        let diagnostic = if error {
+            Diagnostic::error(problem.message.clone())
+        } else {
+            Diagnostic::warning(problem.message.clone())
+        };
+        let notes = problem
+            .notes
+            .iter()
+            .map(|(pos, message)| Note::new(Some(self.locate(*pos)), message.clone()))
+            .collect();
+        diagnostic
+            .located_at(self.locate(problem.pos))
+            .with_notes(notes)
+    }
+}
+
+/// The name a program without `#pragma program(name)` gets from its file:
+/// the stem, with anything but letters, digits and `_` as `_`.
+pub fn default_program_name(file: &str) -> String {
+    let stem = std::path::Path::new(file).file_stem().map_or_else(
+        || file.to_string(),
+        |stem| stem.to_string_lossy().into_owned(),
+    );
+    let name: String = stem
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    match name.chars().next() {
+        Some(first) if !first.is_ascii_digit() => name,
+        _ => format!("_{name}"),
+    }
+}
+
+/// Checks the preprocessed program from the file named `name`: parses it,
+/// lays out its structs, binds `main`'s parameters and elaborates `main`.
+pub fn check(name: &str, preprocessed: &Preprocessed) -> Result<Checked, Box<Failure>> {
+    let locator = Locator {
+        main: name,
+        origins: &preprocessed.line_origins,
+    };
+    let file = match syntax::parse(&preprocessed.text) {
+        Ok(file) => file,
+        Err(failure) => {
+            let message = match &failure {
+                syntax::SyntaxFailure::Lex(error) => VuslMessage::Lex(error.kind.clone()),
+                syntax::SyntaxFailure::Parse(error) => VuslMessage::Syntax(error.kind.clone()),
+            };
+            let problem = Problem {
+                message,
+                pos: failure.pos(),
+                notes: Vec::new(),
+            };
+            return Err(Box::new(Failure {
+                error: locator.diagnostic(true, &problem),
+                warnings: Vec::new(),
+            }));
+        }
+    };
+    let checking = sema::check(&file, &default_program_name(name));
+    let warnings = checking
+        .warnings
+        .iter()
+        .map(|problem| locator.diagnostic(false, problem))
+        .collect();
+    match checking.program {
+        Ok(program) => Ok(Checked { program, warnings }),
+        Err(problem) => Err(Box::new(Failure {
+            error: locator.diagnostic(true, &problem),
+            warnings,
+        })),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,5 +174,13 @@ mod tests {
         let result = preprocess("main.vusl", source, &options, &MemoryFiles::new()).unwrap();
         assert_eq!(result.text, "float k = 2.0;\n");
         assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+
+    #[test]
+    fn programs_are_named_after_their_file() {
+        assert_eq!(default_program_name("src/world_lm.vusl"), "world_lm");
+        assert_eq!(default_program_name("a-b.c.vusl"), "a_b_c");
+        assert_eq!(default_program_name("<stdin>"), "_stdin_");
+        assert_eq!(default_program_name("3d.vusl"), "_3d");
     }
 }

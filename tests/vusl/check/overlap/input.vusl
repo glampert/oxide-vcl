@@ -1,0 +1,2 @@
+struct Constants { vec4 a; vec4 b; };
+void main(layout(address = 0) uniform Constants first, layout(address = 1) uniform Constants second) {}

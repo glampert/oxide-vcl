@@ -1,0 +1,5 @@
+struct Block { int16 a; int16 b; int16 product; };
+void main(layout(address = 0) inout Block block)
+{
+    block.product = block.a * block.b;
+}

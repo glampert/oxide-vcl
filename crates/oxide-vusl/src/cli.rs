@@ -37,6 +37,8 @@ pub struct Arguments {
     pub compile: vusl::Options,
     /// `--preprocess-only`: write the preprocessed program and stop.
     pub preprocess_only: bool,
+    /// `--check`: check the program and stop.
+    pub check: bool,
     /// `--warnings-as-errors`.
     pub warnings_as_errors: bool,
     /// `--color=`.
@@ -117,6 +119,7 @@ where
             "-h" | "--help" => parsed.help = true,
             "-v" | "--version" => parsed.version = true,
             "--preprocess-only" => parsed.preprocess_only = true,
+            "--check" => parsed.check = true,
             "--warnings-as-errors" => parsed.warnings_as_errors = true,
             "-" => {
                 if parsed.input.is_some() {
@@ -195,12 +198,13 @@ mod tests {
     fn flags_and_colors() {
         let parsed = parse([
             "--preprocess-only",
+            "--check",
             "--warnings-as-errors",
             "--color=always",
             "p.vusl",
         ])
         .unwrap();
-        assert!(parsed.preprocess_only && parsed.warnings_as_errors);
+        assert!(parsed.preprocess_only && parsed.check && parsed.warnings_as_errors);
         assert_eq!(parsed.color, Color::Always);
         assert!(parse(["--help"]).unwrap().help);
         assert!(parse(["-v"]).unwrap().version);

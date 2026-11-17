@@ -1,0 +1,4 @@
+input.vusl(1): error: 'after' follows an open array, which must be last
+   1 | struct Block { vec4 items[]; float after; };
+     |                                    ^^^^^
+oxide-vusl: 1 error; no output written

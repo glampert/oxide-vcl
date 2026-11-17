@@ -1,0 +1,5 @@
+input.vusl(4): error: dividing by a vector: the VU has no instruction for it
+   4 |     block.a = block.a / block.b;
+     |                       ^
+     = help: the FDIV unit takes one scalar at a time: divide by each component
+oxide-vusl: 1 error; no output written

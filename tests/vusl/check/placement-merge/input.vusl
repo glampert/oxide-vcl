@@ -1,0 +1,8 @@
+struct Block { vec4 v; int16 flag; vec4 out0; };
+void main(layout(address = 0) inout Block block)
+{
+    vec2 t = block.v.xy;
+    if (block.flag != 0)
+        t = block.v.zw;
+    block.out0.xy = t;
+}

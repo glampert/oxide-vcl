@@ -1,0 +1,4 @@
+input.vusl(6): error: 't' is read before it is set
+   6 |     block.a.xyz = t;
+     |                   ^
+oxide-vusl: 1 error; no output written

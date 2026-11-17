@@ -177,13 +177,34 @@ fn warnings_print_and_fail_the_run_only_when_asked() {
 }
 
 #[test]
-fn compiling_is_not_there_yet() {
-    let result = run("compile", &["p.vusl"], &[("p.vusl", "a;\n")]);
+fn checking_passes_and_compiling_is_not_there_yet() {
+    let files = [("p.vusl", "void main() {}\n")];
+    let result = run("check", &["--check", "p.vusl"], &files);
+    assert_eq!((result.status, result.stderr.as_str()), (0, ""));
+    let result = run("compile", &["p.vusl"], &files);
     assert_eq!(result.status, 1);
     assert_eq!(
         result.stderr,
         "oxide-vusl: error: compiling VUSL is not implemented yet\n  \
-         = help: --preprocess-only runs the preprocessor\n"
+         = help: --check checks the program, --preprocess-only runs the preprocessor\n"
+    );
+}
+
+#[test]
+fn check_errors_name_the_line_in_the_included_file() {
+    let files = [
+        ("p.vusl", "#include \"lib.vush\"\nvoid main() {}\n"),
+        ("lib.vush", "struct Block {\n    int count;\n};\n"),
+    ];
+    let result = run("check-error", &["--check", "p.vusl"], &files);
+    assert_eq!(result.status, 1);
+    assert_eq!(
+        result.stderr,
+        "lib.vush(2): error: unknown type 'int'\n   \
+         2 |     int count;\n     \
+         |     ^^^\n     \
+         = help: VU integers are 16 bits: write int16\n\
+         oxide-vusl: 1 error; no output written\n"
     );
 }
 

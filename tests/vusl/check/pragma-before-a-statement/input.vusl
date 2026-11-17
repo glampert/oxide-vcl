@@ -1,0 +1,6 @@
+struct Block { float a; };
+void main(layout(address = 0) inout Block block)
+{
+    #pragma unroll(4)
+    block.a = 1.0;
+}

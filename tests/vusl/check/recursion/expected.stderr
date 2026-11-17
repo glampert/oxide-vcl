@@ -1,0 +1,7 @@
+input.vusl(1): error: 'twice' calls itself: functions are inlined, so it cannot recurse
+   1 | float twice(float x) { return twice(x); }
+     |                               ^^^^^
+input.vusl(5): note: in the call to 'twice' here
+   5 |     block.a = twice(block.a);
+     |               ^^^^^
+oxide-vusl: 1 error; no output written

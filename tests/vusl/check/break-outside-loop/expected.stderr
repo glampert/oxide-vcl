@@ -1,0 +1,4 @@
+input.vusl(3): error: break outside a loop
+   3 |     break;
+     |     ^^^^^
+oxide-vusl: 1 error; no output written

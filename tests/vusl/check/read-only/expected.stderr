@@ -1,0 +1,4 @@
+input.vusl(4): error: 'constants.scale' is read-only
+   4 |     constants.scale = constants.scale * 2.0;
+     |     ^^^^^^^^^^^^^^^
+oxide-vusl: 1 error; no output written

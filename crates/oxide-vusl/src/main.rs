@@ -1,5 +1,5 @@
-//! `oxide-vusl`: the VUSL driver. It reads a program and preprocesses it in
-//! C syntax; the frontend that compiles it through `vcl::compile` is being
+//! `oxide-vusl`: the VUSL driver. It reads a program, preprocesses it in C
+//! syntax and checks it; code generation through `vcl::compile` is being
 //! built (`docs/plans/VUSL.md`). Exit statuses are oxide-vcl's in oxide
 //! mode: 1 when a run fails, 2 for a bad command line.
 //!
@@ -21,6 +21,8 @@ enum RunError {
     Driver(Box<Diagnostic>),
     /// The preprocessor stopped at an error.
     Preprocess(Box<PreprocessFailure>),
+    /// The program did not check.
+    Check(Box<Diagnostic>),
     /// `--warnings-as-errors`, and warnings were printed.
     Warnings,
 }
@@ -104,6 +106,24 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
     if arguments.preprocess_only {
         return write_text(&preprocessed.text, arguments, reporter);
     }
+    let checked = match vusl::check(input_name(arguments), &preprocessed) {
+        Ok(checked) => checked,
+        Err(failure) => {
+            for warning in &failure.warnings {
+                reporter.report(warning);
+            }
+            return Err(RunError::Check(Box::new(failure.error)));
+        }
+    };
+    for warning in &checked.warnings {
+        reporter.report(warning);
+    }
+    if arguments.warnings_as_errors && reporter.warnings() > 0 {
+        return Err(RunError::Warnings);
+    }
+    if arguments.check {
+        return Ok(());
+    }
     Err(RunError::Driver(Box::new(Diagnostic::error(
         VuslMessage::CompileUnfinished,
     ))))
@@ -137,6 +157,10 @@ fn main() {
         Ok(()) => {}
         Err(RunError::Preprocess(failure)) => {
             reporter.compile_errors(&[failure.error]);
+            std::process::exit(failure_status);
+        }
+        Err(RunError::Check(error)) => {
+            reporter.compile_errors(&[*error]);
             std::process::exit(failure_status);
         }
         Err(RunError::Warnings) => {

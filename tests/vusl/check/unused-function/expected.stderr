@@ -1,0 +1,3 @@
+input.vusl(1): warning: function 'half' is never called, so it is not checked
+   1 | float half(float x) { return x * 0.5; }
+     |       ^^^^

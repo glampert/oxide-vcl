@@ -1,0 +1,2 @@
+struct Block { vec4 a; };
+void main(in Block block) {}

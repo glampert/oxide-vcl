@@ -1,0 +1,4 @@
+input.vusl(4): error: #pragma unroll must come right before a loop
+   4 |     #pragma unroll(4)
+     |     ^
+oxide-vusl: 1 error; no output written

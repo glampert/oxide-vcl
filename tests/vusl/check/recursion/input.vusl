@@ -1,0 +1,6 @@
+float twice(float x) { return twice(x); }
+struct Block { float a; };
+void main(layout(address = 0) inout Block block)
+{
+    block.a = twice(block.a);
+}

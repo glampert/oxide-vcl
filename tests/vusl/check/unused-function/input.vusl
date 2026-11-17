@@ -1,0 +1,2 @@
+float half(float x) { return x * 0.5; }
+void main() {}

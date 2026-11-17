@@ -1,0 +1,5 @@
+struct Constants { vec4 scale; };
+void main(layout(address = 0) uniform Constants constants)
+{
+    constants.scale = constants.scale * 2.0;
+}

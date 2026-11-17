@@ -1,0 +1,5 @@
+input.vusl(1): error: 'scale' is a variable at file scope
+   1 | float scale;
+     |       ^^^^^
+     = help: file scope holds types, constants and functions; memory reaches the program as main's parameters
+oxide-vusl: 1 error; no output written

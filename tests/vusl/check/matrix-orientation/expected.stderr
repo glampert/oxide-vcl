@@ -1,0 +1,5 @@
+input.vusl(4): error: a row_major matrix times a vector on its right: the VU has no instruction for it
+   4 |     frame.v = frame.mvp * frame.v;
+     |                         ^
+     = help: write vector * matrix, or store the matrix column_major
+oxide-vusl: 1 error; no output written

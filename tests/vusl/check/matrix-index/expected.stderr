@@ -1,0 +1,5 @@
+input.vusl(5): error: indexing registers with a value computed at run time: the VU has no instruction for it
+   5 |     frame.v = m[frame.column];
+     |                 ^
+     = help: use a constant index, or #pragma unroll the loop that computes it
+oxide-vusl: 1 error; no output written

@@ -1,0 +1,5 @@
+input.vusl(4): error: '?:': the VU has no instruction for it
+   4 |     block.a = block.a < block.b ? block.a : block.b;
+     |                                 ^
+     = help: the VU has no select: write an if statement
+oxide-vusl: 1 error; no output written

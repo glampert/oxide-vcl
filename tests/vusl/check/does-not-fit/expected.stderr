@@ -1,0 +1,4 @@
+input.vusl(2): error: 'batch' needs at least 300 qwords, more than the 266-qword double-buffer half
+   2 | void main(layout(xtop, vif_base = 40, vif_offset = 266) in Batch batch) {}
+     |                                                                  ^^^^^
+oxide-vusl: 1 error; no output written

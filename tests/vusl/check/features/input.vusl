@@ -1,0 +1,96 @@
+// Most of the language in one program that checks: functions taking
+// memory and out registers, the three loops, yield, EFU, clamping,
+// conversions, GIF tag patches and fixed-lane locals.
+#pragma program(features)
+
+const float kScale = 1.0 / 0.8;
+const int16 kAdc = 1 << 15;
+
+struct Vertex {
+    layout(unpack = v4_16) ivec4 pos;
+    layout(unpack = v4_8, unsigned) uvec4 color;
+};
+
+struct Corner {
+    vec4  st;
+    uvec4 rgba;
+    ivec3 xyz;  int16 adc;
+};
+
+struct Window {
+    qword  tag;
+    Corner corners[3];
+};
+
+struct Batch {
+    vec3   offset;  int16 count;
+    vec4   scale;
+    Vertex vertices[count];
+};
+
+struct State {
+    layout(column_major) mat4 transform;
+    vec4  light;
+    int16 frames;
+};
+
+// x * scale + offset, which may fuse into one multiply-add.
+vec3 place(vec3 x, vec3 scale, vec3 offset)
+{
+    return x * scale + offset;
+}
+
+void emit(out Corner corner, vec4 clip, uvec4 rgba)
+{
+    float q = 1.0 / clip.w;
+    corner.st = vec4(clip.xyz * q, q);
+    corner.rgba = rgba;
+    corner.xyz = ftoi4(clip.xyz * q);
+    corner.adc = 0;
+}
+
+void count(inout int16 total, int16 amount)
+{
+    total += amount;
+}
+
+void main(layout(address = 0) inout State state,
+          layout(address = 10) out Window window,
+          layout(xtop, vif_base = 40, vif_offset = 300) in Batch batch)
+{
+    int16 total = 0;
+    int16 corner = 0;
+    vec3 scale = batch.scale.xyz * kScale;
+    for (Vertex v : batch.vertices)
+    {
+        vec4 position = vec4(place(itof4(v.pos.xyz), scale, batch.offset), 1.0);
+        vec4 clip = state.transform * position;
+        clipflags judged = clipw(clip.xyz, clip.w);
+        if (corner < 3)
+        {
+            emit(window.corners[0], clip, v.color);
+            window.corners[0].adc = adc(judged);
+        }
+        count(total, 1);
+        corner = corner + 1;
+    }
+    window.tag.x = total | kAdc;
+
+    // Lights: a clamped dot product and EFU square roots.
+    vec3 direction = normalize(state.light.xyz);
+    float facing = clamp(dot(direction, scale), 0.0, 1.0);
+    float distance = esqrt(esadd(direction));
+    layout(lane = w) float stored = facing * distance;
+    state.light.w = stored;
+
+    int16 frames = state.frames;
+    while (frames > 0)
+        frames = frames - 1;
+    do
+    {
+        frames++;
+    } while (frames < 4);
+    state.frames = frames;
+    yield;
+    state.frames = int16(float(frames) * 2.0);
+}

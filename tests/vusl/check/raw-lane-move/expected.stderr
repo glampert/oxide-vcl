@@ -1,0 +1,5 @@
+input.vusl(5): error: raw bits in lanes yx cannot move to lanes xy
+   5 |     block.bits.xy = swapped;
+     |     ^
+     = help: raw bits move only by MR32 rotation; an FMAC move would flush them as denormals
+oxide-vusl: 1 error; no output written

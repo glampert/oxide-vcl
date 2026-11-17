@@ -1,0 +1,5 @@
+input.vusl(5): error: 'cross' takes its operands in lanes xyz, not yzw
+   5 |     block.normal.xyz = cross(block.p.pos, block.p.pos);
+     |                              ^
+     = help: assign the value to a variable declared with layout(lane = x), which moves its lanes
+oxide-vusl: 1 error; no output written
