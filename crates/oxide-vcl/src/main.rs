@@ -6,8 +6,8 @@
 //! Everything it prints goes through [`vcl::diagnostics::Reporter`].
 
 use std::io::{self, Read};
-use std::path::PathBuf;
 use vcl::diagnostics::{Diagnostic, DriverMessage, Reporter};
+use vcl::driver::write_all_or_nothing;
 use vcl::preprocessor::{self, FileSystem, PreprocessFailure};
 use vcl_cli::{self as cli, Arguments};
 
@@ -172,62 +172,12 @@ fn write_preprocessed(
     Ok(())
 }
 
-/// Write each file to a temporary file beside it, then rename them all into
-/// place. A failed write leaves every target as it was.
-fn write_all_or_nothing(files: &[(&str, &[u8])]) -> Result<(), DriverMessage> {
-    let failed = |path: &str, error: io::Error| DriverMessage::WriteOutput {
-        path: path.to_string(),
-        error: error.to_string(),
-    };
-    let mut staged: Vec<(PathBuf, &str)> = Vec::new();
-    let discard = |staged: &[(PathBuf, &str)]| {
-        for (temporary, _) in staged {
-            let _ = std::fs::remove_file(temporary);
-        }
-    };
-    for &(path, bytes) in files {
-        let target = std::path::Path::new(path);
-        let Some(name) = target.file_name() else {
-            discard(&staged);
-            return Err(failed(path, io::Error::from(io::ErrorKind::InvalidInput)));
-        };
-        let mut temporary_name = std::ffi::OsString::from(".");
-        temporary_name.push(name);
-        temporary_name.push(format!(".{}.tmp", std::process::id()));
-        let temporary = target.with_file_name(temporary_name);
-        if let Err(error) = std::fs::write(&temporary, bytes) {
-            let _ = std::fs::remove_file(&temporary);
-            discard(&staged);
-            return Err(failed(path, error));
-        }
-        staged.push((temporary, path));
-    }
-    for (index, (temporary, path)) in staged.iter().enumerate() {
-        if let Err(error) = std::fs::rename(temporary, path) {
-            discard(&staged[index..]);
-            return Err(failed(path, error));
-        }
-    }
-    Ok(())
-}
-
-/// Whether diagnostics are colored: `--color=`, and for `auto` whether
-/// standard error is a terminal and the environment allows it (`NO_COLOR`
-/// set to anything but an empty string turns colors off, as does
-/// `TERM=dumb`).
-fn colored(color: cli::Color) -> bool {
-    use std::io::IsTerminal;
-    let no_color = std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty());
-    let dumb = std::env::var_os("TERM").is_some_and(|term| term == "dumb");
-    color.enabled(io::stderr().is_terminal(), !no_color && !dumb)
-}
-
 fn main() {
     let mut reporter = Reporter::stdio();
     let arguments = match cli::parse(std::env::args().skip(1)) {
         Ok(arguments) => arguments,
         Err(error) => {
-            reporter.set_color(colored(error.color));
+            reporter.set_color(error.color.enabled_here());
             for notice in &error.notices {
                 reporter.report(notice);
             }
@@ -236,7 +186,7 @@ fn main() {
         }
     };
     reporter.set_warnings_as_errors(arguments.warnings_as_errors);
-    reporter.set_color(colored(arguments.color));
+    reporter.set_color(arguments.color.enabled_here());
 
     for notice in &arguments.notices {
         reporter.report(notice);

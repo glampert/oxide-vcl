@@ -169,6 +169,7 @@ impl Engine<'_> {
                 // Name{ } in code can only be a block macro invocation. Left
                 // as it is, it would only puzzle VCL.
                 if !self.options.masp
+                    && !self.options.c_syntax
                     && name.is_identifier()
                     && block_context.is_empty()
                     && followed_by(input, Punct::OpenBrace)
@@ -542,7 +543,7 @@ impl Engine<'_> {
 
     fn paste(&self, left: &Token, right: &Token, op: &Token) -> Fallible<Token> {
         let text = format!("{}{}", left.text, right.text);
-        let Some(lexed) = lexer::lex_single_token(&text) else {
+        let Some(lexed) = lexer::lex_single_token_with(&text, self.syntax()) else {
             return Err(self.error(
                 op,
                 PreprocessMessage::InvalidPaste {

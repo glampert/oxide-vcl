@@ -80,7 +80,7 @@ describes the emulated oracle and what it needs under a `local/` path.
 
 ## Layout
 
-The Cargo workspace has two crates:
+The Cargo workspace has four crates:
 
 - `crates/vcl`, the compiler library, organised by phase: `isa` (the VU
   instruction table), `parser` (source and immediate expressions), `analysis`
@@ -96,6 +96,9 @@ The Cargo workspace has two crates:
   tests share it) and file handling. Its `tests/` hold the integration tests;
   the public corpus they compile is `tests/corpus/`, and the preprocessor's
   cases are in `tests/preprocessor/`.
+- `crates/vusl` and `crates/oxide-vusl`, VUSL: a GLSL-like language for VU1
+  microprograms that compiles to VCL, and its `oxide-vusl` driver
+  ([plan](docs/plans/VUSL.md)).
 
 The workspace version (`Cargo.toml`) is the project's version; `oxide-vcl -h`
 prints it with the build date.
@@ -177,6 +180,7 @@ Testing and evidence:
 - [Instruction corpus](docs/INSTRUCTION_CORPUS.md)
 - [Runtime oracle](docs/RUNTIME.md)
 - [Optimization plan beyond the original](docs/OPTIMIZATION_PLAN.md)
+- [VUSL: a shading language compiled to VCL](docs/plans/VUSL.md)
 
 ## License
 

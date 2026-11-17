@@ -219,6 +219,7 @@ pub enum Message {
     Parse(ParseMessage),
     Compile(CompileMessage),
     Preprocess(PreprocessMessage),
+    Frontend(FrontendMessage),
 }
 
 impl Message {
@@ -263,8 +264,27 @@ message_from!(
     Driver(DriverMessage),
     Parse(ParseMessage),
     Compile(CompileMessage),
-    Preprocess(PreprocessMessage)
+    Preprocess(PreprocessMessage),
+    Frontend(FrontendMessage)
 );
+
+/// A message from a frontend built on the compiler, such as VUSL's, already
+/// worded by it: the frontend keeps its own typed messages and prints them
+/// through [`Reporter`] as these.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct FrontendMessage {
+    /// The one-line message.
+    pub text: String,
+    /// The token it is about, underlined in the quoted source line.
+    pub subject: Option<String>,
+    /// A suggested fix or an explanation, printed as `= help: ...`.
+    pub help: Option<String>,
+    /// About the program's source: a diagnostic with only a line is located
+    /// in the program (through its line origins), as a compile error is.
+    /// Otherwise it is about the command line or the driver, and is located
+    /// by the program's name.
+    pub in_source: bool,
+}
 
 /// Command-line notices and errors.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -910,6 +930,9 @@ pub struct Reporter<O: Write = io::Stdout, E: Write = io::Stderr> {
     warnings_as_errors: bool,
     /// Whether diagnostics carry ANSI colors ([`Reporter::set_color`]).
     color: bool,
+    /// The name diagnostics with no file are located by, and the summary
+    /// starts with ([`Reporter::set_program_name`]).
+    program: String,
     errors: usize,
     warnings: usize,
 }
@@ -949,9 +972,17 @@ impl<O: Write, E: Write> Reporter<O, E> {
             line_origins: Vec::new(),
             warnings_as_errors: false,
             color: false,
+            program: "oxide-vcl".to_string(),
             errors: 0,
             warnings: 0,
         }
+    }
+
+    /// The driver's name, `oxide-vcl` unless another driver says otherwise:
+    /// command-line and driver diagnostics are located by it, and the
+    /// summary of a failed run starts with it.
+    pub fn set_program_name(&mut self, name: &str) {
+        self.program = name.to_string();
     }
 
     /// The source file's name and the text the compiler reads (after
@@ -1071,7 +1102,8 @@ impl<O: Write, E: Write> Reporter<O, E> {
     /// ```
     ///
     /// Source diagnostics are located by file and line (the file alone when
-    /// there is no line); command-line and driver ones by `oxide-vcl`.
+    /// there is no line); command-line and driver ones by the program's
+    /// name, `oxide-vcl` by default.
     fn render(&mut self, diagnostic: &Diagnostic) {
         let mut severity = diagnostic.severity;
         let mut suffix = "";
@@ -1132,10 +1164,11 @@ impl<O: Write, E: Write> Reporter<O, E> {
             Severity::Error => self.paint("error", style::ERROR),
         };
         let wording = message.wording();
-        let in_source = matches!(
-            message,
-            Message::Parse(_) | Message::Compile(_) | Message::Preprocess(_)
-        );
+        let in_source = match message {
+            Message::Parse(_) | Message::Compile(_) | Message::Preprocess(_) => true,
+            Message::Frontend(message) => message.in_source,
+            Message::Cli(_) | Message::Driver(_) => false,
+        };
         // A line of preprocessed code is shown where it came from.
         let origin = match location {
             None if in_source => line
@@ -1160,7 +1193,7 @@ impl<O: Write, E: Write> Reporter<O, E> {
         let place = match file {
             Some(file) if line != 0 => format!("{file}({line})"),
             Some(file) => file.to_string(),
-            None => "oxide-vcl".to_string(),
+            None => self.program.clone(),
         };
         let place = self.paint(&format!("{place}:"), style::BOLD);
         let headline = self.paint(&format!("{}{suffix}", wording.text), style::BOLD);
@@ -1230,7 +1263,8 @@ impl<O: Write, E: Write> Reporter<O, E> {
         } else {
             format!("{errors}, {}", plural(warnings, "warning"))
         };
-        self.stderr(format_args!("oxide-vcl: {counts}; no output written\n"));
+        let program = self.program.clone();
+        self.stderr(format_args!("{program}: {counts}; no output written\n"));
     }
 
     fn stderr(&mut self, text: fmt::Arguments<'_>) {
@@ -1471,6 +1505,56 @@ mod tests {
                  2 |     ad res, src, src\n     \
                  |     ^^\n"
             ),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn frontend_messages_are_located_where_the_frontend_says() {
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.set_program_name("oxide-vusl");
+        reporter.add_source("prog.vusl", "void main()\n{\n    vec2 a = b.yx;\n}\n");
+        let message = FrontendMessage {
+            text: "'b.yx' reorders lanes".into(),
+            subject: Some("b.yx".into()),
+            help: Some("move the lanes with a masked assignment".into()),
+            in_source: true,
+        };
+        let error = Diagnostic::error(message).located_at(SourceLocation::new("prog.vusl", 3, 14));
+        let usage = Diagnostic::error(FrontendMessage {
+            text: "no input file".into(),
+            ..FrontendMessage::default()
+        });
+        reporter.report(&usage);
+        reporter.compile_errors(&[error]);
+        let (_, err) = reporter.into_inner();
+        assert_eq!(
+            String::from_utf8(err).unwrap(),
+            "oxide-vusl: error: no input file\n\
+             prog.vusl(3): error: 'b.yx' reorders lanes\n   \
+             3 |     vec2 a = b.yx;\n     \
+             |              ^^^^\n     \
+             = help: move the lanes with a masked assignment\n\
+             oxide-vusl: 2 errors; no output written\n"
+        );
+    }
+
+    #[test]
+    fn frontend_messages_with_a_line_follow_the_line_origins() {
+        let mut reporter = Reporter::new(Vec::new(), Vec::new());
+        reporter.set_source("prog.vcl", ".vu\n\tadd res, src, src\n");
+        reporter.add_source("prog.vusl", "a = b + b;\n");
+        reporter.set_line_origins(vec![None, Some(SourceLocation::new("prog.vusl", 1, 0))]);
+        let message = FrontendMessage {
+            text: "out of registers".into(),
+            in_source: true,
+            ..FrontendMessage::default()
+        };
+        reporter.compile_errors(&[Diagnostic::error(message).at(2)]);
+        let (_, err) = reporter.into_inner();
+        let err = String::from_utf8(err).unwrap();
+        assert!(
+            err.starts_with("prog.vusl(1): error: out of registers\n   1 | a = b + b;\n"),
             "{err}"
         );
     }

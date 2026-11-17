@@ -2,7 +2,10 @@
 //! is about (for the caret underline) and, where there is one, a suggested
 //! fix. None of this is vcl 1.4beta7's text.
 
-use super::{CliMessage, CompileMessage, DriverMessage, Message, ParseMessage, PreprocessMessage};
+use super::{
+    CliMessage, CompileMessage, DriverMessage, FrontendMessage, Message, ParseMessage,
+    PreprocessMessage,
+};
 use crate::allocator::allocation::AllocationError;
 
 /// A message in oxide wording.
@@ -60,6 +63,16 @@ pub fn wording(message: &Message) -> Wording {
         Message::Parse(message) => parse(message),
         Message::Compile(message) => compile(message),
         Message::Preprocess(message) => preprocess(message),
+        Message::Frontend(message) => frontend(message),
+    }
+}
+
+/// A frontend's message, worded by the frontend.
+fn frontend(message: &FrontendMessage) -> Wording {
+    Wording {
+        text: message.text.clone(),
+        subject: message.subject.clone(),
+        help: message.help.clone(),
     }
 }
 

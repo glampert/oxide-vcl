@@ -1,0 +1,24 @@
+[package]
+name = "oxide-vusl"
+description = "Command-line driver for VUSL, a shading language for PS2 VU1 microprograms"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The argument parser is a small library target so the integration tests
+# share it with the binary.
+[lib]
+name = "vusl_cli"
+path = "src/cli.rs"
+
+[[bin]]
+name = "oxide-vusl"
+path = "src/main.rs"
+
+[dependencies]
+vcl.workspace = true
+vusl.workspace = true
+
+[lints]
+workspace = true

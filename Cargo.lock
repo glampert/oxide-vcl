@@ -10,5 +10,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxide-vusl"
+version = "0.1.0"
+dependencies = [
+ "vcl",
+ "vusl",
+]
+
+[[package]]
 name = "vcl"
 version = "0.1.0"
+
+[[package]]
+name = "vusl"
+version = "0.1.0"
+dependencies = [
+ "vcl",
+]
