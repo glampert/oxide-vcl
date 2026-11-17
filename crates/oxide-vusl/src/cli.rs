@@ -39,6 +39,10 @@ pub struct Arguments {
     pub preprocess_only: bool,
     /// `--check`: check the program and stop.
     pub check: bool,
+    /// `--reflect=FILE`: the reflection as JSON.
+    pub reflect: Option<String>,
+    /// `--header=FILE`: the reflection as a C++ header.
+    pub header: Option<String>,
     /// `--warnings-as-errors`.
     pub warnings_as_errors: bool,
     /// `--color=`.
@@ -128,7 +132,11 @@ where
                 parsed.input = Some(argument);
             }
             _ => {
-                if let Some(name) = argument.strip_prefix("--color=") {
+                if let Some(path) = argument.strip_prefix("--reflect=") {
+                    parsed.reflect = Some(path.to_string());
+                } else if let Some(path) = argument.strip_prefix("--header=") {
+                    parsed.header = Some(path.to_string());
+                } else if let Some(name) = argument.strip_prefix("--color=") {
                     if Color::from_name(name).is_none() {
                         return Err(fail(VuslMessage::BadColor {
                             value: name.to_string(),
@@ -206,6 +214,11 @@ mod tests {
         .unwrap();
         assert!(parsed.preprocess_only && parsed.check && parsed.warnings_as_errors);
         assert_eq!(parsed.color, Color::Always);
+        let parsed = parse(["--reflect=p.json", "--header=p.h", "p.vusl"]).unwrap();
+        assert_eq!(
+            (parsed.reflect.as_deref(), parsed.header.as_deref()),
+            (Some("p.json"), Some("p.h"))
+        );
         assert!(parse(["--help"]).unwrap().help);
         assert!(parse(["-v"]).unwrap().version);
     }

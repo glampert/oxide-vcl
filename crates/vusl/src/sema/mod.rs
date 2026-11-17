@@ -158,7 +158,11 @@ mod tests {
         };
         assert_eq!(
             accesses,
-            [access(&[2, 1], false), access(&[1], true)],
+            [
+                access(&[0], false),
+                access(&[2, 1], false),
+                access(&[1], true)
+            ],
             "{accesses:?}"
         );
     }

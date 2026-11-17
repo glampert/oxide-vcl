@@ -122,6 +122,18 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
         return Err(RunError::Warnings);
     }
     if arguments.check {
+        // The reflection needs only the checked program.
+        let reflection = checked.reflection(None);
+        let json = vusl::reflect::json::write(&reflection);
+        let header = vusl::reflect::cpp::write(&reflection);
+        let mut files: Vec<(&str, &[u8])> = Vec::new();
+        if let Some(path) = &arguments.reflect {
+            files.push((path.as_str(), json.as_bytes()));
+        }
+        if let Some(path) = &arguments.header {
+            files.push((path.as_str(), header.as_bytes()));
+        }
+        write_all_or_nothing(&files)?;
         return Ok(());
     }
     Err(RunError::Driver(Box::new(Diagnostic::error(

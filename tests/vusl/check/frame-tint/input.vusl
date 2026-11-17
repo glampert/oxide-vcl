@@ -1,0 +1,16 @@
+// A second program that includes frame.vush, so that two generated headers
+// share the Frame struct: clamps colours against the frame's ceiling.
+#pragma program(FrameTint)
+#include "../../include/frame.vush"
+
+struct Colors {
+    int16 count;
+    vec4  values[count];
+};
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(xtop, vif_base = 8, vif_offset = 474) inout Colors colors)
+{
+    for (inout vec4 color : colors.values)
+        color = clamp(color, 0.0, frame.colorClamp);
+}

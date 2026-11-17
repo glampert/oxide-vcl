@@ -32,6 +32,7 @@ struct State {
     layout(column_major) mat4 transform;
     vec4  light;
     int16 frames;
+    float weights[2];
 };
 
 // x * scale + offset, which may fuse into one multiply-add.
@@ -81,7 +82,7 @@ void main(layout(address = 0) inout State state,
     float facing = clamp(dot(direction, scale), 0.0, 1.0);
     float distance = esqrt(esadd(direction));
     layout(lane = w) float stored = facing * distance;
-    state.light.w = stored;
+    state.light.w = stored * state.weights[1];
 
     int16 frames = state.frames;
     while (frames > 0)

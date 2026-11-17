@@ -8,7 +8,7 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 |---|---|
 | 0. Branch and groundwork | Done |
 | 1. Front end | Done |
-| 2. Reflection | In progress |
+| 2. Reflection | Done |
 | 3. End-to-end baseline | Not started |
 | 4. Optimizer | Not started |
 | 5. VU features | Not started |
@@ -400,26 +400,29 @@ countdown's `iaddi`, which saves one lower-pipe instruction per iteration. That 
 It records:
 
 - The program: its name, symbols, instruction count and source.
-- The features it uses: xtop, xitop, clip, efu and yield.
-- The double buffer's base and offset.
-- Each parameter of `main`: its name, qualifier, struct type, its placement (`address`, or `xtop`
-  with VIF BASE/OFFSET), its size in qwords as a fixed part plus per-length terms, and the members
-  it kicks.
-- Each type's members, recursively: name, type, qword, lane, length, stride, matrix order, the
-  file the type was declared in, and the VIF `unpack`. The unpack gives the format, the signedness,
-  the offset within the element, and the element stride, which is the `STCYCL` CL/WL the host
-  needs.
+- The features it uses: xtop, xitop, clipw, efu, xgkick and yield.
+- Each parameter of `main`:
+  - its name, qualifier and struct type;
+  - its placement (`address`, or `xtop` with VIF BASE/OFFSET);
+  - its size in qwords, as a fixed part plus per-length terms, counting the open arrays the
+    program writes;
+  - the members it reads, writes and kicks, as dotted paths;
+  - the solved `limit`.
+- Each type, in an array: the file it was declared in, its layout hash, its size and open array,
+  and its members. A member has its name, type, qword (a number, or an expression after a
+  dependent array), lane, length, stride, matrix order and the VIF `unpack` (format and
+  signedness). With the member's qword and its array's stride, that gives the host its UNPACK and
+  `STCYCL` settings.
 
-It is written by a small hand-rolled writer, since no crates are allowed. Each
-binding's size is a fixed part plus per-count terms. The limits the compiler solved go in
-`limits`.
+It is written by a small hand-rolled writer, since no crates are allowed.
 
 ### `--header=prog.h` (C++17: `<cstddef>`, `<cstdint>`, plus `<tamtypes.h>` on the EE)
 
 - **Value types.** `vusl::qword_t` is the SDK's own when `_EE` is defined (tamtypes.h), and a
   layout-identical union otherwise, for host tools such as asset cookers. `vec2`–`vec4`,
-  `ivec2`–`ivec4`, `mat4`, `int32`, `uint32` and `int16_lane` mirror the VUSL types, so a generated
-  struct reads like its declaration.
+  `ivec2`–`ivec4`, `uvec2`–`uvec4`, `mat3`, `mat4`, `int32`, `uint32` and `int16_lane` mirror the
+  VUSL types, so a generated struct reads like its declaration. `element<T>` holds an array
+  element of fewer than four lanes, which takes a whole qword.
 - **Structs.** One C++ struct per VUSL struct. Lanes the packing skips get explicit
   `_pad` members, and `sizeof` and every `offsetof` are checked with `static_assert`. A struct with
   dynamic arrays gets a struct for its fixed part, plus offset constants and size functions for
@@ -427,12 +430,18 @@ binding's size is a fixed part plus per-count terms. The limits the compiler sol
 - **Shared types.** Types from included files go in `vusl::layout_<hash>` behind include guards
   keyed on a hash of the layout. Two program headers that share `frame.vush` can then be included
   in one translation unit. Types declared in the program's own file go in its namespace.
-- **Program constants.** These are `constexpr`, in `namespace vusl::<program>`:
-  - binding addresses;
-  - VIF BASE/OFFSET;
-  - array offsets and per-element sizes;
-  - the solved limits;
-  - `kInstructions`.
+- **Struct constants.** Offsets that C++ members cannot give, for arrays of run-time length and
+  what follows them:
+  - `kBatchParticles`, an offset in qwords, and its element `Stride`;
+  - `BatchPacket(count)`, an offset after a dependent array;
+  - `BatchQwords(count)`, a size.
+- **Program constants.** These are `constexpr`, in `namespace vusl::<program>`, one set per
+  parameter of `main`:
+  - `kFrameAddress`;
+  - `kBatchVifBase` / `kBatchVifOffset`;
+  - `BatchUsedQwords(count)`, which counts the open arrays `main` writes;
+  - the solved limit `kBatchMaxCount`, checked with a `static_assert`;
+  - `kInstructions`, once code is generated.
 - **Program declaration hook.** An optional `VUSL_DECLARE_PROGRAM(name)`, used when the includer
   defines it (doom3 declares `_CodeStart` symbols with a section attribute).
 - **Later option:** `--header-type=vec4:math::Vec4` maps member types to the host's own types,
@@ -440,13 +449,15 @@ binding's size is a fixed part plus per-count terms. The limits the compiler sol
 
 ### Example: the reflection for `VU1Prog_Particles`
 
-These are the files generated for the program above. The instruction count is illustrative, and
-the JSON is shortened where marked.
+These are the files `oxide-vusl --check --reflect=… --header=…` writes for the program above.
+They are `tests/vusl/check/particles/expected.h` and `expected.json`, whose source includes
+`frame.vush` as `../../include/frame.vush`. There is no `kInstructions` yet, because `--check`
+generates no code.
 
 `particles.h`:
 
 ```cpp
-// particles.h: generated by oxide-vusl 0.1.0 from particles.vusl. Do not edit.
+// Generated by oxide-vusl 0.1.0 from input.vusl. Do not edit.
 #pragma once
 
 #include <cstddef>
@@ -468,16 +479,16 @@ typedef union alignas(16)
 #if defined(__SIZEOF_INT128__)
     unsigned __int128 qw;
 #endif
-    std::uint8_t  b[16];
+    std::uint8_t b[16];
     std::uint16_t hw[8];
     std::uint32_t sw[4];
     std::uint64_t dw[2];
 } qword_t; // the layout of tamtypes.h's qword_t, for host tools
 #endif
 
-typedef std::int32_t  int32;
+typedef std::int32_t int32;
 typedef std::uint32_t uint32;
-typedef std::int32_t  int16_lane; // an int16 member: the VU reads the low 16 bits, stores them zero-extended
+typedef std::int32_t int16_lane; // an int16 member: the VU reads the low 16 bits, stores them zero-extended
 
 struct vec2 { float x, y; };
 struct vec3 { float x, y, z; };
@@ -485,23 +496,34 @@ struct alignas(16) vec4 { float x, y, z, w; };
 struct ivec2 { int32 x, y; };
 struct ivec3 { int32 x, y, z; };
 struct alignas(16) ivec4 { int32 x, y, z, w; };
+struct uvec2 { uint32 x, y; };
+struct uvec3 { uint32 x, y, z; };
+struct alignas(16) uvec4 { uint32 x, y, z, w; };
+struct alignas(16) mat3 { vec4 q[3]; }; // the stored qwords, xyz of each: columns, or rows when row_major
 struct alignas(16) mat4 { vec4 q[4]; }; // the stored qwords: columns, or rows when row_major
+
+// An array element of fewer than four lanes, which takes a qword.
+template <typename T>
+struct alignas(16) element
+{
+    T value;
+};
 } // namespace vusl
 #endif
 
-// Frame (frame.vush), shared by every program that includes it.
-#ifndef VUSL_LAYOUT_Frame_9c41e07a
-#define VUSL_LAYOUT_Frame_9c41e07a
-namespace vusl::layout_9c41e07a
+// Frame (../../include/frame.vush), shared by the programs that include it.
+#ifndef VUSL_LAYOUT_Frame_941eb3fc
+#define VUSL_LAYOUT_Frame_941eb3fc
+namespace vusl::layout_941eb3fc
 {
 struct alignas(16) Frame
 {
-    mat4  mvp;        // qwords 0-3, row_major
-    vec4  gsScale;    // qword 4
-    vec4  gsOffset;   // qword 5
-    vec3  clipScale;  // qword 6, xyz
-    float warpPhase;  // qword 6, w
-    vec4  colorClamp; // qword 7
+    mat4 mvp;        // qwords 0-3, row_major
+    vec4 gsScale;    // qword 4
+    vec4 gsOffset;   // qword 5
+    vec3 clipScale;  // qword 6, xyz
+    float warpPhase; // qword 6, w
+    vec4 colorClamp; // qword 7
 };
 static_assert(sizeof(Frame) == 8 * 16, "VUSL layout of Frame");
 static_assert(offsetof(Frame, gsScale) == 4 * 16, "VUSL layout of Frame");
@@ -509,33 +531,33 @@ static_assert(offsetof(Frame, gsOffset) == 5 * 16, "VUSL layout of Frame");
 static_assert(offsetof(Frame, clipScale) == 6 * 16, "VUSL layout of Frame");
 static_assert(offsetof(Frame, warpPhase) == 6 * 16 + 12, "VUSL layout of Frame");
 static_assert(offsetof(Frame, colorClamp) == 7 * 16, "VUSL layout of Frame");
-} // namespace vusl::layout_9c41e07a
+} // namespace vusl::layout_941eb3fc
 #endif
 
 namespace vusl::VU1Prog_Particles
 {
-using Frame = layout_9c41e07a::Frame;
+using Frame = layout_941eb3fc::Frame;
 
 struct alignas(16) Particle
 {
-    uint32 color; // x
-    vec3   pos;   // yzw
+    uint32 color; // qword 0, x
+    vec3 pos;     // qword 0, yzw
 };
 static_assert(sizeof(Particle) == 1 * 16, "VUSL layout of Particle");
 static_assert(offsetof(Particle, pos) == 4, "VUSL layout of Particle");
 
 struct alignas(16) Sprite
 {
-    uint32     color; // qword 0, x
-    float      q;     // qword 0, y
-    int16_lane reg;   // qword 0, z
-    uint32     _pad0; // qword 0, w: not written
-    vec4       uv0;   // qword 1
-    ivec3      xyz0;  // qword 2, xyz
-    int16_lane adc0;  // qword 2, w
-    vec4       uv1;   // qword 3
-    ivec3      xyz1;  // qword 4, xyz
-    int16_lane adc1;  // qword 4, w
+    uint32 color;    // qword 0, x
+    float q;         // qword 0, y
+    int16_lane reg;  // qword 0, z
+    uint32 _pad0;    // unused
+    vec4 uv0;        // qword 1
+    ivec3 xyz0;      // qword 2, xyz
+    int16_lane adc0; // qword 2, w
+    vec4 uv1;        // qword 3
+    ivec3 xyz1;      // qword 4, xyz
+    int16_lane adc1; // qword 4, w
 };
 static_assert(sizeof(Sprite) == 5 * 16, "VUSL layout of Sprite");
 static_assert(offsetof(Sprite, q) == 4, "VUSL layout of Sprite");
@@ -547,23 +569,24 @@ static_assert(offsetof(Sprite, uv1) == 3 * 16, "VUSL layout of Sprite");
 static_assert(offsetof(Sprite, xyz1) == 4 * 16, "VUSL layout of Sprite");
 static_assert(offsetof(Sprite, adc1) == 4 * 16 + 12, "VUSL layout of Sprite");
 
-// Packet up to its open array: sprites[] follows at kPacketSprites.
 struct alignas(16) Packet
 {
     qword_t tags[7]; // qwords 0-6
 };
 static_assert(sizeof(Packet) == 7 * 16, "VUSL layout of Packet");
+// Qwords: offsets from the struct's start, and sizes.
+constexpr std::uint32_t kPacketSprites = 7; // Packet::sprites
+constexpr std::uint32_t kPacketSpritesStride = 5; // qwords per element
+constexpr std::uint32_t kPacketQwords = 7; // without its open array
 
-// Batch up to its first dynamic array: particles[count] follows at kBatchParticles,
-// then packet at BatchPacket(count).
 struct alignas(16) Batch
 {
-    uint32     _pad0[3];   // qword 0, xyz: not read
-    int16_lane count;      // qword 0, w
-    vec4       quadOffset; // qword 1
-    vec4       uv0;        // qword 2
-    vec4       uv1;        // qword 3
-    qword_t    tags[7];    // qwords 4-10
+    uint32 _pad0[3];  // unused
+    int16_lane count; // qword 0, w
+    vec4 quadOffset;  // qword 1
+    vec4 uv0;         // qword 2
+    vec4 uv1;         // qword 3
+    qword_t tags[7];  // qwords 4-10
 };
 static_assert(sizeof(Batch) == 11 * 16, "VUSL layout of Batch");
 static_assert(offsetof(Batch, count) == 12, "VUSL layout of Batch");
@@ -571,24 +594,20 @@ static_assert(offsetof(Batch, quadOffset) == 1 * 16, "VUSL layout of Batch");
 static_assert(offsetof(Batch, uv0) == 2 * 16, "VUSL layout of Batch");
 static_assert(offsetof(Batch, uv1) == 3 * 16, "VUSL layout of Batch");
 static_assert(offsetof(Batch, tags) == 4 * 16, "VUSL layout of Batch");
-
-// Offsets and sizes are in qwords. Offsets inside a struct are from its start.
-constexpr std::uint32_t kPacketSprites = 7;                     // Packet::sprites[], 5 qwords each
-constexpr std::uint32_t kBatchParticles = 11;                   // Batch::particles[count], 1 qword each
+// Qwords: offsets from the struct's start, and sizes.
+constexpr std::uint32_t kBatchParticles = 11; // Batch::particles
+constexpr std::uint32_t kBatchParticlesStride = 1; // qwords per element
 constexpr std::uint32_t BatchPacket(std::uint32_t count) { return 11 + count; } // Batch::packet
-constexpr std::uint32_t BatchQwords(std::uint32_t count)        // with the count sprites main writes
-{
-    return BatchPacket(count) + kPacketSprites + 5 * count;
-}
+constexpr std::uint32_t BatchQwords(std::uint32_t count) { return 18 + count; } // without its open array
 
-// main's parameters, in VU1 data memory.
-constexpr std::uint32_t kFrameAddress = 0;  // frame: layout(address = 0), read
-constexpr std::uint32_t kVifBase = 8;       // batch: layout(xtop), the VIF1 BASE and OFFSET
-constexpr std::uint32_t kVifOffset = 474;
-constexpr std::uint32_t kMaxCount = 76;     // the largest batch.count whose batch fits the half
-static_assert(BatchQwords(kMaxCount) <= kVifOffset, "VUSL limit");
-
-constexpr std::uint32_t kInstructions = 104; // 64-bit instructions in micro memory
+// main's parameters: qword addresses in VU1 data memory.
+constexpr std::uint32_t kFrameAddress = 0; // frame: uniform Frame
+// batch: inout Batch, at XTOP in the VIF1 double buffer:
+constexpr std::uint32_t kBatchVifBase = 8;
+constexpr std::uint32_t kBatchVifOffset = 474;
+constexpr std::uint32_t BatchUsedQwords(std::uint32_t count) { return 18 + 6 * count; } // with the open arrays main writes
+constexpr std::uint32_t kBatchMaxCount = 76; // the largest count for which the double-buffer half holds it
+static_assert(BatchUsedQwords(kBatchMaxCount) <= 474, "VUSL limit");
 } // namespace vusl::VU1Prog_Particles
 
 #ifdef VUSL_DECLARE_PROGRAM
@@ -606,55 +625,112 @@ static_assert(offsetof(ParticleVertex, x) == offsetof(vusl::VU1Prog_Particles::P
 
 It could also use `vusl::VU1Prog_Particles::Particle` directly.
 
-`particles.json` (shortened):
+`particles.json` (shortened after the first type):
 
 ```json
 {
   "vusl": 1,
   "program": {
     "name": "VU1Prog_Particles",
-    "source": "particles.vusl",
-    "symbols": { "start": "VU1Prog_Particles_CodeStart", "end": "VU1Prog_Particles_CodeEnd" },
-    "instructions": 104
+    "source": "input.vusl",
+    "symbols": {
+      "start": "VU1Prog_Particles_CodeStart",
+      "end": "VU1Prog_Particles_CodeEnd"
+    },
+    "instructions": null
   },
   "uses": ["xtop", "clipw", "xgkick"],
   "parameters": [
-    { "name": "frame", "qualifier": "uniform", "type": "Frame",
-      "placement": { "address": 0 }, "qwords": { "fixed": 8 } },
-    { "name": "batch", "qualifier": "inout", "type": "Batch",
-      "placement": { "xtop": true, "vif_base": 8, "vif_offset": 474 },
-      "qwords": { "fixed": 18, "per": [ { "length": "batch.count", "qwords": 6 } ] },
-      "kicked": ["batch.packet"] }
+    {
+      "name": "frame",
+      "qualifier": "uniform",
+      "type": "Frame",
+      "placement": {
+        "address": 0
+      },
+      "qwords": {
+        "fixed": 8
+      },
+      "reads": ["mvp", "gsScale", "clipScale", "gsOffset"],
+      "writes": []
+    },
+    {
+      "name": "batch",
+      "qualifier": "inout",
+      "type": "Batch",
+      "placement": {
+        "xtop": true,
+        "vif_base": 8,
+        "vif_offset": 474
+      },
+      "qwords": {
+        "fixed": 18,
+        "per": [
+          {
+            "length": "count",
+            "qwords": 6
+          }
+        ]
+      },
+      "reads": ["quadOffset", "tags", "count", "particles.pos", "particles.color", "uv0", "uv1"],
+      "writes": ["packet.tags", "packet.sprites.color", "packet.sprites.q", "packet.sprites.reg", "packet.sprites.uv0", "packet.sprites.uv1", "packet.sprites.xyz0", "packet.sprites.adc0", "packet.sprites.xyz1", "packet.sprites.adc1"],
+      "kicks": ["packet"],
+      "limit": {
+        "length": "count",
+        "max": 76,
+        "capacity": 474
+      }
+    }
   ],
-  "limits": [
-    { "length": "batch.count", "max": 76, "because": "batch must fit the 474-qword half" }
-  ],
-  "types": {
-    "Frame": { "file": "frame.vush", "layout": "9c41e07a", "qwords": 8, "members": [
-      { "name": "mvp",        "type": "mat4",  "order": "row_major", "qword": 0, "lane": "x" },
-      { "name": "gsScale",    "type": "vec4",  "qword": 4, "lane": "x" },
-      { "name": "gsOffset",   "type": "vec4",  "qword": 5, "lane": "x" },
-      { "name": "clipScale",  "type": "vec3",  "qword": 6, "lane": "x" },
-      { "name": "warpPhase",  "type": "float", "qword": 6, "lane": "w" },
-      { "name": "colorClamp", "type": "vec4",  "qword": 7, "lane": "x" } ] },
-    "Batch": { "file": "particles.vusl", "members": [
-      { "name": "count",      "type": "int16",    "qword": 0,  "lane": "w", "access": "read" },
-      { "name": "quadOffset", "type": "vec4",     "qword": 1,  "lane": "x", "access": "read" },
-      { "name": "uv0",        "type": "vec4",     "qword": 2,  "lane": "x", "access": "read" },
-      { "name": "uv1",        "type": "vec4",     "qword": 3,  "lane": "x", "access": "read" },
-      { "name": "tags",       "type": "qword",    "qword": 4,  "length": 7, "access": "read" },
-      { "name": "particles",  "type": "Particle", "qword": 11, "length": "count", "stride": 1,
-        "access": "read", "unpack": { "format": "v4_32" } },
-      { "name": "packet",     "type": "Packet",   "qword": "11 + count", "access": "write" } ] },
-    "Packet": { "file": "particles.vusl", "members": [
-      { "name": "tags",    "type": "qword",  "qword": 0, "length": 7 },
-      { "name": "sprites", "type": "Sprite", "qword": 7, "length": "open", "stride": 5,
-        "written": "count" } ] },
-    "Particle": { "qwords": 1, "members": [
-      { "name": "color", "type": "uint32", "qword": 0, "lane": "x" },
-      { "name": "pos",   "type": "vec3",   "qword": 0, "lane": "y" } ] },
-    "Sprite": "…"
-  }
+  "types": [
+    {
+      "name": "Frame",
+      "file": "../../include/frame.vush",
+      "layout": "941eb3fc",
+      "qwords": {
+        "fixed": 8
+      },
+      "members": [
+        {
+          "name": "mvp",
+          "type": "mat4",
+          "qword": 0,
+          "order": "row_major"
+        },
+        {
+          "name": "gsScale",
+          "type": "vec4",
+          "qword": 4,
+          "lane": "x"
+        },
+        {
+          "name": "gsOffset",
+          "type": "vec4",
+          "qword": 5,
+          "lane": "x"
+        },
+        {
+          "name": "clipScale",
+          "type": "vec3",
+          "qword": 6,
+          "lane": "x"
+        },
+        {
+          "name": "warpPhase",
+          "type": "float",
+          "qword": 6,
+          "lane": "w"
+        },
+        {
+          "name": "colorClamp",
+          "type": "vec4",
+          "qword": 7,
+          "lane": "x"
+        }
+      ]
+    },
+    "…"
+  ]
 }
 ```
 

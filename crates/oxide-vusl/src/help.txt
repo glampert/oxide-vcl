@@ -13,6 +13,10 @@ output:
   --preprocess-only    write the preprocessed program and stop
   --check              check the program and stop: types, lanes, layouts
                        and main's parameters, without generating code
+  --reflect=<file>     also write the reflection as JSON: the program's
+                       parameters, placements, sizes and struct layouts
+  --header=<file>      also write the reflection as a C++ header, with the
+                       structs checked against the VU layout
 
 input:
   -I <dir>             look for included files in <dir>; may be repeated

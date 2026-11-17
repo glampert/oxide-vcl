@@ -7,6 +7,7 @@
 
 pub mod diagnostics;
 mod options;
+pub mod reflect;
 pub mod sema;
 pub mod syntax;
 
@@ -48,6 +49,22 @@ pub fn preprocess(
 pub struct Checked {
     pub program: sema::hir::Program,
     pub warnings: Vec<Diagnostic>,
+    /// The file each of the program's structs was declared in.
+    pub struct_files: Vec<String>,
+    /// The file the program was read from.
+    pub source: String,
+}
+
+impl Checked {
+    /// The program's reflection; `instructions` once the code exists.
+    pub fn reflection(&self, instructions: Option<usize>) -> reflect::Reflection {
+        reflect::reflect(
+            &self.program,
+            &self.source,
+            &self.struct_files,
+            instructions,
+        )
+    }
 }
 
 /// Why a program did not check: the first error, and the warnings before
@@ -149,7 +166,19 @@ pub fn check(name: &str, preprocessed: &Preprocessed) -> Result<Checked, Box<Fai
         .map(|problem| locator.diagnostic(false, problem))
         .collect();
     match checking.program {
-        Ok(program) => Ok(Checked { program, warnings }),
+        Ok(program) => {
+            let struct_files = program
+                .structs
+                .iter()
+                .map(|def| locator.locate(def.pos).file)
+                .collect();
+            Ok(Checked {
+                program,
+                warnings,
+                struct_files,
+                source: name.to_string(),
+            })
+        }
         Err(problem) => Err(Box::new(Failure {
             error: locator.diagnostic(true, &problem),
             warnings,

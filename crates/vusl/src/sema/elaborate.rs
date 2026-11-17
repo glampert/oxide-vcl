@@ -991,6 +991,21 @@ impl Elaborator<'_, '_> {
                         let Some(length_place) = length_place else {
                             return err(VuslMessage::RangeOpen, range.source.pos);
                         };
+                        // The loop reads its count: a member beside the
+                        // array, in the struct that holds both.
+                        if let (Some((param, array_path)), Length::Member(count)) =
+                            (&memory.root, &length)
+                        {
+                            let holder = &array_path[..array_path.len().saturating_sub(1)];
+                            let access = Access {
+                                param: *param,
+                                path: holder.iter().chain(count).copied().collect(),
+                                write: false,
+                            };
+                            if self.access_set.insert(access.clone()) {
+                                self.accesses.push(access);
+                            }
+                        }
                         Count::Member(length_place)
                     }
                     Length::Open => return err(VuslMessage::RangeOpen, range.source.pos),
