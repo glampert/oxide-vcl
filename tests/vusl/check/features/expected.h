@@ -18,7 +18,7 @@ using ::qword_t;
 typedef union alignas(16)
 {
 #if defined(__SIZEOF_INT128__)
-    unsigned __int128 qw;
+    __extension__ unsigned __int128 qw; // a GNU extension: quiet under -pedantic
 #endif
     std::uint8_t b[16];
     std::uint16_t hw[8];
