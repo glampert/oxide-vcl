@@ -740,6 +740,10 @@ impl Interpreter<'_, '_> {
             }
             Builtin::Sqrt => scalar(float(self.vf(&args[0])?[0]).sqrt()),
             Builtin::Rsqrt => scalar(1.0 / float(self.vf(&args[0])?[0]).sqrt()),
+            Builtin::Mr32 => {
+                let value = self.vf(&args[0])?;
+                Value::Vf((0..4).map(|lane| value[(lane + 1) % 4]).collect())
+            }
             Builtin::Abs => Value::Vf(
                 self.vf(&args[0])?
                     .iter()

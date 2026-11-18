@@ -331,6 +331,8 @@ pub enum Builtin {
     Rsqrt,
     Abs,
     Clamp,
+    /// The lanes rotated: x takes y's, y z's, z w's, w x's (MR32).
+    Mr32,
     ClipW,
     Any,
     Adc,

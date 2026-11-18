@@ -26,6 +26,7 @@ pub fn run(lines: &mut Vec<(Line, Option<Pos>)>) {
     coalesce_moves(lines, &mut mentions);
     propagate_copies(lines);
     fold_offsets(lines);
+    exact_raw_moves(lines);
     let mentions = count_mentions(lines);
     drop_unread_q_copies(lines, &mentions);
 }
@@ -64,6 +65,29 @@ fn renamed(operand: &str, from: &str, to: &str) -> String {
     }
     flush(&mut token, &mut out);
     out
+}
+
+/// The raw moves left become their exact instructions.
+fn exact_raw_moves(lines: &mut Vec<(Line, Option<Pos>)>) {
+    let mut index = 0;
+    while index < lines.len() {
+        let exact = match &mut lines[index].0 {
+            Line::Inst(inst) => inst.exact.take(),
+            _ => None,
+        };
+        match exact {
+            Some(exact) => {
+                let pos = lines[index].1;
+                let count = exact.len();
+                lines.splice(
+                    index..=index,
+                    exact.into_iter().map(|inst| (Line::Inst(inst), pos)),
+                );
+                index += count;
+            }
+            None => index += 1,
+        }
+    }
 }
 
 /// The largest qword offset LQ, SQ, ILW and ISW take either way.

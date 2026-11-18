@@ -837,6 +837,30 @@ fn efu_results() {
 }
 
 #[test]
+fn raw_bits_move_exactly() {
+    // Small integers read as denormal floats, which a MAX would flush: a
+    // copy of them between registers must stay exact.
+    let source = "struct Block { ivec4 a; ivec4 b; int16 n; int16 pad0; int16 pad1; int16 pad2; ivec4 out0; ivec4 out1; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   ivec4 chosen = block.a;\n\
+                  \x20   if (block.n > 0)\n\
+                  \x20       chosen = block.b;\n\
+                  \x20   ivec4 kept = chosen;\n\
+                  \x20   if (block.n > 1)\n\
+                  \x20       kept = mr32(chosen);\n\
+                  \x20   block.out0 = kept;\n\
+                  \x20   block.out1 = mr32(mr32(block.a));\n\
+                  }\n";
+    agree(source, 6, |memory, _, _| {
+        let n = (memory[3][0] >> 23 & 3) as u16;
+        memory[0] = [1, 0x512, 3, 0x7fff];
+        memory[1] = [0x8000_0005, 6, 0x200, 9];
+        set_int(memory, 2, 0, n);
+    });
+}
+
+#[test]
 fn the_particle_program() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/vusl");
     let source = std::fs::read_to_string(format!("{root}/check/particles/input.vusl")).unwrap();

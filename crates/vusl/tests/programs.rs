@@ -33,10 +33,12 @@ fn cases() -> Vec<PathBuf> {
     cases
 }
 
-/// A program compiled both ways: its listing, its instruction pairs.
+/// A program compiled both ways: its listing, its instruction pairs, and
+/// for a port its checked program and the qwords of its work areas.
 struct Built {
     program: Program,
     instructions: usize,
+    checked: Option<vusl::Checked>,
 }
 
 fn hand_written(corpus: &str) -> Built {
@@ -57,6 +59,7 @@ fn hand_written(corpus: &str) -> Built {
     Built {
         program: Program::parse(&compiled.assembly).unwrap(),
         instructions: compiled.instruction_pairs,
+        checked: None,
     }
 }
 
@@ -81,7 +84,54 @@ fn ported(case: &Path) -> Built {
     Built {
         program: Program::parse(&compiled.assembly).unwrap(),
         instructions: compiled.instruction_pairs,
+        checked: Some(checked),
     }
+}
+
+/// The qwords of a program's layout(spill) parameters, which only the
+/// compiled code writes.
+fn work_areas(checked: &vusl::Checked) -> Vec<usize> {
+    let program = &checked.program;
+    let mut qwords = Vec::new();
+    for param in &program.params {
+        if let (
+            true,
+            vusl::sema::hir::ParamPlacement::Address(address),
+            vusl::sema::types::Type::Struct(id),
+        ) = (param.spill, param.placement, &param.ty)
+        {
+            let size = program.structs[*id].size.fixed;
+            qwords.extend(address as usize..(address + size) as usize);
+        }
+    }
+    qwords
+}
+
+/// What the interpreter makes of the port on a scene, against the
+/// compiled port's run: the first difference.
+fn interpreted(built: &Built, scene: &scenes::Scene, run: &vu_model::Execution) -> Option<String> {
+    let checked = built.checked.as_ref()?;
+    let state = &scene.state;
+    let mut machine = vusl::interp::Machine::new(state.memory.clone(), state.top, state.itop);
+    if let Err(error) = vusl::interp::run(&checked.program, &mut machine, 10_000_000) {
+        return Some(format!("the interpreter: {error}"));
+    }
+    let ignored = work_areas(checked);
+    for (address, (model, reference)) in run.state.memory.iter().zip(&machine.memory).enumerate() {
+        if model != reference && !ignored.contains(&address) {
+            return Some(format!(
+                "qword {address}: compiled {model:x?}, interpreted {reference:x?}"
+            ));
+        }
+    }
+    let kicks: Vec<u16> = run
+        .state
+        .kicks
+        .iter()
+        .map(|(address, _)| *address)
+        .collect();
+    (kicks != machine.kicks)
+        .then(|| format!("kicks: compiled {kicks:?}, interpreted {:?}", machine.kicks))
 }
 
 /// A scene run both ways: the cycles each took, and whether the packets
@@ -93,6 +143,8 @@ struct Run {
     same: bool,
     drawn: usize,
     expected: usize,
+    /// Where the compiled port and the interpreter disagree, if they do.
+    mismatch: Option<String>,
 }
 
 fn runs(case: &Path) -> (String, Built, Built, Vec<Run>) {
@@ -117,6 +169,7 @@ fn runs(case: &Path) -> (String, Built, Built, Vec<Run>) {
             same: a.state.kicks == b.state.kicks,
             drawn: scenes::drawn_primitives(&b.state.kicks),
             expected: scene.primitives,
+            mismatch: interpreted(&vusl, &scene, &b),
         });
     }
     let name = case.file_name().unwrap().to_string_lossy().into_owned();
@@ -134,6 +187,9 @@ fn ports_draw_the_same_and_are_no_slower() {
         for run in runs {
             if !run.same {
                 failures.push(format!("{name} {}: the packets differ", run.scene));
+            }
+            if let Some(mismatch) = &run.mismatch {
+                failures.push(format!("{name} {}: {mismatch}", run.scene));
             }
             if run.vusl > run.hand {
                 failures.push(format!(
@@ -166,6 +222,9 @@ fn report() {
                 run.expected,
                 if run.same { "identical" } else { "DIFFER" }
             );
+            if let Some(mismatch) = run.mismatch {
+                println!("    against the interpreter: {mismatch}");
+            }
         }
     }
 }

@@ -36,6 +36,9 @@ pub struct Inst {
     pub mnemonic: String,
     pub mask: Option<String>,
     pub operands: Vec<String>,
+    /// For a MOVE of raw bits: the exact instructions it becomes if the
+    /// peephole passes leave it (vcl may make a MOVE an inexact MAX).
+    pub exact: Option<Vec<Inst>>,
 }
 
 impl Inst {
@@ -129,8 +132,31 @@ impl Output {
             mnemonic: mnemonic.to_string(),
             mask: mask.filter(|mask| !mask.is_empty()).map(str::to_string),
             operands: operands.to_vec(),
+            exact: None,
         };
         self.lines.push((Line::Inst(inst), self.pos));
+    }
+
+    /// A MOVE of raw bits, which becomes `exact` unless a peephole pass
+    /// removes it.
+    pub fn raw_move(&mut self, mask: &str, operands: &[String], exact: Vec<Inst>) {
+        let inst = Inst {
+            mnemonic: "move".into(),
+            mask: Some(mask.to_string()),
+            operands: operands.to_vec(),
+            exact: Some(exact),
+        };
+        self.lines.push((Line::Inst(inst), self.pos));
+    }
+
+    /// An instruction to keep aside, for [`Output::raw_move`].
+    pub fn make(mnemonic: &str, mask: Option<&str>, operands: &[String]) -> Inst {
+        Inst {
+            mnemonic: mnemonic.to_string(),
+            mask: mask.map(str::to_string),
+            operands: operands.to_vec(),
+            exact: None,
+        }
     }
 
     /// How many lines are written so far: a count that grows with every

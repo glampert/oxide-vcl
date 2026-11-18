@@ -3470,6 +3470,19 @@ impl Elaborator<'_, '_> {
                 };
                 self.elementwise(op, a, b, &context, pos)
             }
+            "mr32" => {
+                // A rotation of four lanes: x takes y's, y z's, z w's, w x's.
+                self.count(name, "1 argument", &args, 1..=1, pos)?;
+                self.expect_type(
+                    &args[0],
+                    args[0].ty.vf_lanes() == Some(4)
+                        && args[0].placement == Some(Placement::identity(4)),
+                    &context,
+                    "four lanes in xyzw",
+                )?;
+                let ty = args[0].ty.clone();
+                call(Builtin::Mr32, args, ty, Some(Placement::identity(4)))
+            }
             "abs" => {
                 self.count(name, "1 argument", &args, 1..=1, pos)?;
                 self.expect_type(

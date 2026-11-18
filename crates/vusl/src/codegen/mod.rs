@@ -339,6 +339,14 @@ impl Lowering<'_> {
             }
             values::invariants(program, &[], conds, effects, &bound, &mut found);
         }
+        // VI registers are few: their invariants are worth one only in a
+        // loop of one block, which pipelines and saves the instruction an
+        // iteration.
+        let one_block = stmts.iter().all(|stmts| {
+            stmts
+                .iter()
+                .all(|stmt| !matches!(stmt, Stmt::If { .. } | Stmt::Loop { .. }))
+        });
         let mut kept = 0;
         for expr in found {
             if kept >= self.settings.hoist_limit {
@@ -347,6 +355,7 @@ impl Lowering<'_> {
             let before = self.out.instructions();
             self.out.pos = Some(expr.pos);
             match expr.ty {
+                Type::Int16 | Type::Ref(_) if !one_block => {}
                 Type::Int16 | Type::Ref(_) => {
                     self.vi(expr)?;
                 }
@@ -1133,11 +1142,27 @@ impl Lowering<'_> {
                 .inst(mnemonic, None, &[a_name, b_name, label.into()]);
             return Ok(());
         }
-        // The sign of the difference, or of a value against 0.
+        let constant = |expr: &Expr| match expr.kind {
+            ExprKind::Const(Const::Int(value)) => Some(value),
+            _ => None,
+        };
+        // The sign of the difference, or of a value against 0; a constant
+        // is an immediate, which keeps a VI register free.
         let (value, op) = if is_zero(rhs) {
             (self.vi(lhs)?, op)
         } else if is_zero(lhs) {
             (self.vi(rhs)?, swapped(op))
+        } else if let Some(amount) = constant(rhs) {
+            let a = self.vi(lhs)?;
+            let difference = self.out.vi("difference");
+            (self.add_immediate(a, -amount, Some(difference)), op)
+        } else if let Some(amount) = constant(lhs) {
+            let b = self.vi(rhs)?;
+            let difference = self.out.vi("difference");
+            (
+                self.add_immediate(b, -amount, Some(difference)),
+                swapped(op),
+            )
         } else {
             let (a, b) = (self.vi(lhs)?, self.vi(rhs)?);
             let difference = self.out.vi("difference");
@@ -1510,9 +1535,20 @@ impl Lowering<'_> {
                     self.vf_into(value, Some(reg))?
                 };
                 if result.reg != reg {
-                    let names = [self.name(reg), self.name(result.reg)];
-                    self.out
-                        .inst("move", Some(&Self::mask(&result.placement)), &names);
+                    // Raw bits from memory load again if the copy stays.
+                    let reload = match (&value.kind, raw) {
+                        (ExprKind::Load(place), true) => {
+                            let (base, offset) = self.address(place)?;
+                            let names = [self.name(reg), self.iname(base)];
+                            Some(vec![Output::make(
+                                "lq",
+                                Some(&Self::mask(&result.placement)),
+                                &[names[0].clone(), format!("{offset}({})", names[1])],
+                            )])
+                        }
+                        _ => None,
+                    };
+                    self.copy(reg, result.reg, &result.placement, raw, reload);
                 }
                 Ok(result.placement)
             }
@@ -1598,10 +1634,45 @@ impl Lowering<'_> {
         }
         if !same.is_empty() && value.reg != dest {
             let same = Placement::from_lanes(&same).expect("distinct lanes");
-            let names = [self.name(dest), self.name(value.reg)];
-            self.out.inst("move", Some(&Self::mask(&same)), &names);
+            self.copy(dest, value.reg, &same, raw, None);
         }
         Ok(())
+    }
+
+    /// `source`'s `lanes` into `dest`. vcl may schedule a MOVE in the upper
+    /// pipe as MAX of the source with itself, which flushes bit patterns
+    /// that read as denormal floats, so a raw copy the peephole passes
+    /// leave becomes `exact`, or else four MR32s, exact, the last masked.
+    fn copy(
+        &mut self,
+        dest: Vf,
+        source: Vf,
+        lanes: &Placement,
+        raw: bool,
+        exact: Option<Vec<emit::Inst>>,
+    ) {
+        let mask = Self::mask(lanes);
+        let names = [self.name(dest), self.name(source)];
+        if !raw {
+            self.out.inst("move", Some(&mask), &names);
+            return;
+        }
+        let exact = exact.unwrap_or_else(|| {
+            let mut current = source;
+            let mut rotations = Vec::new();
+            for step in 0..4 {
+                let (target, field) = if step == 3 {
+                    (dest, mask.clone())
+                } else {
+                    (self.out.vf("rotate"), "xyzw".to_string())
+                };
+                let operands = [self.name(target), self.name(current)];
+                rotations.push(Output::make("mr32", Some(&field), &operands));
+                current = target;
+            }
+            rotations
+        });
+        self.out.raw_move(&mask, &names, exact);
     }
 
     /// One component into lane `target` of `dest`, with one instruction:
@@ -2783,6 +2854,16 @@ impl Lowering<'_> {
                 let operands = ["q".into(), "vf00[w]".into(), self.field(value)];
                 self.fdiv("rsqrt", &operands);
                 Ok(self.q_to_lane(dest, lane))
+            }
+            Builtin::Mr32 => {
+                let value = self.vf(&args[0])?;
+                let reg = self.dest(dest);
+                let names = [self.name(reg), self.name(value.reg)];
+                self.out.inst("mr32", Some("xyzw"), &names);
+                Ok(Fv {
+                    reg,
+                    placement: Placement::identity(4),
+                })
             }
             Builtin::Abs => {
                 let value = self.vf(&args[0])?;

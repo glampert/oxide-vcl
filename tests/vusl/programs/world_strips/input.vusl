@@ -26,6 +26,18 @@ struct Batch {
     qword listTag;
 };
 
+// A corner of a triangle wholly inside the guard band: its phase 1 qwords,
+// the flags cleared so ADC stays clear and the triangle draws.
+void sendCorner(out WindowVertex to, ref<Projected> vertex)
+{
+    ref<Sent> sent = ref<Sent>(vertex);
+    to.st = sent.stq;
+    to.rgbaq = sent.rgba;
+    ref<WindowCorner> corner = ref<WindowCorner>(to);
+    corner.xyz = vertex.xyz;
+    corner.adc = 0;
+}
+
 // A strip vertex sent again at the head of a fresh window with ADC set: a
 // new packet restarts the GS vertex queue, so the two vertices the next
 // triangle closes over go again, drawing nothing.

@@ -45,9 +45,11 @@ struct Windows { Window windows[2]; };
 struct WindowCorner { qword st; qword rgbaq; ivec3 xyz; int16 adc; };
 struct ClipVertex { vec3 stq; float pad; ivec4 rgba; ivec3 xyz; int16 adc; };
 
-// Scratch (954-956): where values that do not fit in the registers go,
-// as the hand-written programs keep their walk state there.
+// Scratch (954-956), where the hand-written programs keep their walk
+// state, and the free qwords between the frame and the double buffer
+// (13-39): where values that do not fit in the registers go.
 struct Scratch { qword q[3]; };
+struct Free { qword q[27]; };
 
 // The clipper's ping-pong buffers (957-1007): three qwords a corner, the
 // first again after the last.
@@ -76,18 +78,6 @@ void closeWindow(inout Frame frame, inout Windows windows, int16 room)
         frame.windowStep = -step;
         xgkick(window);
     }
-}
-
-// A corner of a triangle wholly inside the guard band: its phase 1 qwords,
-// the flags cleared so ADC stays clear and the triangle draws.
-void sendCorner(out WindowVertex to, ref<Projected> vertex)
-{
-    ref<Sent> sent = ref<Sent>(vertex);
-    to.st = sent.stq;
-    to.rgbaq = sent.rgba;
-    ref<WindowCorner> corner = ref<WindowCorner>(to);
-    corner.xyz = vertex.xyz;
-    corner.adc = 0;
 }
 
 // A clipper corner from a phase 1 vertex: the clip position with its w
