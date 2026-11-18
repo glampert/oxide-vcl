@@ -46,7 +46,7 @@ See: [OPENVCL_COMPARISON.md](docs/OPENVCL_COMPARISON.md) for a detailed breakdow
 
 ### Performance comparison on [Quake 2 PS2](https://github.com/glampert/quake2-ps2)
 
-Captured a real PS2 over the gameplay frames of two Quake 2 demos (base2 and
+Captured on a real PS2 over the gameplay frames of two Quake 2 demos (base2 and
 waste2), with Quake 2's two VU1 programs built three ways: by openvcl from
 the sources written for it, by oxide-vcl (`--mode=oxide --opt=all`) from the
 same sources, and by oxide-vcl from sources restructured for it
