@@ -125,6 +125,7 @@ pub fn declarations<'a>(
     let mut functions: HashMap<String, &'a ast::Function> = HashMap::new();
     let mut main = None;
     let mut program_name: Option<String> = None;
+    let xitop = xitop_names(file);
     for item in &file.items {
         match item {
             Item::Pragma(pragma) => {
@@ -132,7 +133,7 @@ pub fn declarations<'a>(
             }
             Item::Struct(decl) => {
                 names.declare(&decl.name)?;
-                let def = struct_def(decl, &structs, &struct_ids, &consts)?;
+                let def = struct_def(decl, &structs, &struct_ids, &consts, &xitop)?;
                 struct_ids.insert(def.name.clone(), structs.len());
                 structs.push(def);
             }
@@ -294,11 +295,33 @@ fn integer_value(arg: &ast::Arg, consts: &HashMap<String, (Const, Type)>) -> Opt
     }
 }
 
+/// The names of `main`'s `layout(xitop)` parameters, which array lengths
+/// may name.
+fn xitop_names(file: &ast::File) -> Vec<String> {
+    file.items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Function(function) if function.name.name == "main" => Some(function),
+            _ => None,
+        })
+        .flat_map(|main| &main.params)
+        .filter(|param| {
+            param
+                .layout
+                .iter()
+                .flat_map(|layout| &layout.args)
+                .any(|arg| arg.is_flag() && arg.key() == Some("xitop"))
+        })
+        .map(|param| param.name.name.clone())
+        .collect()
+}
+
 fn struct_def(
     decl: &ast::StructDecl,
     structs: &[StructDef],
     struct_ids: &HashMap<String, StructId>,
     consts: &HashMap<String, (Const, Type)>,
+    xitop: &[String],
 ) -> Checked<StructDef> {
     let mut packer = Packer::new();
     let mut seen: HashMap<String, Pos> = HashMap::new();
@@ -395,7 +418,8 @@ fn struct_def(
             let ty = match &declarator.array {
                 None => base.clone(),
                 Some(length) => {
-                    let length = array_length(length, &declarator.name, packer.members(), consts)?;
+                    let length =
+                        array_length(length, &declarator.name, packer.members(), consts, xitop)?;
                     Type::Array(Box::new(base.clone()), length)
                 }
             };
@@ -429,12 +453,13 @@ fn struct_def(
 }
 
 /// A member array's length: a positive constant, an earlier `int16`
-/// member, or open.
+/// member, a `layout(xitop)` parameter of `main`, or open.
 fn array_length(
     length: &ArrayLen,
     name: &ast::Ident,
     earlier: &[super::layout::MemberDef],
     consts: &HashMap<String, (Const, Type)>,
+    xitop: &[String],
 ) -> Checked<Length> {
     let bad = || {
         Box::new(problem(
@@ -455,6 +480,11 @@ fn array_length(
             Type::Int16 => Ok(Length::Member(vec![index])),
             _ => Err(bad()),
         };
+    }
+    if let ExprKind::Name(count) = &expr.kind
+        && xitop.contains(&count.name)
+    {
+        return Ok(Length::Xitop);
     }
     match constant(expr, consts) {
         Some(Const::Int(value)) if value > 0 && value <= i64::from(DATA_MEMORY_QWORDS) => {

@@ -152,6 +152,9 @@ pub enum Length {
     /// Read from an `int16` member before it, by its path from the struct
     /// that holds the array (`count`, or `packet.n` once nested).
     Member(Vec<usize>),
+    /// The count VIF ITOP sent: the name of a `layout(xitop)` parameter
+    /// of `main`.
+    Xitop,
     /// `[]`: as many as the program writes.
     Open,
 }
@@ -257,7 +260,7 @@ impl Type {
             Type::Array(element, length) => {
                 let length = match length {
                     Length::Fixed(n) => n.to_string(),
-                    Length::Member(_) => "...".into(),
+                    Length::Member(_) | Length::Xitop => "...".into(),
                     Length::Open => String::new(),
                 };
                 format!("{}[{length}]", element.name(structs))

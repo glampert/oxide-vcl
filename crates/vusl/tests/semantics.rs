@@ -81,6 +81,17 @@ fn agree_compiled(
     seeds: u64,
     setup: impl Fn(&mut Vec<[u32; 4]>, &mut u16, &mut u16),
 ) {
+    agree_except(compiled, seeds, 0..0, setup);
+}
+
+/// As [`agree_compiled`], with the qwords `ignored` (a work area only the
+/// compiled code writes) left out of the comparison.
+fn agree_except(
+    compiled: Compiled,
+    seeds: u64,
+    ignored: std::ops::Range<usize>,
+    setup: impl Fn(&mut Vec<[u32; 4]>, &mut u16, &mut u16),
+) {
     let program = vu_model::Program::parse(&compiled.assembly)
         .unwrap_or_else(|error| panic!("{error}\n{}", compiled.assembly));
     for seed in 0..seeds {
@@ -96,9 +107,12 @@ fn agree_compiled(
             itop,
             ..vu_model::State::default()
         };
-        let execution = program
+        let mut execution = program
             .run(state, vu_model::Config::TIMED, 100_000)
             .unwrap_or_else(|error| panic!("model, seed {seed}: {error}\n{}", compiled.vcl));
+        for qword in ignored.clone() {
+            execution.state.memory[qword] = machine.memory[qword];
+        }
         let differences: Vec<String> = execution
             .state
             .memory
@@ -130,6 +144,70 @@ fn agree_compiled(
             .iter()
             .map(|(address, _)| *address)
             .collect();
+        assert_eq!(kicks, machine.kicks, "seed {seed}: kicks");
+    }
+}
+
+/// Runs `compiled` both ways on `seeds` memories as [`agree_compiled`]
+/// does, resuming at each `yield` after `host` changes the memory, XTOP and
+/// XITOP, for as long as it returns true; it learns how many runs ended.
+#[allow(clippy::type_complexity)]
+fn agree_resumed(
+    compiled: Compiled,
+    seeds: u64,
+    setup: impl Fn(&mut Vec<[u32; 4]>, &mut u16, &mut u16),
+    host: impl Fn(usize, &mut Vec<[u32; 4]>, &mut u16, &mut u16) -> bool,
+) {
+    let program = vu_model::Program::parse(&compiled.assembly)
+        .unwrap_or_else(|error| panic!("{error}\n{}", compiled.assembly));
+    for seed in 0..seeds {
+        let mut memory = random_memory(seed);
+        let (mut top, mut itop) = (0, 0);
+        setup(&mut memory, &mut top, &mut itop);
+        let mut machine = Machine::new(memory.clone(), top, itop);
+        let mut runs = 0;
+        interp::run_with_host(
+            &compiled.checked.program,
+            &mut machine,
+            100_000,
+            &mut |machine| {
+                runs += 1;
+                host(
+                    runs,
+                    &mut machine.memory,
+                    &mut machine.top,
+                    &mut machine.itop,
+                )
+            },
+        )
+        .unwrap_or_else(|error| panic!("interpreter: {error}"));
+        let mut state = vu_model::State {
+            memory,
+            top,
+            itop,
+            ..vu_model::State::default()
+        };
+        let mut start = 0;
+        let mut runs = 0;
+        loop {
+            let execution = program
+                .run_from(state, start, vu_model::Config::TIMED, 100_000)
+                .unwrap_or_else(|error| panic!("model, seed {seed}: {error}\n{}", compiled.vcl));
+            state = execution.state;
+            start = execution.resume;
+            runs += 1;
+            if start >= program.pair_count()
+                || !host(runs, &mut state.memory, &mut state.top, &mut state.itop)
+            {
+                break;
+            }
+        }
+        assert_eq!(
+            state.memory, machine.memory,
+            "seed {seed}\n{}",
+            compiled.vcl
+        );
+        let kicks: Vec<u16> = state.kicks.iter().map(|(address, _)| *address).collect();
         assert_eq!(kicks, machine.kicks, "seed {seed}: kicks");
     }
 }
@@ -490,6 +568,271 @@ fn loops_keep_fewer_invariants_when_registers_run_out() {
     agree_compiled(compiled, 3, |memory, top, _| {
         *top = 100;
         set_int(memory, 100, 3, 2);
+    });
+}
+
+#[test]
+fn bool_values() {
+    let source = "struct Corner { vec4 clip; };\n\
+                  struct Block {\n\
+                  \x20   vec4 a;\n\
+                  \x20   int16 n; int16 m; int16 o0; int16 o1;\n\
+                  \x20   int16 o2; int16 o3; int16 o4; int16 o5;\n\
+                  \x20   Corner corners[3];\n\
+                  };\n\
+                  int16 flag(bool value)\n\
+                  {\n\
+                  \x20   int16 result = 0;\n\
+                  \x20   if (value)\n\
+                  \x20       result = 1;\n\
+                  \x20   return result;\n\
+                  }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   bool less = block.a.x < block.a.y;\n\
+                  \x20   bool greater = block.a.z > 1.0;\n\
+                  \x20   bool same = block.a.x == block.a.w;\n\
+                  \x20   bool differ = block.a.y != block.a.z;\n\
+                  \x20   bool ordered = block.n < block.m;\n\
+                  \x20   bool both = less && greater;\n\
+                  \x20   bool none = !(same || differ);\n\
+                  \x20   bool outside = false;\n\
+                  \x20   for (Corner corner : block.corners)\n\
+                  \x20       outside = outside || any(clipw(corner.clip.xyz, corner.clip.w));\n\
+                  \x20   block.o0 = flag(less) + flag(greater) + flag(same);\n\
+                  \x20   block.o1 = flag(differ) + flag(block.n != block.m) + flag(ordered);\n\
+                  \x20   block.o2 = flag(both) + flag(none);\n\
+                  \x20   block.o3 = flag(outside);\n\
+                  \x20   block.o4 = flag(block.a.x <= block.a.y) + flag(block.a.y >= block.a.x);\n\
+                  }\n";
+    agree(source, 24, |memory, _, _| {
+        let n = (memory[0][0] >> 23 & 3) as u16;
+        let m = (memory[0][1] >> 23 & 3) as u16;
+        set_int(memory, 1, 0, n);
+        set_int(memory, 1, 1, m);
+    });
+}
+
+#[test]
+fn ranges_counted_by_xitop() {
+    let source = "struct Vertex { vec4 pos; };\n\
+                  struct Out { vec4 scaled; };\n\
+                  struct Batch { vec4 scale; Vertex vertices[count]; Out outs[count]; qword tag; };\n\
+                  void main(layout(xitop) int16 count,\n\
+                  \x20         layout(xtop, vif_base = 100, vif_offset = 400) inout Batch batch)\n\
+                  {\n\
+                  \x20   for (Vertex v : batch.vertices, out Out o : batch.outs)\n\
+                  \x20       o.scaled = v.pos * batch.scale;\n\
+                  \x20   batch.tag.x = count | 0x8000;\n\
+                  \x20   xgkick(batch.tag);\n\
+                  }\n";
+    for count in [0, 1, 5] {
+        agree(source, 3, |memory, top, itop| {
+            *top = 100;
+            *itop = count;
+            memory[101 + 2 * count as usize] = [0, 0, 0, 0];
+        });
+    }
+}
+
+#[test]
+fn yields_resume_with_the_next_batch() {
+    let source = "struct Frame { vec4 scale; };\n\
+                  struct Item { vec4 value; };\n\
+                  struct Batch { Item items[n]; };\n\
+                  void main(layout(address = 0) uniform Frame frame,\n\
+                  \x20         layout(xitop) int16 n,\n\
+                  \x20         layout(xtop, vif_base = 100, vif_offset = 200) inout Batch batch)\n\
+                  {\n\
+                  \x20   vec4 scale = frame.scale * 2.0;\n\
+                  \x20   while (true)\n\
+                  \x20   {\n\
+                  \x20       for (inout Item item : batch.items)\n\
+                  \x20           item.value = item.value * scale;\n\
+                  \x20       yield;\n\
+                  \x20   }\n\
+                  }\n";
+    let compiled = compile(source);
+    // The first batch at 100, then two more in the other half and back,
+    // each of another length, and a frame that changes between them.
+    agree_resumed(
+        compiled,
+        4,
+        |_, top, itop| {
+            *top = 100;
+            *itop = 3;
+        },
+        |runs, memory, top, itop| {
+            memory[0][1] = 3.0f32.to_bits();
+            *top = if runs % 2 == 1 { 300 } else { 100 };
+            *itop = runs as u16 + 1;
+            runs < 3
+        },
+    );
+}
+
+#[test]
+fn refs_as_cursors() {
+    let source = "struct Vertex { vec4 pos; };\n\
+                  struct Out { vec4 value; };\n\
+                  struct Pair { vec4 first; vec4 second; };\n\
+                  struct Window { qword tag; Out items[8]; Pair pairs[4]; };\n\
+                  struct Frame { vec4 scale; int16 window; int16 back; int16 o0; int16 o1; };\n\
+                  struct Batch { layout(lane = w) int16 count; Vertex vertices[count]; };\n\
+                  void put(ref<Out> at, vec4 value)\n\
+                  {\n\
+                  \x20   at.value = value;\n\
+                  }\n\
+                  void fill(out Pair pair, vec4 value)\n\
+                  {\n\
+                  \x20   pair.first = value;\n\
+                  \x20   pair.second = value * 2.0;\n\
+                  }\n\
+                  void main(layout(address = 0) inout Frame frame,\n\
+                  \x20         layout(address = 10) inout Window window,\n\
+                  \x20         layout(xtop, vif_base = 100, vif_offset = 300) in Batch batch)\n\
+                  {\n\
+                  \x20   ref<Out> cursor = ref<Out>(window.items);\n\
+                  \x20   ref<Out> start = cursor;\n\
+                  \x20   ref<Pair> pairs = ref<Pair>(window.pairs);\n\
+                  \x20   for (Vertex v : batch.vertices)\n\
+                  \x20   {\n\
+                  \x20       if (v.pos.x < 1.0)\n\
+                  \x20       {\n\
+                  \x20           put(cursor, v.pos * frame.scale);\n\
+                  \x20           cursor += 1;\n\
+                  \x20       }\n\
+                  \x20   }\n\
+                  \x20   fill(pairs, frame.scale);\n\
+                  \x20   pairs[1].first = window.items[0].value;\n\
+                  \x20   pairs = pairs + 2;\n\
+                  \x20   pairs.second.x = 4.0;\n\
+                  \x20   window.tag.x = (cursor - start) | 0x8000;\n\
+                  \x20   frame.window = int16(cursor);\n\
+                  \x20   ref<Out> back = ref<Out>(window.items, frame.back);\n\
+                  \x20   back.value.y = 8.0;\n\
+                  \x20   frame.o0 = int16(back[1].value.x);\n\
+                  \x20   if (cursor != start)\n\
+                  \x20       frame.o1 = 1;\n\
+                  \x20   xgkick(window.tag);\n\
+                  }\n";
+    agree(source, 12, |memory, top, _| {
+        *top = 100;
+        set_int(memory, 100, 3, 6);
+        // The ref read from memory: the third item.
+        set_int(memory, 1, 1, 13);
+    });
+}
+
+#[test]
+fn unrolled_ranges() {
+    let source = "struct Item { vec4 value; };\n\
+                  struct Out { vec4 value; int16 index; int16 pad0; int16 pad1; int16 pad2; };\n\
+                  struct Block { vec4 scale; Item fixed[7]; Item two[2]; };\n\
+                  struct Batch {\n\
+                  \x20   layout(lane = w) int16 count;\n\
+                  \x20   Item items[count];\n\
+                  \x20   Out outs[count];\n\
+                  };\n\
+                  void main(layout(address = 0) inout Block block,\n\
+                  \x20         layout(xtop, vif_base = 100, vif_offset = 300) inout Batch batch)\n\
+                  {\n\
+                  \x20   #pragma unroll(3)\n\
+                  \x20   for (inout Item item : block.fixed)\n\
+                  \x20       item.value = item.value * block.scale;\n\
+                  \x20   #pragma unroll\n\
+                  \x20   for (inout Item item : block.two)\n\
+                  \x20       item.value = item.value + block.scale;\n\
+                  \x20   int16 index = 0;\n\
+                  \x20   #pragma unroll(4)\n\
+                  \x20   #pragma pipeline(min = 1)\n\
+                  \x20   for (Item item : batch.items, out Out result : batch.outs)\n\
+                  \x20   {\n\
+                  \x20       result.value = item.value * block.scale.x;\n\
+                  \x20       result.index = index;\n\
+                  \x20       index++;\n\
+                  \x20   }\n\
+                  }\n";
+    for count in [0, 1, 3, 4, 6, 9] {
+        agree(source, 2, |memory, top, _| {
+            *top = 100;
+            set_int(memory, 100, 3, count);
+        });
+    }
+}
+
+#[test]
+fn values_that_do_not_fit_spill_to_the_work_area() {
+    // 34 vectors computed before the loop and read in every iteration:
+    // more than the VF registers, whatever the schedule.
+    let mut source = String::from(
+        "struct Uniforms { vec4 u[34]; };\n\
+         struct In { vec4 v; };\n\
+         struct Out { vec4 o[17]; };\n\
+         struct Scratch { qword q[32]; };\n\
+         struct Batch { layout(lane = w) int16 count; In items[count]; Out outs[count]; };\n\
+         void main(layout(address = 0) uniform Uniforms k,\n\
+         \x20         layout(address = 900, spill) inout Scratch scratch,\n\
+         \x20         layout(xtop, vif_base = 100, vif_offset = 400) inout Batch batch)\n\
+         {\n",
+    );
+    for index in 0..34 {
+        source.push_str(&format!("    vec4 c{index} = k.u[{index}] * 2.0;\n"));
+    }
+    source.push_str(
+        "    for (In e : batch.items, out Out r : batch.outs)\n\
+         \x20   {\n",
+    );
+    for index in 0..17 {
+        source.push_str(&format!(
+            "        r.o[{index}] = e.v * c{index} + c{};\n",
+            33 - index
+        ));
+    }
+    source.push_str("    }\n}\n");
+    let compiled = compile(&source);
+    assert!(
+        compiled.vcl.contains(".vu_work_area vu1, 900, 32"),
+        "{}",
+        compiled.vcl
+    );
+    agree_except(compiled, 2, 900..932, |memory, top, _| {
+        *top = 100;
+        set_int(memory, 100, 3, 2);
+    });
+}
+
+#[test]
+fn efu_results() {
+    let source = "struct Block {\n\
+                  \x20   vec3 a; float s;\n\
+                  \x20   vec4 b;\n\
+                  \x20   float t; float u; float v; float pad;\n\
+                  \x20   vec4 out0; vec4 out1; vec4 out2;\n\
+                  };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   block.out0.x = esadd(block.a);\n\
+                  \x20   block.out0.y = eleng(block.a);\n\
+                  \x20   block.out0.z = esum(block.b);\n\
+                  \x20   block.out0.w = esqrt(block.s);\n\
+                  \x20   block.out1.x = ercpr(block.t);\n\
+                  \x20   block.out1.y = ersqrt(block.u);\n\
+                  \x20   block.out1.z = ersadd(block.a);\n\
+                  \x20   block.out1.w = erleng(block.a);\n\
+                  \x20   block.out2.x = esin(block.v);\n\
+                  \x20   block.out2.y = eatan(block.v);\n\
+                  \x20   block.out2.z = eexp(block.v);\n\
+                  }\n";
+    // Inputs whose results are exact: (1, 2, 2) has length 3, and
+    // sin, atan and e^-x at 0.
+    agree(source, 4, |memory, _, _| {
+        for (lane, value) in [1.0, 2.0, 2.0, 4.0].into_iter().enumerate() {
+            set_float(memory, 0, lane, value);
+        }
+        for (lane, value) in [0.5, 4.0, 0.0, 0.0].into_iter().enumerate() {
+            set_float(memory, 2, lane, value);
+        }
     });
 }
 

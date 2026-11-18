@@ -1,0 +1,9 @@
+// Memory is read through a ref variable, not an expression.
+struct Item { vec4 value; };
+struct Block { Item items[4]; vec4 out0; };
+
+void main(layout(address = 0) inout Block block)
+{
+    ref<Item> cursor = ref<Item>(block.items);
+    block.out0 = (cursor + 1).value;
+}

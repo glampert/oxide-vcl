@@ -253,6 +253,7 @@ pub fn write(reflection: &Reflection) -> String {
                         let length = match length {
                             Length::Fixed(n) => Json::Int(i64::from(*n)),
                             Length::Member(path) => string(path_name(&structs, id, path)),
+                            Length::Xitop => string("xitop"),
                             Length::Open => string("open"),
                         };
                         entries.push(("length", length));

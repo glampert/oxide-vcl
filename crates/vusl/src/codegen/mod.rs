@@ -167,11 +167,15 @@ fn reads_local(expr: &Expr, id: LocalId) -> bool {
     match &expr.kind {
         ExprKind::Local(local) => *local == id,
         ExprKind::Const(_) => false,
-        ExprKind::Load(place) => place
-            .offset
-            .indices
-            .iter()
-            .any(|(index, _)| reads_local(index, id)),
+        ExprKind::Load(place) | ExprKind::Address(place) => {
+            place.base == Base::Ref(id)
+                || place
+                    .offset
+                    .indices
+                    .iter()
+                    .any(|(index, _)| reads_local(index, id))
+        }
+        ExprKind::RefTo { address, .. } => reads_local(address, id),
         ExprKind::Swizzle { base, .. }
         | ExprKind::Neg(base)
         | ExprKind::Not(base)
@@ -264,10 +268,41 @@ impl Lowering<'_> {
         }
     }
 
+    /// After a `yield`: the host may have written memory and sent another
+    /// batch, so what came from memory, XTOP and XITOP is gone, and so is Q
+    /// (another program may have run).
+    fn resumed(&mut self) {
+        self.cache.forget_memory();
+        self.cache.forget_key(&Key::Expr(XITOP_KEY.into()));
+        if let Some(xtop) = self.xtop {
+            self.cache.clobber_vi(xtop, u64::MAX);
+        }
+        self.q_holds = None;
+    }
+
+    /// XITOP's count: the register that holds it, or XITOP.
+    fn xitop_count(&mut self) -> Vi {
+        let key = Key::Expr(XITOP_KEY.into());
+        if let Some(Value::Vi(reg)) = self.cache.find(&key) {
+            return reg;
+        }
+        let reg = self.out.vi("xitop");
+        let name = self.iname(reg);
+        self.out.inst("xitop", None, &[name]);
+        self.cache.insert(Entry {
+            key,
+            value: Value::Vi(reg),
+            reads: Vec::new(),
+            locals: Vec::new(),
+            elements: Vec::new(),
+        });
+        reg
+    }
+
     /// Cache entries that `effects` may change are gone.
     fn forget(&mut self, effects: &Effects) {
         if effects.yields {
-            self.cache.forget_memory();
+            self.resumed();
         }
         for region in &effects.stores {
             self.cache.stored(self.program, region, None);
@@ -312,7 +347,7 @@ impl Lowering<'_> {
             let before = self.out.instructions();
             self.out.pos = Some(expr.pos);
             match expr.ty {
-                Type::Int16 => {
+                Type::Int16 | Type::Ref(_) => {
                     self.vi(expr)?;
                 }
                 Type::Mat { size, .. } => {
@@ -345,10 +380,21 @@ impl Lowering<'_> {
             format!(".name {}", program.name),
             ".init_vf_all".into(),
             ".init_vi_all".into(),
-            ".vu".into(),
-            "--enter".into(),
-            "--endenter".into(),
         ] {
+            self.out.line(line);
+        }
+        // A layout(spill) parameter's qwords take the values that do not
+        // fit in registers.
+        for param in &program.params {
+            if let (true, ParamPlacement::Address(address), Type::Struct(id)) =
+                (param.spill, param.placement, &param.ty)
+            {
+                let qwords = program.structs[*id].size.fixed;
+                self.out
+                    .line(format!(".vu_work_area vu1, {address}, {qwords}"));
+            }
+        }
+        for line in [".vu", "--enter", "--endenter"] {
             self.out.line(line);
         }
         if program.uses.clip {
@@ -650,9 +696,12 @@ impl Lowering<'_> {
             Stmt::Yield { pos } => {
                 self.out.pos = Some(*pos);
                 self.out.line("--cont");
-                // The host may write memory before MSCNT resumes.
-                self.cache.forget_memory();
-                self.q_holds = None;
+                self.resumed();
+                // MSCNT resumes with the batch the host sent last.
+                if let Some(xtop) = self.xtop {
+                    let name = self.iname(xtop);
+                    self.out.inst("xtop", None, &[name]);
+                }
                 Ok(())
             }
             Stmt::Barrier { pos } => {
@@ -719,7 +768,6 @@ impl Lowering<'_> {
         self.out.pos = Some(pos);
         // The values every path to the exit has.
         let at_exit;
-        let at_top;
         match kind {
             LoopKind::Condition {
                 cond_stmts,
@@ -734,7 +782,7 @@ impl Lowering<'_> {
                     self.branch(cond, false, &exit)?;
                 }
                 self.forget(&effects);
-                at_top = self.cache.clone();
+                let at_top = self.cache.clone();
                 self.label_here(&top);
                 self.loop_hints(hints);
                 self.loops.push((exit.clone(), next.clone()));
@@ -756,7 +804,7 @@ impl Lowering<'_> {
                         let (base, offset) = self.address(place)?;
                         Trips::Counted(self.load_int16(place, base, offset, None))
                     }
-                    Count::Param(_) => return self.not_yet("a range counted by xitop"),
+                    Count::Xitop => Trips::Counted(self.xitop_count()),
                 };
                 // A pointer per element stride and base, stepping by the
                 // stride; elements whose arrays differ by a constant share
@@ -790,38 +838,49 @@ impl Lowering<'_> {
                     .iter()
                     .min_by_key(|(_, stride)| *stride)
                     .expect("a range has an element");
-                let end = self.out.vi("end");
-                match trips {
-                    Trips::Fixed(n) => {
-                        self.add_immediate(lead, n * i64::from(stride), Some(end));
+                let offsets: Vec<(ElementId, Vi, i64)> = elements
+                    .iter()
+                    .map(|&element| {
+                        let (pointer, delta) = self.elements[element].expect("a pointer");
+                        (element, pointer, delta)
+                    })
+                    .collect();
+                let factor = match (hints.unroll, trips) {
+                    (Some(Unroll::By(n)), _) => i64::from(n),
+                    (Some(Unroll::Full), Trips::Fixed(n)) => n,
+                    _ => 1,
+                };
+                let range = RangeLoop {
+                    body,
+                    hints,
+                    pos,
+                    pointers: &pointers,
+                    offsets: &offsets,
+                    lead,
+                    stride,
+                };
+                at_exit = if factor > 1 {
+                    self.unrolled_range(&range, trips, factor, &effects, &exit)?
+                } else {
+                    let end = self.out.vi("end");
+                    match trips {
+                        Trips::Fixed(n) => {
+                            self.add_immediate(lead, n * i64::from(stride), Some(end));
+                        }
+                        Trips::Counted(count) => {
+                            let scaled = self.scale(count, stride);
+                            let names = [self.iname(end), self.iname(lead), self.iname(scaled)];
+                            self.out.inst("iadd", None, &names);
+                            let count_name = self.iname(count);
+                            self.out
+                                .inst("ibeq", None, &[count_name, "vi00".into(), exit.clone()]);
+                        }
                     }
-                    Trips::Counted(count) => {
-                        let scaled = self.scale(count, stride);
-                        let names = [self.iname(end), self.iname(lead), self.iname(scaled)];
-                        self.out.inst("iadd", None, &names);
-                        let count_name = self.iname(count);
-                        self.out
-                            .inst("ibeq", None, &[count_name, "vi00".into(), exit.clone()]);
-                    }
-                }
-                self.forget(&effects);
-                at_exit = self.cache.clone();
-                at_top = at_exit.clone();
-                self.label_here(&top);
-                self.loop_hints(hints);
-                self.loops.push((exit.clone(), next.clone()));
-                let result = self.stmts(body);
-                self.loops.pop();
-                result?;
-                self.reach_next(body, &next, &at_top);
-                self.out.pos = Some(pos);
-                for (pointer, stride) in pointers {
-                    let name = self.iname(pointer);
-                    self.out
-                        .inst("iaddiu", None, &[name.clone(), name, stride.to_string()]);
-                }
-                let (lead_name, end_name) = (self.iname(lead), self.iname(end));
-                self.out.inst("ibne", None, &[lead_name, end_name, top]);
+                    self.forget(&effects);
+                    let at_exit = self.cache.clone();
+                    self.range_loop(&range, 1, end, &top, &next, &exit, true)?;
+                    at_exit
+                };
                 // The elements exist only inside their loop.
                 for &element in elements {
                     self.elements[element] = None;
@@ -832,6 +891,153 @@ impl Lowering<'_> {
         self.cache = at_exit;
         self.clips_reachable_from = self.clips;
         Ok(())
+    }
+
+    /// A range loop's body `copies` times from `top`, the elements of copy
+    /// k k strides on, then the pointers stepped and the branch back while
+    /// the lead pointer is not at `end`. `hinted` loops get the pragmas'
+    /// pipelining hints.
+    #[allow(clippy::too_many_arguments)]
+    fn range_loop(
+        &mut self,
+        range: &RangeLoop,
+        copies: i64,
+        end: Vi,
+        top: &str,
+        next: &str,
+        exit: &str,
+        hinted: bool,
+    ) -> Lowered<()> {
+        let at_top = self.cache.clone();
+        self.label_here(top);
+        if hinted {
+            self.loop_hints(range.hints);
+        }
+        self.loops.push((exit.to_string(), next.to_string()));
+        let result = self.range_copies(range, copies);
+        self.loops.pop();
+        result?;
+        self.reach_next(range.body, next, &at_top);
+        self.out.pos = Some(range.pos);
+        for &(pointer, stride) in range.pointers {
+            let name = self.iname(pointer);
+            let step = i64::from(stride) * copies;
+            self.out
+                .inst("iaddiu", None, &[name.clone(), name, step.to_string()]);
+        }
+        let (lead_name, end_name) = (self.iname(range.lead), self.iname(end));
+        self.out
+            .inst("ibne", None, &[lead_name, end_name, top.to_string()]);
+        Ok(())
+    }
+
+    /// The body `copies` times, copy k addressing the elements k strides
+    /// on.
+    fn range_copies(&mut self, range: &RangeLoop, copies: i64) -> Lowered<()> {
+        let elements: Vec<ElementId> = range.offsets.iter().map(|&(element, ..)| element).collect();
+        for copy in 0..copies {
+            self.cache.forget_elements(&elements);
+            for &(element, pointer, delta) in range.offsets {
+                let stride = i64::from(self.program.elements[element].stride);
+                self.elements[element] = Some((pointer, delta + copy * stride));
+            }
+            self.stmts(range.body)?;
+        }
+        for &(element, pointer, delta) in range.offsets {
+            self.elements[element] = Some((pointer, delta));
+        }
+        Ok(())
+    }
+
+    /// `#pragma unroll(N)`: a loop over groups of `factor` elements, then
+    /// the rest one at a time. A count read at run time splits with IAND,
+    /// `factor` being a power of two. Returns the values every path to
+    /// `exit` has.
+    fn unrolled_range(
+        &mut self,
+        range: &RangeLoop,
+        trips: Trips,
+        factor: i64,
+        effects: &Effects,
+        exit: &str,
+    ) -> Lowered<Cache> {
+        match trips {
+            Trips::Fixed(n) => {
+                let stride = i64::from(range.stride);
+                let groups = n / factor;
+                let rest = n % factor;
+                self.forget(effects);
+                let at_exit = self.cache.clone();
+                if groups == 1 {
+                    // One group: the copies without a loop.
+                    self.range_copies(range, factor)?;
+                    self.step_pointers(range, factor);
+                } else if groups > 1 {
+                    let end = self.out.vi("end");
+                    self.add_immediate(range.lead, groups * factor * stride, Some(end));
+                    let (top, next) = (self.out.label("loop"), self.out.label("next"));
+                    self.range_loop(range, factor, end, &top, &next, exit, true)?;
+                    self.cache = at_exit.clone();
+                }
+                if rest > 0 {
+                    self.range_copies(range, rest)?;
+                }
+                Ok(at_exit)
+            }
+            Trips::Counted(count) => {
+                // count & -factor elements in groups, count & (factor - 1)
+                // after.
+                let mask = self.materialize(-factor, None);
+                let grouped = self.out.vi("grouped");
+                let names = [self.iname(grouped), self.iname(count), self.iname(mask)];
+                self.out.inst("iand", None, &names);
+                let low = self.materialize(factor - 1, None);
+                let rest = self.out.vi("rest");
+                let names = [self.iname(rest), self.iname(count), self.iname(low)];
+                self.out.inst("iand", None, &names);
+                let groups_end = self.out.vi("end");
+                let scaled = self.scale(grouped, range.stride);
+                let names = [
+                    self.iname(groups_end),
+                    self.iname(range.lead),
+                    self.iname(scaled),
+                ];
+                self.out.inst("iadd", None, &names);
+                let end = self.out.vi("end");
+                let scaled = self.scale(count, range.stride);
+                let names = [self.iname(end), self.iname(range.lead), self.iname(scaled)];
+                self.out.inst("iadd", None, &names);
+                self.forget(effects);
+                let at_exit = self.cache.clone();
+                let groups_done = self.out.label("grouped");
+                let grouped_name = self.iname(grouped);
+                self.out.inst(
+                    "ibeq",
+                    None,
+                    &[grouped_name, "vi00".into(), groups_done.clone()],
+                );
+                let (top, next) = (self.out.label("loop"), self.out.label("next"));
+                self.range_loop(range, factor, groups_end, &top, &next, exit, true)?;
+                self.label_here(&groups_done);
+                self.cache = at_exit.clone();
+                let rest_name = self.iname(rest);
+                self.out
+                    .inst("ibeq", None, &[rest_name, "vi00".into(), exit.to_string()]);
+                let (top, next) = (self.out.label("rest"), self.out.label("next"));
+                self.range_loop(range, 1, end, &top, &next, exit, false)?;
+                Ok(at_exit)
+            }
+        }
+    }
+
+    /// The pointers stepped past `copies` elements.
+    fn step_pointers(&mut self, range: &RangeLoop, copies: i64) {
+        for &(pointer, stride) in range.pointers {
+            let name = self.iname(pointer);
+            let step = i64::from(stride) * copies;
+            self.out
+                .inst("iaddiu", None, &[name.clone(), name, step.to_string()]);
+        }
     }
 
     /// The `next` label after a loop's body: a `continue` reaches it with
@@ -876,7 +1082,7 @@ impl Lowering<'_> {
             }
             ExprKind::Compare { op, lhs, rhs } => {
                 let op = if when { *op } else { negated(*op) };
-                if lhs.ty == Type::Int16 {
+                if matches!(lhs.ty, Type::Int16 | Type::Ref(_)) {
                     self.int_branch(op, lhs, rhs, label)
                 } else {
                     self.float_branch(op, lhs, rhs, label)
@@ -895,6 +1101,14 @@ impl Lowering<'_> {
                     None,
                     &["vi01".into(), "vi00".into(), label.into()],
                 );
+                Ok(())
+            }
+            ExprKind::Local(_) => {
+                let value = self.bool_value(cond, None)?;
+                let mnemonic = if when { "ibne" } else { "ibeq" };
+                let name = self.iname(value);
+                self.out
+                    .inst(mnemonic, None, &[name, "vi00".into(), label.into()]);
                 Ok(())
             }
             _ => self.not_yet("a bool value other than a comparison or any()"),
@@ -968,6 +1182,134 @@ impl Lowering<'_> {
         self.out
             .inst(mnemonic, None, &[flags_name, "vi00".into(), label.into()]);
         Ok(())
+    }
+
+    /// A `bool` as a value: a VI register, true when it is not 0.
+    /// Comparisons of floats are the status flags of a subtraction (FSAND),
+    /// `any()` FCAND's VI01, `||` IOR and `!=` of `int16` values ISUB; the
+    /// others are set by a branch.
+    fn bool_value(&mut self, expr: &Expr, dest: Option<Vi>) -> Lowered<Vi> {
+        match &expr.kind {
+            ExprKind::Const(Const::Bool(value)) => {
+                let reg = self.idest(dest);
+                Ok(self.materialize(i64::from(*value), Some(reg)))
+            }
+            ExprKind::Local(id) => match self.locals[*id] {
+                LocalReg::Vi(reg) => Ok(reg),
+                _ => self.not_yet("this local as a bool"),
+            },
+            ExprKind::Call {
+                builtin: Builtin::Any,
+                args,
+            } => {
+                let mask = self.clip_mask(args)?;
+                self.out
+                    .inst("fcand", None, &["vi01".into(), format!("0x{mask:06x}")]);
+                let reg = self.idest(dest);
+                let name = self.iname(reg);
+                self.out
+                    .inst("iaddiu", None, &[name, "vi01".into(), "0".into()]);
+                Ok(reg)
+            }
+            ExprKind::Or(lhs, rhs) => {
+                // An any() last is read where FCAND leaves it.
+                let is_any = |expr: &Expr| {
+                    matches!(
+                        expr.kind,
+                        ExprKind::Call {
+                            builtin: Builtin::Any,
+                            ..
+                        }
+                    )
+                };
+                let (first, last) = if is_any(lhs) && !is_any(rhs) {
+                    (rhs, lhs)
+                } else {
+                    (lhs, rhs)
+                };
+                let a = self.bool_value(first, None)?;
+                let b = match &last.kind {
+                    ExprKind::Call {
+                        builtin: Builtin::Any,
+                        args,
+                    } => {
+                        let mask = self.clip_mask(args)?;
+                        self.out
+                            .inst("fcand", None, &["vi01".into(), format!("0x{mask:06x}")]);
+                        Vi::Flags
+                    }
+                    _ => self.bool_value(last, None)?,
+                };
+                let reg = self.idest(dest);
+                let names = [self.iname(reg), self.iname(a), self.iname(b)];
+                self.out.inst("ior", None, &names);
+                Ok(reg)
+            }
+            ExprKind::Compare { op, lhs, rhs } if !matches!(lhs.ty, Type::Int16 | Type::Ref(_)) => {
+                // a > b is b < a, and a >= b is b <= a: the flags set, never
+                // clear, say true.
+                let (a, b, op) = match op {
+                    CompareOp::Greater => (rhs, lhs, CompareOp::Less),
+                    CompareOp::GreaterEqual => (rhs, lhs, CompareOp::LessEqual),
+                    op => (lhs, rhs, *op),
+                };
+                let a = self.vf(a)?;
+                let b = self.vf(b)?;
+                let difference = self.out.vf("difference");
+                let lane = a.lane().letter().to_string();
+                let operands = [self.name(difference), self.name(a.reg), self.field(b)];
+                self.out.inst("sub", Some(&lane), &operands);
+                let mask = match op {
+                    CompareOp::Less => 2,
+                    CompareOp::LessEqual => 3,
+                    _ => 1,
+                };
+                if op == CompareOp::NotEqual {
+                    // Z is 1 when equal: 1 - 1 is 0, and 0 - 1 is not.
+                    let flags = self.out.vi("flags");
+                    let flags_name = self.iname(flags);
+                    self.out
+                        .inst("fsand", None, &[flags_name.clone(), mask.to_string()]);
+                    let reg = self.idest(dest);
+                    let name = self.iname(reg);
+                    self.out
+                        .inst("iaddi", None, &[name, flags_name, "-1".into()]);
+                    return Ok(reg);
+                }
+                let reg = self.idest(dest);
+                let name = self.iname(reg);
+                self.out.inst("fsand", None, &[name, mask.to_string()]);
+                Ok(reg)
+            }
+            ExprKind::Compare {
+                op: CompareOp::NotEqual,
+                lhs,
+                rhs,
+            } => {
+                let a = self.vi(lhs)?;
+                let b = self.vi(rhs)?;
+                let reg = self.idest(dest);
+                let names = [self.iname(reg), self.iname(a), self.iname(b)];
+                self.out.inst("isub", None, &names);
+                Ok(reg)
+            }
+            _ => {
+                // 0, then 1 unless the condition is false; in a register of
+                // its own, since the condition may read the destination.
+                let reg = self.out.vi("t");
+                let name = self.iname(reg);
+                let skip = self.out.label("false");
+                self.out
+                    .inst("iaddiu", None, &[name.clone(), "vi00".into(), "0".into()]);
+                let before = self.cache.clone();
+                self.branch(expr, false, &skip)?;
+                self.out
+                    .inst("iaddiu", None, &[name, "vi00".into(), "1".into()]);
+                self.label_here(&skip);
+                self.cache = before;
+                Ok(reg)
+            }
+        }
     }
 
     /// The FCAND mask of clip judgements: each judgement's 6 bits, the
@@ -1071,8 +1413,20 @@ impl Lowering<'_> {
                 self.locals[id] = LocalReg::Clip(judgement);
                 Ok(())
             }
-            Type::Bool => self.not_yet("a bool variable"),
-            Type::Int16 => {
+            Type::Bool => {
+                let reg = self.local_vi(id);
+                let result = self.bool_value(value, Some(reg))?;
+                if result != reg {
+                    let names = [self.iname(reg), self.iname(result)];
+                    self.out.inst(
+                        "iaddiu",
+                        None,
+                        &[names[0].clone(), names[1].clone(), "0".into()],
+                    );
+                }
+                Ok(())
+            }
+            Type::Int16 | Type::Ref(_) => {
                 let reg = self.local_vi(id);
                 let result = self.vi_into(value, Some(reg))?;
                 if result != reg {
@@ -1369,6 +1723,10 @@ impl Lowering<'_> {
         let ty = match base {
             Base::Param(index) => &self.program.params[index].ty,
             Base::Element(element) => &self.program.elements[element].ty,
+            Base::Ref(local) => match &self.program.locals[local].ty {
+                Type::Ref(target) => target,
+                ty => ty,
+            },
         };
         match ty {
             Type::Struct(id) => Some(*id),
@@ -1414,9 +1772,19 @@ impl Lowering<'_> {
                 Some(at) => at,
                 None => return self.not_yet("an element outside its loop"),
             },
+            Base::Ref(local) => match self.locals[local] {
+                LocalReg::Vi(reg) => (reg, 0),
+                _ => return self.not_yet("a ref that is not set"),
+            },
         };
         offset += i64::from(place.offset.extent.fixed);
         for term in &place.offset.extent.terms {
+            if term.is_xitop() {
+                let count = self.xitop_count();
+                let scaled = self.scale(count, term.stride);
+                base = self.add_regs(base, scaled);
+                continue;
+            }
             let Some(count_place) = self.member_place(place.base, &term.count) else {
                 return self.not_yet("a length read through this place");
             };
@@ -1476,6 +1844,7 @@ impl Lowering<'_> {
             value: Value::Vi(sum),
             reads: Vec::new(),
             locals: Vec::new(),
+            elements: Vec::new(),
         });
         sum
     }
@@ -1506,6 +1875,7 @@ impl Lowering<'_> {
                 at: Some((base, offset)),
             }],
             locals: Vec::new(),
+            elements: Vec::new(),
         });
         reg
     }
@@ -1536,6 +1906,7 @@ impl Lowering<'_> {
                 at: Some((base, offset)),
             }],
             locals: Vec::new(),
+            elements: Vec::new(),
         });
         reg
     }
@@ -1622,11 +1993,14 @@ impl Lowering<'_> {
                 at: None,
             })
             .collect();
+        let mut elements = Vec::new();
+        values::element_bases(expr, &mut elements);
         self.cache.insert(Entry {
             key: Key::Expr(key),
             value,
             reads,
             locals,
+            elements,
         });
     }
 
@@ -1634,6 +2008,12 @@ impl Lowering<'_> {
         let cacheable = match &expr.kind {
             ExprKind::Const(Const::Int(value)) => value & 0xffff != 0,
             ExprKind::Binary { .. } | ExprKind::Neg(_) | ExprKind::Convert { .. } => true,
+            ExprKind::Call {
+                builtin: Builtin::Xitop,
+                ..
+            }
+            | ExprKind::Address(_)
+            | ExprKind::RefTo { .. } => true,
             _ => false,
         };
         let key = if cacheable {
@@ -1664,6 +2044,15 @@ impl Lowering<'_> {
                 let (base, offset) = self.address(place)?;
                 Ok(self.load_int16(place, base, offset, dest))
             }
+            ExprKind::Address(place) => {
+                let (base, offset) = self.address(place)?;
+                Ok(self.add_immediate(base, offset, dest))
+            }
+            ExprKind::RefTo { address, .. }
+            | ExprKind::Convert {
+                conversion: Conversion::Bits,
+                operand: address,
+            } => self.vi_into(address, dest),
             ExprKind::Binary { op, lhs, rhs } => {
                 let constant = |expr: &Expr| match expr.kind {
                     ExprKind::Const(Const::Int(value)) => Some(value),
@@ -2507,6 +2896,22 @@ impl Lowering<'_> {
             _ => self.not_yet("this matrix expression"),
         }
     }
+}
+
+/// The cache key of XITOP's count: `xitop()`'s.
+const XITOP_KEY: &str = "Xitop()";
+
+/// A range-for being lowered: its body and pragmas, its pointers and
+/// strides, each element's pointer and offset, and the pointer whose end
+/// ends it.
+struct RangeLoop<'a> {
+    body: &'a [Stmt],
+    hints: &'a LoopHints,
+    pos: Pos,
+    pointers: &'a [(Vi, u32)],
+    offsets: &'a [(ElementId, Vi, i64)],
+    lead: Vi,
+    stride: u32,
 }
 
 /// A range-for's trip count.

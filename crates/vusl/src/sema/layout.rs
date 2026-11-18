@@ -7,9 +7,9 @@
 //! `layout(lane = L)` starts a member at lane L (of the next qword if the
 //! current one is past L), and `layout(offset = Q)` at qword Q.
 //!
-//! An array's length may be read from an earlier `int16` member, so what
-//! follows it sits at a run-time offset: a fixed number of qwords plus that
-//! length times the array's stride. An open array (`T a[]`) can only be
+//! An array's length may be read from an earlier `int16` member, or be the
+//! count VIF ITOP sent, so what follows it sits at a run-time offset: a
+//! fixed number of qwords plus that length times the array's stride. An open array (`T a[]`) can only be
 //! last, and a struct ending in one only the last member of its parent.
 
 use super::types::{Lane, Length, StructId, Type};
@@ -27,9 +27,16 @@ pub struct Extent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Term {
     /// The `int16` member holding the length, by member indices from the
-    /// struct the extent belongs to.
+    /// struct the extent belongs to; no indices for the count XITOP reads.
     pub count: Vec<usize>,
     pub stride: u32,
+}
+
+impl Term {
+    /// Whether the length is the count XITOP reads.
+    pub fn is_xitop(&self) -> bool {
+        self.count.is_empty()
+    }
 }
 
 impl Extent {
@@ -63,9 +70,14 @@ impl Extent {
                 .terms
                 .iter()
                 .map(|term| Term {
-                    count: std::iter::once(member)
-                        .chain(term.count.iter().copied())
-                        .collect(),
+                    // XITOP's count is the same from every struct.
+                    count: if term.is_xitop() {
+                        Vec::new()
+                    } else {
+                        std::iter::once(member)
+                            .chain(term.count.iter().copied())
+                            .collect()
+                    },
                     stride: term.stride,
                 })
                 .collect(),
@@ -238,6 +250,16 @@ fn footprint(ty: &Type, structs: &[StructDef]) -> Option<Footprint> {
                         fixed: 0,
                         terms: vec![Term {
                             count: count.clone(),
+                            stride,
+                        }],
+                    },
+                    None,
+                ),
+                Length::Xitop => Footprint::Qwords(
+                    Extent {
+                        fixed: 0,
+                        terms: vec![Term {
+                            count: Vec::new(),
                             stride,
                         }],
                     },

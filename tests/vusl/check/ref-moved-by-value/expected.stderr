@@ -1,0 +1,5 @@
+input.vusl(9): error: moving a ref to Pair by a value computed at run time: the VU has no instruction for it
+   9 |     cursor = cursor + block.n;
+     |                       ^
+     = help: each element takes several qwords and VU1 has no multiply: move it by constants
+oxide-vusl: 1 error; no output written

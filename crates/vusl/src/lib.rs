@@ -138,20 +138,46 @@ pub enum CompileFailure {
 /// tried: fewer when the registers do not fit.
 const HOIST_LIMITS: [usize; 3] = [16, 6, 0];
 
+/// How many values vcl kept in the work area for want of registers.
+fn spills(compiled: &vcl::Compiled) -> usize {
+    compiled
+        .warnings
+        .iter()
+        .filter(|warning| {
+            matches!(
+                warning.message,
+                vcl::Message::Compile(vcl::diagnostics::CompileMessage::RegisterSpilled { .. })
+            )
+        })
+        .count()
+}
+
 /// Generates `checked`'s VCL and compiles it with `vcl`. When vcl runs out
-/// of registers, the VCL is generated again with fewer of the loops'
-/// invariants kept in registers across them.
+/// of registers, or spills values to a `layout(spill)` work area, the VCL
+/// is generated again with fewer of the loops' invariants kept in
+/// registers across them, and the compile with the fewest spills is kept.
 pub fn compile(
     checked: &Checked,
     options: &Options,
 ) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
     let mut failure = None;
+    let mut best: Option<(Vcl, vcl::Compiled)> = None;
     for hoist_limit in HOIST_LIMITS {
         let vcl = checked
             .generate_with(codegen::Settings { hoist_limit })
             .map_err(|failure| Box::new(CompileFailure::Generate(failure)))?;
         match assemble(&vcl, &checked.program.name, options) {
-            Ok(compiled) => return Ok((vcl, compiled)),
+            Ok(compiled) => {
+                let fewer = best
+                    .as_ref()
+                    .is_none_or(|(_, kept)| spills(&compiled) < spills(kept));
+                if fewer {
+                    best = Some((vcl, compiled));
+                }
+                if best.as_ref().is_some_and(|(_, kept)| spills(kept) == 0) {
+                    break;
+                }
+            }
             Err(errors) => {
                 let out_of_registers = errors.iter().any(|error| {
                     matches!(
@@ -162,7 +188,7 @@ pub fn compile(
                         )
                     )
                 });
-                let done = !out_of_registers;
+                let done = !out_of_registers || best.is_some();
                 failure = Some(CompileFailure::Vcl { vcl, errors });
                 if done {
                     break;
@@ -170,7 +196,10 @@ pub fn compile(
             }
         }
     }
-    Err(Box::new(failure.expect("at least one attempt")))
+    match best {
+        Some(compiled) => Ok(compiled),
+        None => Err(Box::new(failure.expect("at least one attempt"))),
+    }
 }
 
 /// Why a program did not check: the first error, and the warnings before

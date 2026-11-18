@@ -1,0 +1,11 @@
+// unroll(N) applies to range-fors.
+struct Block { int16 n; int16 out0; };
+
+void main(layout(address = 0) inout Block block)
+{
+    int16 left = block.n;
+    #pragma unroll(2)
+    while (left > 0)
+        left = left - 1;
+    block.out0 = left;
+}

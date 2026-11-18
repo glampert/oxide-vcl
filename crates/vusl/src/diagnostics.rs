@@ -261,6 +261,20 @@ pub enum VuslMessage {
     BreakOutsideLoop,
     ContinueOutsideLoop,
     YieldOutsideMain,
+    /// `yield` in a range-for, whose elements are in the batch it stops on.
+    YieldInRange,
+    /// A ref set from memory other than the memory it was first set from.
+    RefWithin {
+        name: String,
+    },
+    /// Memory read through a ref that is not a variable.
+    RefNotVariable,
+    /// A `layout(spill)` parameter read or written.
+    SpillUsed {
+        name: String,
+    },
+    /// `break` or `continue` in a loop `#pragma unroll` repeats.
+    UnrolledLoopLeaves,
     /// A range that is not an array in memory.
     RangeNotArray {
         found: String,
@@ -389,11 +403,11 @@ fn wording(message: &VuslMessage) -> Wording {
         Layout { member, kind } => layout(member, kind),
         BadArrayLength { name } => (
             format!(
-                "the length of '{name}' is neither a positive constant nor an earlier int16 member"
+                "the length of '{name}' is neither a positive constant, an earlier int16 member nor a layout(xitop) parameter of main"
             ),
             Some(name.clone()),
             Some(
-                "write a constant, a name of an int16 member before it, or [] for an open array at the end",
+                "write a constant, the name of an int16 member before it or of main's layout(xitop) parameter, or [] for an open array at the end",
             ),
         ),
         ArrayNotAllowed { name } => (
@@ -554,6 +568,33 @@ fn wording(message: &VuslMessage) -> Wording {
         BreakOutsideLoop => about("break outside a loop".into(), "break"),
         ContinueOutsideLoop => about("continue outside a loop".into(), "continue"),
         YieldOutsideMain => ("yield outside main".into(), Some("yield".into()), None),
+        RefWithin { name } => (
+            format!("'{name}' would point outside the memory it was first set from"),
+            Some(name.clone()),
+            Some(
+                "a ref stays within one parameter member or array: use another ref for other memory",
+            ),
+        ),
+        UnrolledLoopLeaves => (
+            "an unrolled loop cannot break or continue".into(),
+            None,
+            Some("its body is repeated: drop the break or continue, or the #pragma unroll"),
+        ),
+        SpillUsed { name } => (
+            format!(
+                "'{name}' is layout(spill): oxide-vcl's work area, which the program cannot use"
+            ),
+            Some(name.clone()),
+            Some("keep the program's own data in another parameter"),
+        ),
+        RefNotVariable => {
+            plain("only a ref<T> variable can be read through: write r[1].x for (r + 1).x".into())
+        }
+        YieldInRange => (
+            "yield in a range-for".into(),
+            Some("yield".into()),
+            Some("the elements are in the batch the program stops on; yield between range-fors"),
+        ),
         RangeNotArray { found } => plain(format!("a range needs an array in memory, not {found}")),
         RangeOpen => (
             "the first range is an open array, whose length is unknown".into(),

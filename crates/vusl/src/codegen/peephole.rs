@@ -6,6 +6,9 @@
 //! - A temporary written by one instruction and then moved whole into a
 //!   register is written there directly: `mul.xyz t, a, b` and
 //!   `move.xyz r, t` become `mul.xyz r, a, b`.
+//! - A copy whose destination is read only later in its block, while its
+//!   source keeps its value, is gone: those readers read the source
+//!   (inlining copies a function's `in` arguments).
 //! - A copy of Q into a lane that nothing reads is dropped: lowering makes
 //!   one after every division, and readers that take Q directly leave it
 //!   unused.
@@ -18,7 +21,88 @@ use crate::syntax::Pos;
 pub fn run(lines: &mut Vec<(Line, Option<Pos>)>) {
     let mut mentions = count_mentions(lines);
     coalesce_moves(lines, &mut mentions);
+    propagate_copies(lines);
+    let mentions = count_mentions(lines);
     drop_unread_q_copies(lines, &mentions);
+}
+
+/// Whether `inst` writes the register `name`: it is the destination of
+/// an instruction that writes one.
+fn writes(inst: &Inst, name: &str) -> bool {
+    let writer = VF_WRITERS.contains(&inst.mnemonic.as_str())
+        || VI_WRITERS.contains(&inst.mnemonic.as_str());
+    writer && inst.operands.first().map(String::as_str) == Some(name)
+}
+
+/// `operand` with the register `from` named `to`.
+fn renamed(operand: &str, from: &str, to: &str) -> String {
+    let mut out = String::new();
+    let mut token = String::new();
+    let flush = |token: &mut String, out: &mut String| {
+        if token == from {
+            out.push_str(to);
+        } else {
+            out.push_str(token);
+        }
+        token.clear();
+    };
+    for c in operand.chars() {
+        if c.is_ascii_alphanumeric() || c == '_' {
+            token.push(c);
+        } else {
+            flush(&mut token, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut token, &mut out);
+    out
+}
+
+fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
+    let mentions = count_mentions(lines);
+    let mut index = 0;
+    while index < lines.len() {
+        let Some((to, from)) = (match &lines[index].0 {
+            Line::Inst(inst) => copy_of(inst).map(|(to, from)| (to.to_string(), from.to_string())),
+            _ => None,
+        }) else {
+            index += 1;
+            continue;
+        };
+        // The block after the copy: up to the next label or directive.
+        let end = (index + 1..lines.len())
+            .find(|&at| !matches!(lines[at].0, Line::Inst(_)))
+            .unwrap_or(lines.len());
+        let block = &lines[index + 1..end];
+        let named = |line: &(Line, Option<Pos>), name: &str| match &line.0 {
+            Line::Inst(inst) => inst_names(inst).iter().any(|seen| seen == name),
+            _ => false,
+        };
+        let uses = block.iter().filter(|line| named(line, &to)).count();
+        let last_use = block.iter().rposition(|line| named(line, &to));
+        let rewritten = |name: &str, upto: usize| {
+            block[..upto].iter().any(|line| match &line.0 {
+                Line::Inst(inst) => writes(inst, name),
+                _ => false,
+            })
+        };
+        let propagates = to != from
+            && mentions.get(&to) == Some(&(uses + 1))
+            && last_use
+                .is_some_and(|last| !rewritten(&to, block.len()) && !rewritten(&from, last + 1));
+        if !propagates {
+            index += 1;
+            continue;
+        }
+        for line in &mut lines[index + 1..end] {
+            if let Line::Inst(inst) = &mut line.0 {
+                for operand in &mut inst.operands {
+                    *operand = renamed(operand, &to, &from);
+                }
+            }
+        }
+        lines.remove(index);
+    }
 }
 
 /// The register names in an operand: `ft_4[x]` names `ft_4`, `3(ixtop_0)`

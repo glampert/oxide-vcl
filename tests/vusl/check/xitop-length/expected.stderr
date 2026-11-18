@@ -1,0 +1,5 @@
+input.vusl(4): error: the length of 'items' is neither a positive constant, an earlier int16 member nor a layout(xitop) parameter of main
+   4 | struct Batch { Item items[total]; };
+     |                     ^^^^^
+     = help: write a constant, the name of an int16 member before it or of main's layout(xitop) parameter, or [] for an open array at the end
+oxide-vusl: 1 error; no output written

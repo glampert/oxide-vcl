@@ -1,0 +1,5 @@
+input.vusl(8): error: 'scratch' is layout(spill): oxide-vcl's work area, which the program cannot use
+   8 |     block.value.x = float(scratch.q[0].x);
+     |                           ^^^^^^^
+     = help: keep the program's own data in another parameter
+oxide-vusl: 1 error; no output written

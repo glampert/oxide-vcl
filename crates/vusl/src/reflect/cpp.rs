@@ -150,7 +150,10 @@ fn fixed_part(def: &StructDef) -> u32 {
         if !member.offset.is_fixed() {
             return member.offset.fixed;
         }
-        if matches!(member.ty, Type::Array(_, Length::Member(_) | Length::Open)) {
+        if matches!(
+            member.ty,
+            Type::Array(_, Length::Member(_) | Length::Xitop | Length::Open)
+        ) {
             return member.offset.fixed;
         }
     }
@@ -185,7 +188,10 @@ fn write_struct(
     let mut pad = 0;
     for member in &def.members {
         if !member.offset.is_fixed()
-            || matches!(member.ty, Type::Array(_, Length::Member(_) | Length::Open))
+            || matches!(
+                member.ty,
+                Type::Array(_, Length::Member(_) | Length::Xitop | Length::Open)
+            )
         {
             break;
         }
@@ -298,7 +304,10 @@ fn write_struct(
     // Offsets and sizes that C++ members cannot give.
     let mut constants = Vec::new();
     for member in &def.members {
-        let dynamic_length = matches!(member.ty, Type::Array(_, Length::Member(_) | Length::Open));
+        let dynamic_length = matches!(
+            member.ty,
+            Type::Array(_, Length::Member(_) | Length::Xitop | Length::Open)
+        );
         let label = format!("{name}{}", capitalized(&member.name));
         if !member.offset.is_fixed() {
             let (parameters, body) = extent_function(&member.offset, structs, id);

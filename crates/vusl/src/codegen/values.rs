@@ -54,6 +54,9 @@ pub(super) struct Entry {
     pub reads: Vec<Read>,
     /// The locals the key's expression reads.
     pub locals: Vec<LocalId>,
+    /// The range elements its expression reads or addresses: a key names
+    /// an element, not where its pointer is.
+    pub elements: Vec<ElementId>,
 }
 
 /// The entries valid at the point being lowered, each numbered in the
@@ -117,10 +120,26 @@ impl Cache {
         });
     }
 
+    /// Entries whose expressions read these elements are gone: the next
+    /// copy of an unrolled body reads other ones.
+    pub fn forget_elements(&mut self, elements: &[ElementId]) {
+        self.entries.retain(|(_, entry)| {
+            !entry
+                .elements
+                .iter()
+                .any(|element| elements.contains(element))
+        });
+    }
+
     /// Local `id` written: entries whose expression reads it are gone.
     pub fn clobber_local(&mut self, id: LocalId) {
         self.entries
             .retain(|(_, entry)| !entry.locals.contains(&id));
+    }
+
+    /// The entry for `key` is gone.
+    pub fn forget_key(&mut self, key: &Key) {
+        self.entries.retain(|(_, entry)| entry.key != *key);
     }
 
     /// Everything read from memory is gone.
@@ -185,6 +204,10 @@ fn base_struct(program: &Program, base: Base) -> Option<usize> {
     let ty = match base {
         Base::Param(index) => &program.params[index].ty,
         Base::Element(element) => &program.elements[element].ty,
+        Base::Ref(local) => match &program.locals[local].ty {
+            Type::Ref(target) => target,
+            ty => ty,
+        },
     };
     match ty {
         Type::Struct(id) => Some(*id),
@@ -193,7 +216,12 @@ fn base_struct(program: &Program, base: Base) -> Option<usize> {
 }
 
 pub(super) fn region(program: &Program, place: &Place) -> Region {
-    let mut region = match place.base {
+    base_region(program, place.base, &place.path)
+}
+
+/// The region of the members `path` from `base`.
+fn base_region(program: &Program, base: Base, path: &[usize]) -> Region {
+    let mut region = match base {
         Base::Param(param) => Region {
             param,
             path: Vec::new(),
@@ -203,11 +231,21 @@ pub(super) fn region(program: &Program, place: &Place) -> Region {
             region.path.push(Step::Element);
             region
         }
+        // A ref may move anywhere within its memory.
+        Base::Ref(local) => {
+            return match &program.locals[local].within {
+                Some(within) => base_region(program, within.base, &within.path),
+                None => Region {
+                    param: usize::MAX,
+                    path: Vec::new(),
+                },
+            };
+        }
     };
     steps(
         &program.structs,
-        base_struct(program, place.base),
-        &place.path,
+        base_struct(program, base),
+        path,
         &mut region.path,
     );
     while region.path.last() == Some(&Step::Element) {
@@ -216,8 +254,14 @@ pub(super) fn region(program: &Program, place: &Place) -> Region {
     region
 }
 
+/// Whether two parameters' memory may overlap; `usize::MAX` stands for
+/// any memory.
 fn params_overlap(program: &Program, a: usize, b: usize) -> bool {
-    a == b || program.params[a].alias == Some(b) || program.params[b].alias == Some(a)
+    a == b
+        || a == usize::MAX
+        || b == usize::MAX
+        || program.params[a].alias == Some(b)
+        || program.params[b].alias == Some(a)
 }
 
 /// Whether a store of `qwords` qwords to `region` (at a base and offset
@@ -310,6 +354,7 @@ fn write_place(place: &Place, out: &mut String) -> bool {
     match place.base {
         Base::Param(index) => out.push_str(&format!("P{index}")),
         Base::Element(element) => out.push_str(&format!("E{element}")),
+        Base::Ref(local) => out.push_str(&format!("R{local}")),
     }
     out.push_str(&format!(
         "{:?}+{}.{}",
@@ -403,6 +448,62 @@ fn write_key(expr: &Expr, out: &mut String) -> bool {
             out.push_str(&format!("column{index}"));
             args(out, &[matrix])
         }
+        ExprKind::Address(place) => {
+            out.push_str("address ");
+            write_place(place, out)
+        }
+        // The memory a ref stays within does not change its value.
+        ExprKind::RefTo { address, .. } => write_key(address, out),
+    }
+}
+
+/// The range elements whose places an expression reads or addresses.
+pub(super) fn element_bases(expr: &Expr, out: &mut Vec<ElementId>) {
+    let place_bases = |place: &Place, out: &mut Vec<ElementId>| {
+        if let Base::Element(element) = place.base
+            && !out.contains(&element)
+        {
+            out.push(element);
+        }
+        for (index, _) in &place.offset.indices {
+            element_bases(index, out);
+        }
+    };
+    match &expr.kind {
+        ExprKind::Const(_) | ExprKind::Local(_) => {}
+        ExprKind::Load(place) | ExprKind::Address(place) => place_bases(place, out),
+        ExprKind::RefTo { address, .. } => element_bases(address, out),
+        ExprKind::Swizzle { base: operand, .. }
+        | ExprKind::Neg(operand)
+        | ExprKind::Not(operand)
+        | ExprKind::Convert { operand, .. }
+        | ExprKind::Column {
+            matrix: operand, ..
+        } => element_bases(operand, out),
+        ExprKind::Binary { lhs, rhs, .. }
+        | ExprKind::Compare { lhs, rhs, .. }
+        | ExprKind::And(lhs, rhs)
+        | ExprKind::Or(lhs, rhs) => {
+            element_bases(lhs, out);
+            element_bases(rhs, out);
+        }
+        ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
+            for arg in args {
+                element_bases(arg, out);
+            }
+        }
+    }
+}
+
+/// The locals a place's address reads: a ref's, and its indices'.
+fn place_inputs<'e>(place: &'e Place, locals: &mut Vec<LocalId>, places: &mut Vec<&'e Place>) {
+    if let Base::Ref(local) = place.base
+        && !locals.contains(&local)
+    {
+        locals.push(local);
+    }
+    for (index, _) in &place.offset.indices {
+        inputs(index, locals, places);
     }
 }
 
@@ -417,10 +518,10 @@ pub(super) fn inputs<'e>(expr: &'e Expr, locals: &mut Vec<LocalId>, places: &mut
         }
         ExprKind::Load(place) => {
             places.push(place);
-            for (index, _) in &place.offset.indices {
-                inputs(index, locals, places);
-            }
+            place_inputs(place, locals, places);
         }
+        ExprKind::Address(place) => place_inputs(place, locals, places),
+        ExprKind::RefTo { address, .. } => inputs(address, locals, places),
         ExprKind::Swizzle { base: operand, .. }
         | ExprKind::Neg(operand)
         | ExprKind::Not(operand)
@@ -522,6 +623,12 @@ impl Invariants<'_> {
         }
         match &expr.kind {
             ExprKind::Const(_) | ExprKind::Local(_) | ExprKind::Load(_) => {}
+            ExprKind::Address(place) => {
+                for (index, _) in &place.offset.indices {
+                    self.expr(index, out);
+                }
+            }
+            ExprKind::RefTo { address, .. } => self.expr(address, out),
             ExprKind::Swizzle { base: operand, .. }
             | ExprKind::Neg(operand)
             | ExprKind::Not(operand)
@@ -566,19 +673,27 @@ impl Invariants<'_> {
         }
     }
 
-    fn place_invariant(&self, place: &Place) -> bool {
+    /// Whether a place's address is the same in every iteration.
+    fn address_invariant(&self, place: &Place) -> bool {
         let base = match place.base {
             Base::Param(index) => {
                 !matches!(program_param(self.program, index), ParamPlacement::Xitop)
             }
             Base::Element(element) => (self.bound)(element),
+            Base::Ref(local) => !self.effects.locals.contains(&local),
         };
-        base && place
-            .offset
-            .indices
-            .iter()
-            .all(|(index, _)| self.invariant(index))
-            && !self.effects.stores_to(self.program, place)
+        // After a yield, XTOP and the lengths may be another batch's.
+        !self.effects.yields
+            && base
+            && place
+                .offset
+                .indices
+                .iter()
+                .all(|(index, _)| self.invariant(index))
+    }
+
+    fn place_invariant(&self, place: &Place) -> bool {
+        self.address_invariant(place) && !self.effects.stores_to(self.program, place)
     }
 
     fn invariant(&self, expr: &Expr) -> bool {
@@ -588,7 +703,9 @@ impl Invariants<'_> {
         match &expr.kind {
             ExprKind::Const(_) => true,
             ExprKind::Local(id) => !self.effects.locals.contains(id),
-            ExprKind::Load(place) => !self.effects.yields && self.place_invariant(place),
+            ExprKind::Load(place) => self.place_invariant(place),
+            ExprKind::Address(place) => self.address_invariant(place),
+            ExprKind::RefTo { address, .. } => self.invariant(address),
             ExprKind::Swizzle { base: operand, .. }
             | ExprKind::Neg(operand)
             | ExprKind::Convert { operand, .. }
@@ -617,6 +734,7 @@ impl Invariants<'_> {
             ExprKind::Const(Const::Bool(_)) | ExprKind::Local(_) => false,
             ExprKind::Swizzle { base, .. } => self.worth(base),
             ExprKind::Column { matrix, .. } => self.worth(matrix),
+            ExprKind::RefTo { address, .. } => self.worth(address),
             ExprKind::Convert {
                 conversion: Conversion::Bits,
                 operand,

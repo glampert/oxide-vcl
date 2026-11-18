@@ -70,6 +70,10 @@ pub struct Limit {
 /// A path of member indices as dotted member names, from struct `id`.
 /// Array members lead into their elements.
 pub fn path_name(structs: &[StructDef], id: usize, path: &[usize]) -> String {
+    if path.is_empty() {
+        // A length that is the count XITOP reads.
+        return "xitop".into();
+    }
     let mut names = Vec::new();
     let mut current = Some(id);
     for &index in path {
@@ -231,10 +235,14 @@ pub fn reflect(
         let mut reads = Vec::new();
         let mut writes = Vec::new();
         let mut kicks = Vec::new();
+        // Whether every write to an open array is a range-for's, whose
+        // length the size then counts.
+        let mut open_counted = true;
         if let Some(id) = struct_id {
             size = structs[id].size.clone();
             // An open array takes the length the program writes it with.
             if let Some(open) = &structs[id].open {
+                let mut counted = false;
                 walk(&program.body, &mut |stmt| {
                     let Stmt::Loop {
                         kind: LoopKind::Range { elements, count },
@@ -253,7 +261,10 @@ pub fn reflect(
                         return;
                     }
                     match count {
-                        Count::Fixed(n) => size.fixed += n * open.stride,
+                        Count::Fixed(n) => {
+                            size.fixed += n * open.stride;
+                            counted = true;
+                        }
                         Count::Member(place) if place.base == Base::Param(index) => {
                             size.add(&Extent {
                                 fixed: 0,
@@ -262,10 +273,27 @@ pub fn reflect(
                                     stride: open.stride,
                                 }],
                             });
+                            counted = true;
                         }
-                        _ => {}
+                        Count::Xitop => {
+                            size.add(&Extent {
+                                fixed: 0,
+                                terms: vec![crate::sema::layout::Term {
+                                    count: Vec::new(),
+                                    stride: open.stride,
+                                }],
+                            });
+                            counted = true;
+                        }
+                        Count::Member(_) => {}
                     }
                 });
+                // Written some other way, through a ref, its length is the
+                // program's to know.
+                let written = program.accesses.iter().any(|access| {
+                    access.param == index && access.write && access.path.starts_with(&open.path)
+                });
+                open_counted = counted || !written;
             }
             for access in &program.accesses {
                 if access.param != index {
@@ -303,12 +331,14 @@ pub fn reflect(
             _ => None,
         };
         let limit = match (capacity, struct_id, size.terms.as_slice()) {
-            (Some((capacity, why)), Some(id), [term]) if size.fixed <= capacity => Some(Limit {
-                count: path_name(structs, id, &term.count),
-                max: (capacity - size.fixed) / term.stride,
-                capacity,
-                why,
-            }),
+            (Some((capacity, why)), Some(id), [term]) if open_counted && size.fixed <= capacity => {
+                Some(Limit {
+                    count: path_name(structs, id, &term.count),
+                    max: (capacity - size.fixed) / term.stride,
+                    capacity,
+                    why,
+                })
+            }
             _ => None,
         };
         params.push(ParamInfo {

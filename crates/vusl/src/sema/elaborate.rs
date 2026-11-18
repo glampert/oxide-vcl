@@ -49,9 +49,16 @@ pub fn program(
         clips: 0,
         clip_block: 0,
         clip_judgements: HashMap::new(),
+        xitop_locals: Vec::new(),
+        ranges: 0,
+        spills: Vec::new(),
     };
     let mut prologue = Vec::new();
     for (index, param) in params.iter().enumerate() {
+        if param.spill {
+            elaborator.spills.push(param.name.clone());
+            continue;
+        }
         let ident = ast::Ident {
             name: param.name.clone(),
             pos: param.pos,
@@ -76,6 +83,7 @@ pub fn program(
                     pos: param.pos,
                 });
                 elaborator.state[local].set = 1;
+                elaborator.xitop_locals.push(local);
                 Symbol::Local(local)
             }
             placement => {
@@ -222,6 +230,13 @@ struct Elaborator<'d, 'w> {
     clips: usize,
     clip_block: usize,
     clip_judgements: HashMap<LocalId, (usize, usize)>,
+    /// The locals of `main`'s `layout(xitop)` parameters, read again after
+    /// each `yield`.
+    xitop_locals: Vec<LocalId>,
+    /// The range-fors being elaborated.
+    ranges: usize,
+    /// `layout(spill)` parameters: oxide-vcl's work area, not the program's.
+    spills: Vec<String>,
 }
 
 fn err<T>(message: VuslMessage, pos: Pos) -> Checked<T> {
@@ -309,6 +324,7 @@ impl Elaborator<'_, '_> {
             ty,
             fixed,
             precise,
+            within: None,
             pos,
         });
         self.state.push(LocalState {
@@ -348,6 +364,14 @@ impl Elaborator<'_, '_> {
         }
         if let Some((value, ty)) = self.decls.consts.get(&name.name) {
             return Ok(Symbol::Const(*value, ty.clone()));
+        }
+        if self.spills.contains(&name.name) {
+            return err(
+                VuslMessage::SpillUsed {
+                    name: name.name.clone(),
+                },
+                name.pos,
+            );
         }
         err(
             VuslMessage::UnknownName {
@@ -473,11 +497,36 @@ impl Elaborator<'_, '_> {
                 )
             };
             match (name.as_str(), pragma.args.as_deref()) {
-                ("unroll", None) => hints.unroll = Some(Unroll::Full),
+                ("unroll", None) => {
+                    if matches!(stmt.kind, StmtKind::While { .. } | StmtKind::DoWhile { .. }) {
+                        return err(
+                            VuslMessage::MisplacedPragma {
+                                name,
+                                place: "must come before a for loop with constant bounds or a range-for",
+                            },
+                            pragma.pos,
+                        );
+                    }
+                    hints.unroll = Some(Unroll::Full);
+                }
                 ("unroll", Some([arg])) if arg.name.is_none() => {
-                    match self.pragma_int(arg).filter(|count| *count >= 1) {
+                    if !matches!(stmt.kind, StmtKind::RangeFor { .. }) {
+                        return err(
+                            VuslMessage::MisplacedPragma {
+                                name,
+                                place: "with a count must come before a range-for (#pragma unroll alone unrolls a for loop with constant bounds)",
+                            },
+                            pragma.pos,
+                        );
+                    }
+                    match self
+                        .pragma_int(arg)
+                        .filter(|count| (1..=MAX_UNROLL).contains(count))
+                    {
                         Some(count) => hints.unroll = Some(Unroll::By(count)),
-                        None => return bad(" or #pragma unroll(N), with N a positive constant"),
+                        None => {
+                            return bad(" or #pragma unroll(N), with N a constant from 1 to 16");
+                        }
                     }
                 }
                 ("nounroll", None) => hints.unroll = Some(Unroll::Never),
@@ -620,8 +669,29 @@ impl Elaborator<'_, '_> {
                 if !self.calls.is_empty() {
                     return err(VuslMessage::YieldOutsideMain, stmt.pos);
                 }
+                if self.ranges > 0 {
+                    return err(VuslMessage::YieldInRange, stmt.pos);
+                }
                 self.uses.yield_ = true;
                 out.push(Stmt::Yield { pos: stmt.pos });
+                // MSCNT resumes with another batch, and XITOP its count.
+                for &local in &self.xitop_locals {
+                    out.push(Stmt::SetLocal {
+                        local,
+                        column: None,
+                        components: None,
+                        value: Expr {
+                            kind: ExprKind::Call {
+                                builtin: Builtin::Xitop,
+                                args: Vec::new(),
+                            },
+                            ty: Type::Int16,
+                            placement: None,
+                            pos: stmt.pos,
+                        },
+                        pos: stmt.pos,
+                    });
+                }
             }
         }
         Ok(())
@@ -1019,6 +1089,7 @@ impl Elaborator<'_, '_> {
                         }
                         Count::Member(length_place)
                     }
+                    Length::Xitop => Count::Xitop,
                     Length::Open => return err(VuslMessage::RangeOpen, range.source.pos),
                 });
                 first_length = Some(length.clone());
@@ -1066,19 +1137,53 @@ impl Elaborator<'_, '_> {
                 entry: self.state.clone(),
                 exits: Vec::new(),
             });
+            self.ranges += 1;
             let body = self.branch(body);
+            self.ranges -= 1;
             let context = self.loops.pop().expect("the loop's context");
             let body = body?;
             self.finish_loop(context, false, pos)?;
             Ok(body)
         })();
         self.scopes.pop();
-        out.push(Stmt::Loop {
-            kind: LoopKind::Range {
-                elements,
-                count: count.expect("a first range"),
+        let body = result?;
+        let count = count.expect("a first range");
+        // Unrolled, the body is repeated: a break or continue has nowhere
+        // to go, and a count read at run time splits only by a power of
+        // two.
+        let unrolled = match hints.unroll {
+            Some(Unroll::By(n)) if n > 1 => Some(n),
+            Some(Unroll::Full) => match count {
+                Count::Fixed(n) => Some(n),
+                _ => {
+                    return err(
+                        VuslMessage::BadPragma {
+                            name: "unroll".into(),
+                            expected: "(N) before a range-for whose length is read at run time",
+                        },
+                        pos,
+                    );
+                }
             },
-            body: result?,
+            _ => None,
+        };
+        if let Some(factor) = unrolled {
+            if leaves_loop(&body) {
+                return err(VuslMessage::UnrolledLoopLeaves, pos);
+            }
+            if !matches!(count, Count::Fixed(_)) && !factor.is_power_of_two() {
+                return err(
+                    VuslMessage::BadPragma {
+                        name: "unroll".into(),
+                        expected: "(N) with N a power of two, for a length read at run time",
+                    },
+                    pos,
+                );
+            }
+        }
+        out.push(Stmt::Loop {
+            kind: LoopKind::Range { elements, count },
+            body,
             hints,
             pos,
         });
@@ -1123,9 +1228,6 @@ impl Elaborator<'_, '_> {
                     },
                     decl.ty.pos,
                 );
-            }
-            Type::Ref(_) => {
-                return err(VuslMessage::NotYet { what: "ref<T>" }, decl.ty.pos);
             }
             Type::Void => {
                 return err(
@@ -1264,7 +1366,8 @@ impl Elaborator<'_, '_> {
                         expr.pos,
                     );
                 };
-                let memory = match self.value(arg)? {
+                let value = self.value(arg)?;
+                let memory = match self.deref(value, false)? {
                     Value::Mem(memory) => memory,
                     _ => {
                         return err(
@@ -1324,12 +1427,14 @@ impl Elaborator<'_, '_> {
                 }
             },
             Ast::Field { base, field } => {
-                // A struct member in memory, or components of a vector.
+                // A struct member in memory, or components of a vector; a
+                // ref's members are memory.
                 if let Ok(Target::Local {
                     id,
                     column,
                     components: None,
                 }) = self.target_no_member(base)
+                    && !matches!(self.locals[id].ty, Type::Ref(_))
                 {
                     let ty = match column {
                         Some(_) => self.column_type(&self.locals[id].ty),
@@ -1365,6 +1470,7 @@ impl Elaborator<'_, '_> {
                     column: None,
                     components: None,
                 }) = self.target_no_member(base)
+                    && !matches!(self.locals[id].ty, Type::Ref(_))
                 {
                     let index_value = self.rvalue(index)?;
                     let Some(Const::Int(column)) = as_const(&index_value) else {
@@ -1642,6 +1748,32 @@ impl Elaborator<'_, '_> {
     fn set(&mut self, target: Target, value: Expr, pos: Pos) -> Checked<Stmt> {
         let (ty, placement) = self.target_shape(&target);
         let value = self.coerce(value, &ty, "the assignment")?;
+        if let Target::Local { id, .. } = &target
+            && matches!(ty, Type::Ref(_))
+        {
+            // A ref stays within the memory it was first set from.
+            let within = self.ref_within(&value);
+            match (&self.locals[*id].within, within) {
+                (_, None) => {
+                    return err(
+                        VuslMessage::RefWithin {
+                            name: self.locals[*id].name.clone(),
+                        },
+                        pos,
+                    );
+                }
+                (None, Some(within)) => self.locals[*id].within = Some(within),
+                (Some(current), Some(within)) if *current == within => {}
+                (Some(_), Some(_)) => {
+                    return err(
+                        VuslMessage::RefWithin {
+                            name: self.locals[*id].name.clone(),
+                        },
+                        pos,
+                    );
+                }
+            }
+        }
         // A whole local without layout(lane) takes the value's lanes: only
         // a fixed local, a part of one, or memory moves lanes.
         let adopts = matches!(
@@ -1990,7 +2122,12 @@ impl Elaborator<'_, '_> {
             offset.extent.add(&Extent {
                 fixed: 0,
                 terms: vec![Term {
-                    count: prefix.iter().chain(&term.count).copied().collect(),
+                    // XITOP's count is the same from every struct.
+                    count: if term.is_xitop() {
+                        Vec::new()
+                    } else {
+                        prefix.iter().chain(&term.count).copied().collect()
+                    },
                     stride: term.stride,
                 }],
             });
@@ -2040,7 +2177,8 @@ impl Elaborator<'_, '_> {
     }
 
     fn field(&mut self, base: &ast::Expr, field: &ast::Ident) -> Checked<Value> {
-        match self.value(base)? {
+        let value = self.value(base)?;
+        match self.deref(value, false)? {
             Value::Mem(memory) => match memory.place.ty.clone() {
                 Type::Struct(id) => self.member(memory, id, field).map(Value::Mem),
                 Type::Qword => {
@@ -2130,6 +2268,7 @@ impl Elaborator<'_, '_> {
 
     fn index(&mut self, base: &ast::Expr, index: &ast::Expr, pos: Pos) -> Checked<Value> {
         let base_value = self.value(base)?;
+        let base_value = self.deref(base_value, true)?;
         let index_value = self.rvalue(index)?;
         let index_const = match as_const(&index_value) {
             Some(Const::Int(value)) => Some(value),
@@ -2381,6 +2520,256 @@ impl Elaborator<'_, '_> {
         self.binary_values(op, lhs, rhs, pos)
     }
 
+    /// `+` and `-` of a `ref<T>` and an `int16`, which move it by whole
+    /// elements, a difference of two refs in elements, and comparisons.
+    fn ref_arithmetic(&mut self, op: BinaryOp, lhs: Expr, rhs: Expr, pos: Pos) -> Checked<Expr> {
+        if matches!(
+            op,
+            BinaryOp::Less
+                | BinaryOp::LessEqual
+                | BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Equal
+                | BinaryOp::NotEqual
+        ) {
+            return self.compare(op, lhs, rhs, pos);
+        }
+        let (reference, amount, op) = match (&lhs.ty, &rhs.ty, op) {
+            (Type::Ref(_), Type::Int16, BinaryOp::Add | BinaryOp::Sub) => (lhs, rhs, op),
+            (Type::Int16, Type::Ref(_), BinaryOp::Add) => (rhs, lhs, op),
+            (Type::Ref(a), Type::Ref(b), BinaryOp::Sub) if a == b => {
+                let stride = element_qwords(a, &self.decls.structs);
+                if stride != 1 {
+                    return err(
+                        VuslMessage::NoInstruction {
+                            what: format!("the distance between two refs to {}", self.type_name(a)),
+                            help: "VU1 has no divide: compare refs instead, or count elements",
+                        },
+                        pos,
+                    );
+                }
+                return Ok(Expr {
+                    kind: ExprKind::Binary {
+                        op: BinOp::IntSub,
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    },
+                    ty: Type::Int16,
+                    placement: None,
+                    pos,
+                });
+            }
+            _ => {
+                return err(
+                    VuslMessage::TypeMismatch {
+                        context: format!("'{}'", op.spelling()),
+                        expected: "a ref<T> plus or minus an int16".into(),
+                        found: format!("{} and {}", self.type_text(&lhs), self.type_text(&rhs)),
+                    },
+                    pos,
+                );
+            }
+        };
+        let Type::Ref(target) = reference.ty.clone() else {
+            unreachable!("a ref operand");
+        };
+        let stride = element_qwords(&target, &self.decls.structs);
+        let amount = match as_const(&amount) {
+            Some(Const::Int(n)) => {
+                let qwords = n * i64::from(stride);
+                if !int16_range(qwords) {
+                    return err(
+                        VuslMessage::ConstantRange {
+                            value: qwords.to_string(),
+                            ty: "int16",
+                        },
+                        amount.pos,
+                    );
+                }
+                constant_expr(Const::Int(qwords), amount.pos)
+            }
+            _ if stride == 1 => amount,
+            _ => {
+                return err(
+                    VuslMessage::NoInstruction {
+                        what: format!(
+                            "moving a ref to {} by a value computed at run time",
+                            self.type_name(&target)
+                        ),
+                        help: "each element takes several qwords and VU1 has no multiply: move it by constants",
+                    },
+                    amount.pos,
+                );
+            }
+        };
+        let op = if op == BinaryOp::Add {
+            BinOp::IntAdd
+        } else {
+            BinOp::IntSub
+        };
+        Ok(Expr {
+            kind: ExprKind::Binary {
+                op,
+                lhs: Box::new(reference),
+                rhs: Box::new(amount),
+            },
+            ty: Type::Ref(target),
+            placement: None,
+            pos,
+        })
+    }
+
+    /// The memory a ref value stays within.
+    fn ref_within(&self, value: &Expr) -> Option<Within> {
+        match &value.kind {
+            ExprKind::RefTo { within, .. } => Some(within.clone()),
+            ExprKind::Local(id) => self.locals[*id].within.clone(),
+            ExprKind::Binary {
+                op: BinOp::IntAdd | BinOp::IntSub,
+                lhs,
+                ..
+            } => self.ref_within(lhs),
+            _ => None,
+        }
+    }
+
+    /// `ref<T>(memory)`, the address of memory of type T or of an array's
+    /// first T, and `ref<T>(memory, address)`, an `int16` address within
+    /// memory.
+    fn make_ref(&mut self, callee: &ast::TypeName, args: &[ast::Expr], pos: Pos) -> Checked<Expr> {
+        let ty = resolve_type(callee, &self.decls.struct_ids)?;
+        let Type::Ref(target) = ty.clone() else {
+            return err(
+                VuslMessage::TypeMismatch {
+                    context: "a call".into(),
+                    expected: "a function or a type".into(),
+                    found: self.type_name(&ty),
+                },
+                pos,
+            );
+        };
+        let memory_of = |this: &mut Self, arg: &ast::Expr| -> Checked<Memory> {
+            match this.value(arg)? {
+                Value::Mem(memory) => Ok(memory),
+                value => {
+                    let value = this.deref(value, false)?;
+                    match value {
+                        Value::Mem(memory) => Ok(memory),
+                        _ => err(
+                            VuslMessage::TypeMismatch {
+                                context: "ref<T>(...)".into(),
+                                expected: "memory".into(),
+                                found: "a value in registers".into(),
+                            },
+                            arg.pos,
+                        ),
+                    }
+                }
+            }
+        };
+        let (address, memory) = match args {
+            [place] => {
+                let memory = memory_of(self, place)?;
+                let element = match &memory.place.ty {
+                    Type::Array(element, _) => (**element).clone(),
+                    ty => ty.clone(),
+                };
+                if element != *target {
+                    return err(
+                        VuslMessage::TypeMismatch {
+                            context: "ref<T>(...)".into(),
+                            expected: format!(
+                                "a {} in memory, or an array of them",
+                                self.type_name(&target)
+                            ),
+                            found: self.type_name(&memory.place.ty),
+                        },
+                        place.pos,
+                    );
+                }
+                let address = Expr {
+                    kind: ExprKind::Address(memory.place.clone()),
+                    ty: Type::Int16,
+                    placement: None,
+                    pos,
+                };
+                (address, memory)
+            }
+            [place, address] => {
+                let memory = memory_of(self, place)?;
+                let address = self.rvalue(address)?;
+                let address = self.coerce(address, &Type::Int16, "a ref's address")?;
+                (address, memory)
+            }
+            _ => {
+                return err(
+                    VuslMessage::WrongArgumentCount {
+                        name: "ref".into(),
+                        expected: "memory, and an int16 address within it".into(),
+                        found: args.len(),
+                    },
+                    pos,
+                );
+            }
+        };
+        let within = Within {
+            base: memory.place.base,
+            path: memory.place.path.clone(),
+            access: memory.access,
+            root: memory.root.clone(),
+        };
+        Ok(Expr {
+            kind: ExprKind::RefTo {
+                address: Box::new(address),
+                within,
+            },
+            ty,
+            placement: None,
+            pos,
+        })
+    }
+
+    /// The memory a `ref<T>` variable points at: a T, or with `as_array`
+    /// the first of an array of them. Other values are as they are.
+    fn deref(&self, value: Value, as_array: bool) -> Checked<Value> {
+        let Value::Reg(expr) = &value else {
+            return Ok(value);
+        };
+        let Type::Ref(target) = &expr.ty else {
+            return Ok(value);
+        };
+        let ExprKind::Local(id) = expr.kind else {
+            return err(VuslMessage::RefNotVariable, expr.pos);
+        };
+        let local = &self.locals[id];
+        let Some(within) = &local.within else {
+            return err(
+                VuslMessage::UseBeforeSet {
+                    name: local.name.clone(),
+                },
+                expr.pos,
+            );
+        };
+        let ty = if as_array {
+            Type::Array(target.clone(), Length::Open)
+        } else {
+            (**target).clone()
+        };
+        Ok(Value::Mem(Memory {
+            place: Place {
+                base: Base::Ref(id),
+                path: Vec::new(),
+                offset: Offset::default(),
+                ty,
+                lane: Lane::X,
+                length: None,
+            },
+            access: within.access,
+            name: local.name.clone(),
+            root: within.root.clone(),
+        }))
+    }
+
     /// An integer constant where a float is wanted is that float.
     fn to_float(&self, value: Expr) -> Expr {
         match value.kind {
@@ -2394,6 +2783,9 @@ impl Elaborator<'_, '_> {
     }
 
     fn binary_values(&mut self, op: BinaryOp, lhs: Expr, rhs: Expr, pos: Pos) -> Checked<Expr> {
+        if matches!(lhs.ty, Type::Ref(_)) || matches!(rhs.ty, Type::Ref(_)) {
+            return self.ref_arithmetic(op, lhs, rhs, pos);
+        }
         if let (Some(a), Some(b)) = (as_const(&lhs), as_const(&rhs)) {
             let both_int = matches!((a, b), (Const::Int(_), Const::Int(_)));
             let float_typed = lhs.ty == Type::Float || rhs.ty == Type::Float;
@@ -2745,10 +3137,11 @@ impl Elaborator<'_, '_> {
             BinaryOp::Equal => CompareOp::Equal,
             _ => CompareOp::NotEqual,
         };
-        let scalars = matches!(
-            (&lhs.ty, &rhs.ty),
-            (Type::Int16, Type::Int16) | (Type::Float, Type::Float)
-        );
+        let scalars = match (&lhs.ty, &rhs.ty) {
+            (Type::Int16, Type::Int16) | (Type::Float, Type::Float) => true,
+            (Type::Ref(a), Type::Ref(b)) => a == b,
+            _ => false,
+        };
         if !scalars {
             let vectors = lhs.ty.vf_lanes().is_some_and(|lanes| lanes > 1);
             return err(
@@ -2815,7 +3208,7 @@ impl Elaborator<'_, '_> {
 
     fn call(&mut self, callee: &ast::TypeName, args: &[ast::Expr], pos: Pos) -> Checked<Value> {
         if callee.argument.is_some() {
-            return err(VuslMessage::NotYet { what: "ref<T>" }, pos);
+            return self.make_ref(callee, args, pos).map(Value::Reg);
         }
         let name = callee.name.name.as_str();
         if let Some(ty) = builtin_type(name) {
@@ -3210,6 +3603,8 @@ impl Elaborator<'_, '_> {
                 match (&arg.ty, as_const(&arg)) {
                     (_, Some(Const::Float(f))) => Ok(constant_expr(Const::Int(f as i64), pos)),
                     (Type::Int16, _) => Ok(arg),
+                    // A ref's address.
+                    (Type::Ref(_), _) => convert(Conversion::Bits, arg, Type::Int16),
                     (Type::Float, _) => convert(Conversion::FloatToInt, arg, Type::Int16),
                     (Type::Int32 | Type::Uint32, _) => {
                         convert(Conversion::LaneToInt, arg, Type::Int16)
@@ -3365,7 +3760,8 @@ impl Elaborator<'_, '_> {
             }
             let symbol = match &ty {
                 Type::Struct(_) | Type::Array(..) => {
-                    let Value::Mem(memory) = self.value(arg)? else {
+                    let value = self.value(arg)?;
+                    let Value::Mem(memory) = self.deref(value, false)? else {
                         return err(
                             VuslMessage::TypeMismatch {
                                 context: format!("parameter '{}'", param.name.name),
@@ -3543,6 +3939,20 @@ fn whole_qwords(ty: &Type, structs: &[super::layout::StructDef]) -> Option<u32> 
 
 /// Whether a later range's dependent length is read from the same place
 /// as the first range's.
+/// The most copies `#pragma unroll(N)` makes of a body.
+const MAX_UNROLL: u32 = 16;
+
+/// Whether `body` has a `break` or `continue` of its own loop.
+fn leaves_loop(body: &[Stmt]) -> bool {
+    body.iter().any(|stmt| match stmt {
+        Stmt::Break { .. } | Stmt::Continue { .. } => true,
+        Stmt::If {
+            then, otherwise, ..
+        } => leaves_loop(then) || leaves_loop(otherwise),
+        _ => false,
+    })
+}
+
 fn same_length_place(place: &Place, elements: &[ElementId], all: &[Element]) -> bool {
     let Some(first) = elements.first().map(|&id| &all[id]) else {
         return true;

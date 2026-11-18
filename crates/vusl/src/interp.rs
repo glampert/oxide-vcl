@@ -74,11 +74,25 @@ enum Flow {
 
 type Run<T> = Result<T, String>;
 
-/// Runs `program` on `machine`, for at most `max_steps` statements.
+/// Runs `program` on `machine`, for at most `max_steps` statements, until
+/// it ends or yields.
 pub fn run(program: &Program, machine: &mut Machine, max_steps: usize) -> Run<()> {
+    run_with_host(program, machine, max_steps, &mut |_| false)
+}
+
+/// Runs `program` on `machine` as [`run`] does, with `host` called at each
+/// `yield`: it may change the memory and what XTOP and XITOP read, as the
+/// host does before MSCNT, and the program goes on when it returns true.
+pub fn run_with_host(
+    program: &Program,
+    machine: &mut Machine,
+    max_steps: usize,
+    host: &mut dyn FnMut(&mut Machine) -> bool,
+) -> Run<()> {
     let mut interpreter = Interpreter {
         program,
         machine,
+        host,
         locals: vec![None; program.locals.len()],
         elements: vec![None; program.elements.len()],
         steps: 0,
@@ -90,6 +104,7 @@ pub fn run(program: &Program, machine: &mut Machine, max_steps: usize) -> Run<()
 struct Interpreter<'p, 'm> {
     program: &'p Program,
     machine: &'m mut Machine,
+    host: &'m mut dyn FnMut(&mut Machine) -> bool,
     locals: Vec<Option<Value>>,
     /// Each range element's address, inside its loop.
     elements: Vec<Option<u16>>,
@@ -185,8 +200,14 @@ impl Interpreter<'_, '_> {
             Stmt::Loop { kind, body, .. } => return self.run_loop(kind, body),
             Stmt::Break { .. } => return Ok(Flow::Break),
             Stmt::Continue { .. } => return Ok(Flow::Continue),
-            // A yield ends the run until the next MSCNT.
-            Stmt::Exit { .. } | Stmt::Yield { .. } => return Ok(Flow::Exit),
+            Stmt::Exit { .. } => return Ok(Flow::Exit),
+            // A yield ends the run until the next MSCNT, which the host
+            // gives or not.
+            Stmt::Yield { .. } => {
+                if !(self.host)(self.machine) {
+                    return Ok(Flow::Exit);
+                }
+            }
             Stmt::Barrier { .. } => {}
         }
         Ok(Flow::Normal)
@@ -227,17 +248,17 @@ impl Interpreter<'_, '_> {
                 }
             }
             LoopKind::Range { elements, count } => {
-                // The code counts down until the count is no longer
-                // positive, after one pass for any count but 0.
-                let mut remaining = match count {
-                    Count::Fixed(n) => *n as i16,
+                // The count is unsigned: the code steps a pointer until it
+                // reaches the end of the array.
+                let count = match count {
+                    Count::Fixed(n) => *n as u16,
                     Count::Member(place) => {
                         let address = self.address(place)?;
-                        (self.memory(address as usize)?[place.lane.index()] & 0xffff) as u16 as i16
+                        (self.memory(address as usize)?[place.lane.index()] & 0xffff) as u16
                     }
-                    Count::Param(_) => self.machine.itop as i16,
+                    Count::Xitop => self.machine.itop,
                 };
-                if remaining == 0 {
+                if count == 0 {
                     return Ok(Flow::Normal);
                 }
                 for &element in elements {
@@ -245,6 +266,7 @@ impl Interpreter<'_, '_> {
                     let address = self.address(array)?;
                     self.elements[element] = Some(address);
                 }
+                let mut done: u16 = 0;
                 loop {
                     self.step()?;
                     match self.stmts(body)? {
@@ -257,8 +279,8 @@ impl Interpreter<'_, '_> {
                         let address = self.elements[element].expect("set before the loop");
                         self.elements[element] = Some(address.wrapping_add(stride));
                     }
-                    remaining = remaining.wrapping_sub(1);
-                    if remaining <= 0 {
+                    done += 1;
+                    if done == count {
                         return Ok(Flow::Normal);
                     }
                 }
@@ -281,6 +303,10 @@ impl Interpreter<'_, '_> {
         let ty = match base {
             Base::Param(index) => &self.program.params[index].ty,
             Base::Element(element) => &self.program.elements[element].ty,
+            Base::Ref(local) => match &self.program.locals[local].ty {
+                Type::Ref(target) => target,
+                ty => ty,
+            },
         };
         match ty {
             Type::Struct(id) => Some(*id),
@@ -288,9 +314,9 @@ impl Interpreter<'_, '_> {
         }
     }
 
-    /// A place's qword address.
-    fn address(&mut self, place: &Place) -> Run<u16> {
-        let mut address = match place.base {
+    /// The address a place's base is at.
+    fn base_address(&self, base: Base) -> Run<u16> {
+        Ok(match base {
             Base::Param(index) => match self.program.params[index].placement {
                 ParamPlacement::Address(address) => address as u16,
                 ParamPlacement::Xtop { .. } => self.machine.top,
@@ -299,22 +325,28 @@ impl Interpreter<'_, '_> {
             Base::Element(element) => {
                 self.elements[element].ok_or("an element outside its loop")?
             }
-        };
+            Base::Ref(local) => match self.locals[local] {
+                Some(Value::Int(address)) => address,
+                _ => return Err("a ref that is not set".into()),
+            },
+        })
+    }
+
+    /// A place's qword address.
+    fn address(&mut self, place: &Place) -> Run<u16> {
+        let mut address = self.base_address(place.base)?;
         address = address.wrapping_add(place.offset.extent.fixed as u16);
         for term in &place.offset.extent.terms {
+            if term.is_xitop() {
+                let count = self.machine.itop;
+                address = address.wrapping_add(count.wrapping_mul(term.stride as u16));
+                continue;
+            }
             // The length's member, at its fixed place from the base.
             let mut id = self
                 .base_struct(place.base)
                 .ok_or("a length outside a struct")?;
-            let mut count_address = match place.base {
-                Base::Param(index) => match self.program.params[index].placement {
-                    ParamPlacement::Address(address) => address as u16,
-                    _ => self.machine.top,
-                },
-                Base::Element(element) => {
-                    self.elements[element].ok_or("an element outside its loop")?
-                }
-            };
+            let mut count_address = self.base_address(place.base)?;
             let mut lane = 0;
             for &index in &term.count {
                 let member = &self.program.structs[id].members[index];
@@ -531,6 +563,8 @@ impl Interpreter<'_, '_> {
                 _ => Value::Int(*value as u16),
             },
             ExprKind::Const(Const::Bool(value)) => Value::Bool(*value),
+            ExprKind::Address(place) => Value::Int(self.address(place)?),
+            ExprKind::RefTo { address, .. } => self.eval(address)?,
             ExprKind::Local(id) => self.locals[*id]
                 .clone()
                 .ok_or_else(|| format!("local '{}' is not set", self.program.locals[*id].name))?,

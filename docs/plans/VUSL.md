@@ -11,7 +11,7 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 | 2. Reflection | Done |
 | 3. End-to-end baseline | Done |
 | 4. Optimizer | Done |
-| 5. VU features | Not started |
+| 5. VU features | Done |
 | 6. Ports and benchmarks | Not started |
 | 7. Docs | Not started |
 
@@ -106,11 +106,11 @@ The following are not constructs. Each is an error with a suggested rewrite:
 | `float`, `vec2`, `vec3`, `vec4` | VF lanes | Every vector value has a **placement**, the lanes holding its components, as part of its static type (printed `vec2@zw`) |
 | `mat3`, `mat4` | 3 or 4 qwords, columns (GLSL) | `layout(row_major)` stores rows. `m[i]` is the i-th stored qword, a row when row_major, so indexing is always direct; this differs from GLSL. The index must be constant. A local matrix takes its initializer's storage |
 | `int16` | VI, 16-bit wrap | Signed compares. A memory `int16` takes a 32-bit lane: `ilw` reads the low 16 bits, `isw` stores them zero-extended. There is no `int`; writing it is an error that suggests `int16` |
-| `bool` | VI non-zero, or a pending flag test | `||` is `ior`; `&&` and `!` only in conditions |
+| `bool` | VI non-zero, or a pending flag test | A float comparison is a masked `sub` and `fsand` (S, or S and Z, the operands swapped for `>` and `>=`; `!=` adds an `iaddi`), `any()` FCAND's `vi01`, `||` `ior`, an `int16` `!=` `isub`. The rest (`&&`, `!`, other `int16` comparisons) set 0 or 1 around a branch |
 | `int32`, `uint32`, `ivec2..4`, `uvec2..4` | VF lanes as raw 32-bit integers | Unpacked integers, `ftoi` results, packed colours: move, store and convert only. Signedness only matters to `itof` and to the reflected C++ type. `uint32(i)` from an `int16` is `mfir` |
 | `qword` | 128 opaque bits | GIF tags, A+D packets; `.x`..`.w` readable and writable as `int16` |
 | `clipflags` | one CLIPW judgement | From `clipw()`, consumed by `any()`/`adc()` |
-| `ref<T>` | VI qword address | Explicit addressing: `r + 1` advances `sizeof(T)` qwords; `r + i` only when `sizeof(T) == 1` |
+| `ref<T>` | VI qword address | Explicit addressing. `ref<T>(m)` is the address of memory `m`, a `T` or an array of them; `ref<T>(m, a)` an `int16` address `a` within `m`. `r.member` and `r[i]` are memory through it, and it passes as memory to functions and `xgkick`. `r + n` advances `n * sizeof(T)` qwords, with `n` constant unless `sizeof(T) == 1`; `r - s` is a distance in elements under the same rule; refs compare; `int16(r)` is the address. A ref stays within the memory it was first set from, which gives stores through it an alias region |
 
 **Placement rules:**
 
@@ -160,7 +160,7 @@ void main(layout(address = 0)                        uniform Frame frame,
 | `layout(xtop)` | The current double buffer, read with `xtop` |
 | `vif_base = B, vif_offset = O` | The VIF1 BASE and OFFSET register values the host sets. They go to reflection, and the compiler checks that the struct's largest size fits the half |
 | `layout(xitop)` on an `int16` parameter | The count the host sent with VIF ITOP |
-| `spill` | On an `inout` struct at a fixed address: the region becomes `.vu_work_area`, where oxide-vcl spills |
+| `spill` | On an `inout` struct at a fixed address: the region becomes `.vu_work_area`, where oxide-vcl spills. The program cannot use it. When values spill, the VCL is generated again with fewer hoisted invariants, and the compile with the fewest spills is kept |
 
 **Checks.** Every parameter of `main` needs a placement. Parameters whose memory overlaps are an
 error unless one says `alias = other`.
@@ -205,6 +205,10 @@ writes `count` elements.
 reflection exports it (`kMaxCount` below). A program that writes an open array through `ref<T>`
 cursors gets no solved limit, only the fixed part.
 
+**XITOP lengths.** An array length may name one of `main`'s `layout(xitop)` parameters
+(`Vertex vertices[count]`): the count the host sent with VIF ITOP. Offsets after it and sizes
+take it as a term, reflection calls it `xitop`, and a range over the array is counted by it.
+
 ### Statements and loops
 
 The GLSL statement set is supported, plus these:
@@ -217,7 +221,9 @@ The GLSL statement set is supported, plus these:
 - **`break`:** allowed. It splits the body, so the loop no longer pipelines, and the reference says
   so.
 - **`yield;`:** `--cont`. MSCNT resumes after it, and values stay in registers (ps2gl/tyra run
-  model B).
+  model B). The host sends another batch before MSCNT, so after a yield XTOP and the
+  `layout(xitop)` parameters are read again, and nothing read from memory is kept. A yield in a
+  range-for is an error: its elements are in the batch it stops on.
 - **`return;`, or the end of `main`:** `--exit`.
 - **Functions:** always inlined. `in`, `out` and `inout` parameters; no recursion.
 - **Program name:** one entry per file. The name comes from `#pragma program(name)` and gives
@@ -284,7 +290,7 @@ each one to the next statement or to file scope:
 | `#pragma program(name)` | `.name` |
 | `#pragma pipeline(min = C, safe = S, extra = E, abs = A)` | `--LoopCS C,S`, `--LoopExtra`, `--LoopAbs` |
 | `#pragma nopipeline` | `--LoopCS 0,0` (oxide mode) |
-| `#pragma unroll(N)`, `#pragma unroll` (full, constant trip count), `#pragma nounroll` | Frontend unrolling, with a remainder loop when N does not divide the trip count |
+| `#pragma unroll(N)`, `#pragma unroll` (full, constant trip count), `#pragma nounroll` | Frontend unrolling. `unroll(N)`, N from 1 to 16, applies to range-fors: a loop over groups of N elements, its body N times with the elements N strides apart, then the rest. A length read at run time splits with `iand`, so N must be a power of two there. `#pragma unroll` repeats a `for` loop with constant bounds, or a range-for of constant length, fully. An unrolled loop cannot `break` or `continue` |
 | `#pragma barrier` | `--barrier` at that point |
 
 Without a pipeline pragma, a rotated loop gets `--LoopCS 1,0` inside its guard. The guard
@@ -796,7 +802,8 @@ the hand-written programs:
      never does. A member that takes lanes stands for its qword;
    - a write to a local its expression reads, or to the register holding it;
    - a label where paths that did not compute it join;
-   - a `yield`, after which the host may have written memory.
+   - a `yield`, after which the host may have written memory and sent another batch: XTOP and
+     XITOP are read again.
 3. **Loop shaping:**
    - a range-for is a do-while behind a guard on its count;
    - there is one pointer per element stride and base, stepping by the stride, and elements of
@@ -822,7 +829,9 @@ the hand-written programs:
 8. **Lanes.** A scalar whose instruction can put it in any lane (Q and P copies, constants,
    `mfir`, negation) is made in the lane its store or component write wants.
 9. **Peephole.** A temporary written by one instruction and then moved whole into a register is
-   written there directly.
+   written there directly, and a copy whose destination is read only later in its block, while its
+   source keeps its value, is replaced by its source (inlining copies a function's `in`
+   arguments).
 
 Scheduling, pairing, register allocation, field narrowing and dead code are left to oxide-vcl.
 

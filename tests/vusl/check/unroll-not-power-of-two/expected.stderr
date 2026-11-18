@@ -1,0 +1,5 @@
+input.vusl(8): error: #pragma unroll has bad arguments
+   8 |     for (inout Item item : batch.items)
+     |     ^
+     = help: write #pragma unroll(N) with N a power of two, for a length read at run time
+oxide-vusl: 1 error; no output written

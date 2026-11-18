@@ -67,7 +67,20 @@ pub struct Local {
     pub fixed: Option<Placement>,
     /// `precise`: no contraction into multiply-adds.
     pub precise: bool,
+    /// For a `ref<T>`: the memory it stays within.
+    pub within: Option<Within>,
     pub pos: Pos,
+}
+
+/// The memory a `ref<T>` stays within: a place's base and members, for
+/// the stores that may change what is read through it, with what the
+/// program may do there and the parameter member it is in.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Within {
+    pub base: Base,
+    pub path: Vec<usize>,
+    pub access: Qualifier,
+    pub root: Option<(usize, Vec<usize>)>,
 }
 
 /// A range-for's element: a view of one element of an array per
@@ -125,6 +138,8 @@ pub struct Place {
 pub enum Base {
     Param(usize),
     Element(ElementId),
+    /// The address a `ref<T>` local holds.
+    Ref(LocalId),
 }
 
 /// Qwords from a place's base: a fixed part, lengths read from `int16`
@@ -142,8 +157,8 @@ pub enum Count {
     Fixed(u32),
     /// An `int16` member in memory.
     Member(Place),
-    /// A `layout(xitop)` parameter.
-    Param(usize),
+    /// The count XITOP reads: a `layout(xitop)` parameter.
+    Xitop,
 }
 
 /// A pragma's loop hints.
@@ -391,5 +406,12 @@ pub enum ExprKind {
     Column {
         matrix: Box<Expr>,
         index: usize,
+    },
+    /// A place's qword address, as an `int16`.
+    Address(Place),
+    /// A `ref<T>`: an `int16` address, and the memory it stays within.
+    RefTo {
+        address: Box<Expr>,
+        within: Within,
     },
 }

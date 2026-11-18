@@ -1,0 +1,9 @@
+// A layout(spill) parameter is oxide-vcl's work area, not the program's.
+struct Scratch { qword q[8]; };
+struct Block { vec4 value; };
+
+void main(layout(address = 0) inout Block block,
+          layout(address = 100, spill) inout Scratch scratch)
+{
+    block.value.x = float(scratch.q[0].x);
+}

@@ -1,0 +1,10 @@
+// A ref stays within the memory it was first set from.
+struct Item { vec4 value; };
+struct Block { Item first[4]; Item second[4]; };
+
+void main(layout(address = 0) inout Block block)
+{
+    ref<Item> cursor = ref<Item>(block.first);
+    cursor.value = vec4(1.0);
+    cursor = ref<Item>(block.second);
+}
