@@ -33,7 +33,9 @@ fn scratch(name: &str) -> PathBuf {
 fn reflect(case: &Path, out: &Path) -> (String, String) {
     let name = case.file_name().unwrap().to_string_lossy().to_string();
     let json = out.join(format!("{name}.json"));
-    let header = out.join(format!("{name}.h"));
+    // Not `{name}.h`: the directory goes on the include path, where a case
+    // named like a system header (`features`) would stand in for it.
+    let header = out.join(format!("{name}.vusl.h"));
     let output = Command::new(env!("CARGO_BIN_EXE_oxide-vusl"))
         .arg("--check")
         .arg(format!("--reflect={}", json.display()))
@@ -89,7 +91,9 @@ fn headers_compile_together() {
     for case in cases() {
         let name = case.file_name().unwrap().to_string_lossy().to_string();
         reflect(&case, &out);
-        unit.push_str(&format!("#include \"{name}.h\"\n#include \"{name}.h\"\n"));
+        unit.push_str(&format!(
+            "#include \"{name}.vusl.h\"\n#include \"{name}.vusl.h\"\n"
+        ));
     }
     unit.push_str("int main() { return 0; }\n");
     let source = out.join("unit.cpp");
