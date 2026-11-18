@@ -638,6 +638,10 @@ impl Lowering<'_> {
                 pos,
             } => {
                 self.out.pos = Some(*pos);
+                // A constant condition: the branch it takes, alone.
+                if let ExprKind::Const(Const::Bool(value)) = cond.kind {
+                    return self.stmts(if value { then } else { otherwise });
+                }
                 let otherwise_label = self.out.label("else");
                 let end = self.out.label("endif");
                 // Values from the condition hold on both paths and after,
@@ -1969,6 +1973,18 @@ impl Lowering<'_> {
                 None,
                 &[names[0].clone(), names[1].clone(), (-amount).to_string()],
             );
+        } else if amount == -0x8000 {
+            // 0x8000: the immediate takes 15 bits, so in two.
+            self.out.inst(
+                "iaddiu",
+                None,
+                &[names[0].clone(), names[1].clone(), "0x7fff".into()],
+            );
+            self.out.inst(
+                "iaddiu",
+                None,
+                &[names[0].clone(), names[0].clone(), "1".into()],
+            );
         } else {
             let constant = self.materialize(amount, None);
             let constant = self.iname(constant);
@@ -2124,6 +2140,21 @@ impl Lowering<'_> {
                 // Bit 15 is set exactly when any flag is.
                 self.out
                     .inst("iaddiu", None, &[name, "vi01".into(), "0x7fff".into()]);
+                Ok(reg)
+            }
+            ExprKind::Call {
+                builtin: Builtin::Clipped,
+                args,
+            } => {
+                let mask = self.clip_mask(args)?;
+                self.out
+                    .inst("fcand", None, &["vi01".into(), format!("0x{mask:06x}")]);
+                // VI01, copied: the next FCAND writes it. The copy goes
+                // when its reader can take VI01 itself.
+                let reg = self.idest(dest);
+                let name = self.iname(reg);
+                self.out
+                    .inst("iaddiu", None, &[name, "vi01".into(), "0".into()]);
                 Ok(reg)
             }
             ExprKind::Call {

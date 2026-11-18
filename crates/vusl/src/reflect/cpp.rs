@@ -422,18 +422,29 @@ fn write_param(out: &mut String, param: &ParamInfo, structs: &[StructDef]) {
     } else {
         Some(format!("{}Qwords", def.name))
     };
-    if let (Some(limit), Some(function)) = (&param.limit, size_function) {
+    if let Some(limit) = &param.limit {
         let constant = format!("k{label}Max{}", capitalized(&identifier(&limit.count)));
         let _ = writeln!(
             out,
             "constexpr std::uint32_t {constant} = {}; // the largest {} for which {}",
             limit.max, limit.count, limit.why
         );
-        let _ = writeln!(
-            out,
-            "static_assert({function}({constant}) <= {}, \"VUSL limit\");",
-            limit.capacity
-        );
+        match size_function.filter(|_| !limit.bound) {
+            Some(function) => {
+                let _ = writeln!(
+                    out,
+                    "static_assert({function}({constant}) <= {}, \"VUSL limit\");",
+                    limit.capacity
+                );
+            }
+            None => {
+                let _ = writeln!(
+                    out,
+                    "static_assert({} + {} * {constant} <= {}, \"VUSL limit\");",
+                    limit.fixed, limit.stride, limit.capacity
+                );
+            }
+        }
     }
 }
 

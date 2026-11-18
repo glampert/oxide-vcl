@@ -425,7 +425,10 @@ fn write_key(expr: &Expr, out: &mut String) -> bool {
             builtin,
             args: call_args,
         } => {
-            if matches!(builtin, Builtin::ClipW | Builtin::Any | Builtin::Adc) {
+            if matches!(
+                builtin,
+                Builtin::ClipW | Builtin::Any | Builtin::Adc | Builtin::Clipped
+            ) {
                 return false;
             }
             out.push_str(&format!("{builtin:?}"));
@@ -716,7 +719,11 @@ impl Invariants<'_> {
             ExprKind::Call { builtin, args } => {
                 !matches!(
                     builtin,
-                    Builtin::ClipW | Builtin::Any | Builtin::Adc | Builtin::Xitop
+                    Builtin::ClipW
+                        | Builtin::Any
+                        | Builtin::Adc
+                        | Builtin::Clipped
+                        | Builtin::Xitop
                 ) && args.iter().all(|arg| self.invariant(arg))
             }
             ExprKind::Construct(args) => args.iter().all(|arg| self.invariant(arg)),

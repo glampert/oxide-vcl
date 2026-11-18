@@ -769,7 +769,7 @@ impl Interpreter<'_, '_> {
                 self.machine.judgements += 1;
                 Value::Clip(self.machine.judgements - 1)
             }
-            Builtin::Any | Builtin::Adc => {
+            Builtin::Any | Builtin::Adc | Builtin::Clipped => {
                 let mut judgements = Vec::new();
                 for arg in args {
                     judgements.push(self.eval(arg)?);
@@ -777,10 +777,10 @@ impl Interpreter<'_, '_> {
                 let mask = self.judgement_mask(&judgements)?;
                 // FCAND sets VI01 to 1 when any flag in the mask is set.
                 let any = self.machine.clip & mask != 0;
-                if builtin == Builtin::Any {
-                    Value::Bool(any)
-                } else {
-                    Value::Int(0x7fff + u16::from(any))
+                match builtin {
+                    Builtin::Any => Value::Bool(any),
+                    Builtin::Adc => Value::Int(0x7fff + u16::from(any)),
+                    _ => Value::Int(u16::from(any)),
                 }
             }
             Builtin::Esadd | Builtin::Ersadd | Builtin::Eleng | Builtin::Erleng => {

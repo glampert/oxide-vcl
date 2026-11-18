@@ -9,6 +9,9 @@
 //! - A copy whose destination is read only later in its block, while its
 //!   source keeps its value, is gone: those readers read the source
 //!   (inlining copies a function's `in` arguments).
+//! - An address made as a base plus a constant and only used to address
+//!   memory later in its block is gone: those accesses take the base and
+//!   the offset (`iaddiu t, b, 3` then `sq x, 1(t)` is `sq x, 4(b)`).
 //! - A copy of Q into a lane that nothing reads is dropped: lowering makes
 //!   one after every division, and readers that take Q directly leave it
 //!   unused.
@@ -22,6 +25,7 @@ pub fn run(lines: &mut Vec<(Line, Option<Pos>)>) {
     let mut mentions = count_mentions(lines);
     coalesce_moves(lines, &mut mentions);
     propagate_copies(lines);
+    fold_offsets(lines);
     let mentions = count_mentions(lines);
     drop_unread_q_copies(lines, &mentions);
 }
@@ -30,9 +34,13 @@ pub fn run(lines: &mut Vec<(Line, Option<Pos>)>) {
 /// an instruction that writes one.
 fn writes(inst: &Inst, name: &str) -> bool {
     let writer = VF_WRITERS.contains(&inst.mnemonic.as_str())
-        || VI_WRITERS.contains(&inst.mnemonic.as_str());
+        || VI_WRITERS.contains(&inst.mnemonic.as_str())
+        || FLAG_WRITERS.contains(&inst.mnemonic.as_str());
     writer && inst.operands.first().map(String::as_str) == Some(name)
 }
+
+/// Instructions that write VI01, their first operand.
+const FLAG_WRITERS: &[&str] = &["fcand", "fcor", "fceq"];
 
 /// `operand` with the register `from` named `to`.
 fn renamed(operand: &str, from: &str, to: &str) -> String {
@@ -56,6 +64,96 @@ fn renamed(operand: &str, from: &str, to: &str) -> String {
     }
     flush(&mut token, &mut out);
     out
+}
+
+/// The largest qword offset LQ, SQ, ILW and ISW take either way.
+const MAX_OFFSET: i64 = 1023;
+
+/// `iaddiu t, b, k` with a variable `t`: (t, b, k).
+fn offset_of(inst: &Inst) -> Option<(&str, &str, i64)> {
+    match (inst.mnemonic.as_str(), inst.operands.as_slice()) {
+        ("iaddiu", [to, from, amount]) if is_var(to) && (is_var(from) || from == "vi00") => {
+            let amount = match amount.strip_prefix("0x") {
+                Some(hex) => i64::from_str_radix(hex, 16).ok()?,
+                None => amount.parse().ok()?,
+            };
+            Some((to, from, amount))
+        }
+        _ => None,
+    }
+}
+
+/// A memory operand on register `name`: its offset.
+fn memory_offset(operand: &str, name: &str) -> Option<i64> {
+    let (offset, rest) = operand.split_once('(')?;
+    (rest.strip_suffix(')')? == name)
+        .then(|| offset.parse().ok())
+        .flatten()
+}
+
+fn fold_offsets(lines: &mut Vec<(Line, Option<Pos>)>) {
+    let mentions = count_mentions(lines);
+    let mut index = 0;
+    while index < lines.len() {
+        let Some((to, from, amount)) = (match &lines[index].0 {
+            Line::Inst(inst) => {
+                offset_of(inst).map(|(to, from, k)| (to.to_string(), from.to_string(), k))
+            }
+            _ => None,
+        }) else {
+            index += 1;
+            continue;
+        };
+        let end = (index + 1..lines.len())
+            .find(|&at| !matches!(lines[at].0, Line::Inst(_)))
+            .unwrap_or(lines.len());
+        let block = &lines[index + 1..end];
+        // Every use is a memory operand, with an offset that still fits.
+        let mut uses = 0;
+        let mut last = None;
+        let mut foldable = true;
+        for (at, line) in block.iter().enumerate() {
+            let Line::Inst(inst) = &line.0 else {
+                continue;
+            };
+            if !inst_names(inst).contains(&to) {
+                continue;
+            }
+            uses += 1;
+            last = Some(at);
+            let every = inst.operands.iter().all(|operand| {
+                !names(operand).any(|name| name == to)
+                    || memory_offset(operand, &to)
+                        .is_some_and(|offset| (offset + amount).abs() <= MAX_OFFSET)
+            });
+            if !every || writes(inst, &to) {
+                foldable = false;
+            }
+        }
+        let rewritten = |name: &str, upto: usize| {
+            block[..upto].iter().any(|line| match &line.0 {
+                Line::Inst(inst) => writes(inst, name),
+                _ => false,
+            })
+        };
+        let folds = foldable
+            && mentions.get(&to) == Some(&(uses + 1))
+            && last.is_some_and(|last| !rewritten(&from, last + 1));
+        if !folds {
+            index += 1;
+            continue;
+        }
+        for line in &mut lines[index + 1..end] {
+            if let Line::Inst(inst) = &mut line.0 {
+                for operand in &mut inst.operands {
+                    if let Some(offset) = memory_offset(operand, &to) {
+                        *operand = format!("{}({from})", offset + amount);
+                    }
+                }
+            }
+        }
+        lines.remove(index);
+    }
 }
 
 fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
@@ -163,7 +261,9 @@ fn is_branch(mnemonic: &str) -> bool {
 fn copy_of(inst: &Inst) -> Option<(&str, &str)> {
     match (inst.mnemonic.as_str(), inst.operands.as_slice()) {
         ("move", [to, from]) if is_var(to) && is_var(from) => Some((to, from)),
-        ("iaddiu", [to, from, zero]) if zero == "0" && is_var(to) && is_var(from) => {
+        ("iaddiu", [to, from, zero])
+            if zero == "0" && is_var(to) && (is_var(from) || from == "vi01") =>
+        {
             Some((to, from))
         }
         _ => None,

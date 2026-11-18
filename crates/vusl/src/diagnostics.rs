@@ -701,13 +701,6 @@ fn layout(member: &str, kind: &LayoutErrorKind) -> Wording {
             subject,
             None,
         ),
-        LayoutErrorKind::OffsetAfterDependent => (
-            format!(
-                "'{member}' has a fixed offset after an array whose length is read at run time"
-            ),
-            subject,
-            None,
-        ),
         LayoutErrorKind::AfterOpen => (
             format!("'{member}' follows an open array, which must be last"),
             subject,

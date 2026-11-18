@@ -64,7 +64,14 @@ pub struct Limit {
     /// The qwords there are: the double-buffer half, or data memory from
     /// the parameter's address.
     pub capacity: u32,
-    pub why: &'static str,
+    pub why: String,
+    /// What must fit in `capacity`: the size of everything, or of the
+    /// arrays before a member at a fixed offset (a bound), as `fixed +
+    /// stride * count`.
+    pub fixed: u32,
+    pub stride: u32,
+    /// Whether the limit is a bound's, which the size does not show.
+    pub bound: bool,
 }
 
 /// A path of member indices as dotted member names, from struct `id`.
@@ -330,17 +337,47 @@ pub fn reflect(
             )),
             _ => None,
         };
-        let limit = match (capacity, struct_id, size.terms.as_slice()) {
+        let mut limit = match (capacity, struct_id, size.terms.as_slice()) {
             (Some((capacity, why)), Some(id), [term]) if open_counted && size.fixed <= capacity => {
                 Some(Limit {
                     count: path_name(structs, id, &term.count),
                     max: (capacity - size.fixed) / term.stride,
                     capacity,
-                    why,
+                    why: why.into(),
+                    fixed: size.fixed,
+                    stride: term.stride,
+                    bound: false,
                 })
             }
             _ => None,
         };
+        // Arrays that a member at a fixed offset follows must end by it.
+        if let Some(id) = struct_id {
+            for bound in &structs[id].bounds {
+                let [term] = bound.end.terms.as_slice() else {
+                    continue;
+                };
+                if bound.end.fixed > bound.at {
+                    continue;
+                }
+                let count = path_name(structs, id, &term.count);
+                let max = (bound.at - bound.end.fixed) / term.stride;
+                let tighter = limit
+                    .as_ref()
+                    .is_none_or(|limit| limit.count == count && max < limit.max);
+                if tighter {
+                    limit = Some(Limit {
+                        count,
+                        max,
+                        capacity: bound.at,
+                        why: format!("the arrays end by qword {}", bound.at),
+                        fixed: bound.end.fixed,
+                        stride: term.stride,
+                        bound: true,
+                    });
+                }
+            }
+        }
         params.push(ParamInfo {
             name: param.name.clone(),
             qualifier: param.qualifier,

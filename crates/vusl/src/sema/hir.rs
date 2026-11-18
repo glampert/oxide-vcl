@@ -334,6 +334,8 @@ pub enum Builtin {
     ClipW,
     Any,
     Adc,
+    /// 1 when any of the judgements is outside, else 0: FCAND's VI01.
+    Clipped,
     Esadd,
     Ersadd,
     Eleng,

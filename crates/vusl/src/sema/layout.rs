@@ -9,7 +9,9 @@
 //!
 //! An array's length may be read from an earlier `int16` member, or be the
 //! count VIF ITOP sent, so what follows it sits at a run-time offset: a
-//! fixed number of qwords plus that length times the array's stride. An open array (`T a[]`) can only be
+//! fixed number of qwords plus that length times the array's stride. A
+//! member with `layout(offset = Q)` after one sits at Q, and the arrays
+//! before it must end by Q: a bound on their lengths. An open array (`T a[]`) can only be
 //! last, and a struct ending in one only the last member of its parent.
 
 use super::types::{Lane, Length, StructId, Type};
@@ -148,6 +150,17 @@ pub struct StructDef {
     /// Its size, up to the open array if it ends in one.
     pub size: Extent,
     pub open: Option<OpenTail>,
+    /// Where arrays whose lengths are read at run time must end, for the
+    /// members at fixed offsets after them.
+    pub bounds: Vec<Bound>,
+}
+
+/// Arrays whose lengths are read at run time that a member at a fixed
+/// offset follows: they end at `end`, which must be at most `at`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Bound {
+    pub end: Extent,
+    pub at: u32,
 }
 
 impl StructDef {
@@ -192,9 +205,6 @@ pub enum LayoutErrorKind {
     LaneOnQwords,
     /// `layout(offset = Q)` before where the members so far end.
     OffsetBackwards { offset: u32, end: u32 },
-    /// `layout(offset = Q)` after an array whose length is read at run
-    /// time, which leaves Q's distance from it unknown.
-    OffsetAfterDependent,
     /// A member after an open array, or after a struct that ends in one.
     AfterOpen,
     /// An array whose elements have no fixed size (they hold an array of
@@ -285,6 +295,7 @@ pub struct Packer {
     lane: usize,
     members: Vec<MemberDef>,
     open: Option<OpenTail>,
+    bounds: Vec<Bound>,
 }
 
 impl Packer {
@@ -332,14 +343,21 @@ impl Packer {
             }
         }
         if let Some(offset) = spec.offset {
-            if !self.qword.is_fixed() {
-                return Err(error(LayoutErrorKind::OffsetAfterDependent));
-            }
             let end = self.qword.fixed + u32::from(self.lane > 0);
             if offset < self.qword.fixed || (offset == self.qword.fixed && self.lane > 0) {
                 return Err(error(LayoutErrorKind::OffsetBackwards { offset, end }));
             }
-            self.qword.fixed = offset;
+            if !self.qword.is_fixed() {
+                // The arrays before end by the offset, whatever their
+                // lengths: a bound on them.
+                let mut before = self.qword.clone();
+                before.fixed = end;
+                self.bounds.push(Bound {
+                    end: before,
+                    at: offset,
+                });
+            }
+            self.qword = Extent::fixed(offset);
             self.lane = 0;
         }
         let index = self.members.len();
@@ -386,9 +404,20 @@ impl Packer {
                     unpack: spec.unpack,
                     pos: spec.pos,
                 });
-                // A nested struct's lengths are read through this member.
-                let nested = matches!(spec.ty, Type::Struct(_));
-                if nested {
+                // A nested struct's lengths are read through this member,
+                // and its bounds hold where it is.
+                if let Type::Struct(id) = spec.ty {
+                    if self.qword.is_fixed() {
+                        let start = self.qword.fixed;
+                        for bound in &structs[id].bounds {
+                            let mut end = bound.end.nested(index);
+                            end.fixed += start;
+                            self.bounds.push(Bound {
+                                end,
+                                at: start + bound.at,
+                            });
+                        }
+                    }
                     self.qword.add(&extent.nested(index));
                 } else {
                     self.qword.add(&extent);
@@ -402,10 +431,10 @@ impl Packer {
         Ok(())
     }
 
-    /// The members, the size and the open array, if any.
-    pub fn finish(mut self) -> (Vec<MemberDef>, Extent, Option<OpenTail>) {
+    /// The members, the size, the open array if any, and the bounds.
+    pub fn finish(mut self) -> (Vec<MemberDef>, Extent, Option<OpenTail>, Vec<Bound>) {
         self.next_qword();
-        (self.members, self.qword, self.open)
+        (self.members, self.qword, self.open, self.bounds)
     }
 }
 
@@ -437,13 +466,14 @@ mod tests {
         for spec in specs {
             packer.place(spec, structs).unwrap();
         }
-        let (members, size, open) = packer.finish();
+        let (members, size, open, bounds) = packer.finish();
         StructDef {
             name: "S".into(),
             pos: Pos::default(),
             members,
             size,
             open,
+            bounds,
         }
     }
 

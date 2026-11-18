@@ -442,13 +442,14 @@ fn struct_def(
             })?;
         }
     }
-    let (members, size, open) = packer.finish();
+    let (members, size, open, bounds) = packer.finish();
     Ok(StructDef {
         name: decl.name.name.clone(),
         pos: decl.name.pos,
         members,
         size,
         open,
+        bounds,
     })
 }
 

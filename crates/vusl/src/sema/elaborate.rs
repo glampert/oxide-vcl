@@ -327,6 +327,10 @@ impl Elaborator<'_, '_> {
             within: None,
             pos,
         });
+        // A branch that went back to the state before another branch's
+        // locals has no state for them: none is set there.
+        self.state
+            .resize(self.locals.len() - 1, LocalState::default());
         self.state.push(LocalState {
             placement: fixed,
             set: 0,
@@ -1763,7 +1767,21 @@ impl Elaborator<'_, '_> {
                     );
                 }
                 (None, Some(within)) => self.locals[*id].within = Some(within),
-                (Some(current), Some(within)) if *current == within => {}
+                (Some(current), Some(within))
+                    if current.base == within.base && current.path == within.path =>
+                {
+                    // What may be done through it is what both allow.
+                    if current.access != within.access {
+                        let access = match (current.access, within.access) {
+                            (Qualifier::Inout, other) | (other, Qualifier::Inout) => other,
+                            (Qualifier::Uniform, _) | (_, Qualifier::Uniform) => Qualifier::Uniform,
+                            (access, _) => access,
+                        };
+                        if let Some(current) = &mut self.locals[*id].within {
+                            current.access = access;
+                        }
+                    }
+                }
                 (Some(_), Some(_)) => {
                     return err(
                         VuslMessage::RefWithin {
@@ -2670,18 +2688,26 @@ impl Elaborator<'_, '_> {
         let (address, memory) = match args {
             [place] => {
                 let memory = memory_of(self, place)?;
+                // Memory of another type is viewed as a T, which must fit.
                 let element = match &memory.place.ty {
                     Type::Array(element, _) => (**element).clone(),
                     ty => ty.clone(),
                 };
-                if element != *target {
+                let structs = &self.decls.structs;
+                let fits = element == *target
+                    || matches!(memory.place.ty, Type::Array(..))
+                    || match (
+                        whole_qwords(&target, structs),
+                        whole_qwords(&memory.place.ty, structs),
+                    ) {
+                        (Some(needed), Some(there)) => needed <= there,
+                        _ => false,
+                    };
+                if !fits {
                     return err(
                         VuslMessage::TypeMismatch {
                             context: "ref<T>(...)".into(),
-                            expected: format!(
-                                "a {} in memory, or an array of them",
-                                self.type_name(&target)
-                            ),
+                            expected: format!("memory that holds a {}", self.type_name(&target)),
                             found: self.type_name(&memory.place.ty),
                         },
                         place.pos,
@@ -2712,9 +2738,22 @@ impl Elaborator<'_, '_> {
                 );
             }
         };
+        // A range element's ref stays within its array, and a ref made
+        // through another within that one's memory.
+        let (base, path) = match memory.place.base {
+            Base::Element(element) => {
+                let array = &self.elements[element].array;
+                (array.base, array.path.clone())
+            }
+            Base::Ref(local) => match &self.locals[local].within {
+                Some(within) => (within.base, within.path.clone()),
+                None => (memory.place.base, memory.place.path.clone()),
+            },
+            base => (base, memory.place.path.clone()),
+        };
         let within = Within {
-            base: memory.place.base,
-            path: memory.place.path.clone(),
+            base,
+            path,
             access: memory.access,
             root: memory.root.clone(),
         };
@@ -3472,7 +3511,7 @@ impl Elaborator<'_, '_> {
                 self.clips += 1;
                 call(Builtin::ClipW, vec![judge, w], Type::ClipFlags, None)
             }
-            "any" | "adc" => {
+            "any" | "adc" | "clipped" => {
                 self.count(name, "1 to 3 judgements", &args, 1..=3, pos)?;
                 for arg in &args {
                     self.expect_type(arg, arg.ty == Type::ClipFlags, &context, "clipflags")?;
@@ -3493,10 +3532,10 @@ impl Elaborator<'_, '_> {
                         }
                     }
                 }
-                if name == "any" {
-                    call(Builtin::Any, args, Type::Bool, None)
-                } else {
-                    call(Builtin::Adc, args, Type::Int16, None)
+                match name {
+                    "any" => call(Builtin::Any, args, Type::Bool, None),
+                    "adc" => call(Builtin::Adc, args, Type::Int16, None),
+                    _ => call(Builtin::Clipped, args, Type::Int16, None),
                 }
             }
             _ if fixed_point(name).is_some() => {
@@ -3807,15 +3846,31 @@ impl Elaborator<'_, '_> {
                     let value = self.rvalue(arg)?;
                     let value =
                         self.coerce(value, &ty, &format!("parameter '{}'", param.name.name))?;
-                    let local =
-                        self.new_local(&param.name.name, ty.clone(), None, false, param.name.pos);
-                    let target = Target::Local {
-                        id: local,
-                        column: None,
-                        components: None,
-                    };
-                    setup.push(self.set(target, value, arg.pos)?);
-                    Symbol::Local(local)
+                    // A constant the body never assigns is a constant there:
+                    // its conditions fold, as a macro's would.
+                    match as_const(&value) {
+                        Some(constant)
+                            if !body_writes(self.decls, &function.body.stmts, &param.name.name) =>
+                        {
+                            Symbol::Const(constant, ty.clone())
+                        }
+                        _ => {
+                            let local = self.new_local(
+                                &param.name.name,
+                                ty.clone(),
+                                None,
+                                false,
+                                param.name.pos,
+                            );
+                            let target = Target::Local {
+                                id: local,
+                                column: None,
+                                components: None,
+                            };
+                            setup.push(self.set(target, value, arg.pos)?);
+                            Symbol::Local(local)
+                        }
+                    }
                 }
                 _ => {
                     let target = self.target(arg)?;
@@ -3939,6 +3994,96 @@ fn whole_qwords(ty: &Type, structs: &[super::layout::StructDef]) -> Option<u32> 
 
 /// Whether a later range's dependent length is read from the same place
 /// as the first range's.
+/// Whether statements may write the variable `name`: assign it, step it,
+/// or pass it to a function that takes it `out` or `inout`.
+fn body_writes(decls: &Declarations, stmts: &[ast::Stmt], name: &str) -> bool {
+    stmts.iter().any(|stmt| stmt_writes(decls, stmt, name))
+}
+
+fn stmt_writes(decls: &Declarations, stmt: &ast::Stmt, name: &str) -> bool {
+    let expr = |expr: &ast::Expr| expr_writes(decls, expr, name);
+    let boxed = |stmt: &ast::Stmt| stmt_writes(decls, stmt, name);
+    match &stmt.kind {
+        StmtKind::Block(block) => body_writes(decls, &block.stmts, name),
+        StmtKind::Pragma(_) | StmtKind::Break | StmtKind::Continue | StmtKind::Yield => false,
+        StmtKind::Empty => false,
+        StmtKind::Decl(decl) => decl
+            .declarators
+            .iter()
+            .any(|declarator| declarator.init.as_ref().is_some_and(expr)),
+        StmtKind::Expr(value) => expr(value),
+        StmtKind::Return(value) => value.as_ref().is_some_and(expr),
+        StmtKind::If {
+            cond,
+            then,
+            otherwise,
+        } => expr(cond) || boxed(then) || otherwise.as_deref().is_some_and(boxed),
+        StmtKind::For {
+            init,
+            cond,
+            step,
+            body,
+        } => {
+            init.as_deref().is_some_and(boxed)
+                || cond.as_ref().is_some_and(expr)
+                || step.as_ref().is_some_and(expr)
+                || boxed(body)
+        }
+        StmtKind::RangeFor { ranges, body } => {
+            ranges.iter().any(|range| expr(&range.source)) || boxed(body)
+        }
+        StmtKind::While { cond, body } | StmtKind::DoWhile { body, cond } => {
+            expr(cond) || boxed(body)
+        }
+    }
+}
+
+/// The variable an assignment target writes: the name it starts from.
+fn target_root(expr: &ast::Expr) -> Option<&str> {
+    match &expr.kind {
+        Ast::Name(name) => Some(&name.name),
+        Ast::Field { base, .. } | Ast::Index { base, .. } => target_root(base),
+        _ => None,
+    }
+}
+
+fn expr_writes(decls: &Declarations, expr: &ast::Expr, name: &str) -> bool {
+    let sub = |expr: &ast::Expr| expr_writes(decls, expr, name);
+    match &expr.kind {
+        Ast::Int(_) | Ast::Float(_) | Ast::Bool(_) | Ast::Name(_) => false,
+        Ast::Assign { target, value, .. } => {
+            target_root(target) == Some(name) || sub(target) || sub(value)
+        }
+        Ast::Unary { op, operand } => {
+            (matches!(op, UnaryOp::PreIncrement | UnaryOp::PreDecrement)
+                && target_root(operand) == Some(name))
+                || sub(operand)
+        }
+        Ast::Postfix { operand, .. } => target_root(operand) == Some(name) || sub(operand),
+        Ast::Binary { lhs, rhs, .. } => sub(lhs) || sub(rhs),
+        Ast::Conditional {
+            cond,
+            then,
+            otherwise,
+            ..
+        } => sub(cond) || sub(then) || sub(otherwise),
+        Ast::Call { callee, args } => {
+            let function = decls.functions.get(callee.name.name.as_str());
+            args.iter().enumerate().any(|(index, arg)| {
+                let written = function
+                    .and_then(|function| function.params.get(index))
+                    .and_then(|param| param.qualifier)
+                    .is_some_and(|(qualifier, _)| {
+                        matches!(qualifier, Qualifier::Out | Qualifier::Inout)
+                    });
+                (written && target_root(arg) == Some(name)) || sub(arg)
+            })
+        }
+        Ast::Field { base, .. } => sub(base),
+        Ast::Index { base, index } => sub(base) || sub(index),
+    }
+}
+
 /// The most copies `#pragma unroll(N)` makes of a body.
 const MAX_UNROLL: u32 = 16;
 
