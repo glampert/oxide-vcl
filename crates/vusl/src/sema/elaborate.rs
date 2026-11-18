@@ -48,6 +48,7 @@ pub fn program(
         warnings,
         clips: 0,
         clip_block: 0,
+        clip_epoch: 0,
         clip_judgements: HashMap::new(),
         xitop_locals: Vec::new(),
         ranges: 0,
@@ -229,7 +230,10 @@ struct Elaborator<'d, 'w> {
     /// only be read in its own block, while the clip flags still hold it.
     clips: usize,
     clip_block: usize,
-    clip_judgements: HashMap<LocalId, (usize, usize)>,
+    /// Bumped where paths that made different judgements meet: a
+    /// judgement's age is known only within its epoch.
+    clip_epoch: usize,
+    clip_judgements: HashMap<LocalId, (usize, usize, usize)>,
     /// The locals of `main`'s `layout(xitop)` parameters, read again after
     /// each `yield`.
     xitop_locals: Vec<LocalId>,
@@ -703,13 +707,18 @@ impl Elaborator<'_, '_> {
 
     /// A branch of an `if`, in a scope of its own.
     fn branch(&mut self, stmt: &ast::Stmt) -> Checked<Vec<Stmt>> {
-        // A branch or a loop body is a block of its own, for the clip flags.
+        // A branch or a loop body is a block of its own, for the clip flags,
+        // and one that judges makes the judgements' ages differ by path.
         self.clip_block += 1;
+        let clips = self.clips;
         self.scopes.push(HashMap::new());
         let mut out = Vec::new();
         let result = self.stmt(stmt, LoopHints::default(), &mut out);
         self.scopes.pop();
         self.clip_block += 1;
+        if self.clips != clips {
+            self.clip_epoch += 1;
+        }
         result.map(|()| out)
     }
 
@@ -789,9 +798,11 @@ impl Elaborator<'_, '_> {
             if test_first {
                 let cond = self.optional_condition(source, pos)?;
                 let cond_stmts = std::mem::take(&mut self.pending);
+                self.clip_epoch += 1; // a judgement before a loop has no fixed age in it
                 let body = self.branch(body)?;
                 Ok((cond_stmts, cond, body))
             } else {
+                self.clip_epoch += 1; // a judgement before a loop has no fixed age in it
                 let mut body = self.branch(body)?;
                 let cond = self.optional_condition(source, pos)?;
                 body.append(&mut self.pending);
@@ -847,6 +858,7 @@ impl Elaborator<'_, '_> {
         let result = (|| -> Checked<Parts> {
             let cond = self.optional_condition(cond, pos)?;
             let cond_stmts = std::mem::take(&mut self.pending);
+            self.clip_epoch += 1; // a judgement before a loop has no fixed age in it
             let body = self.branch(body)?;
             let mut step_stmts = Vec::new();
             if let Some(step) = step {
@@ -1142,6 +1154,7 @@ impl Elaborator<'_, '_> {
                 exits: Vec::new(),
             });
             self.ranges += 1;
+            self.clip_epoch += 1; // a judgement before a loop has no fixed age in it
             let body = self.branch(body);
             self.ranges -= 1;
             let context = self.loops.pop().expect("the loop's context");
@@ -1820,8 +1833,14 @@ impl Elaborator<'_, '_> {
                 components,
             } => {
                 if self.locals[id].ty == Type::ClipFlags {
-                    self.clip_judgements
-                        .insert(id, (self.clip_block, self.clips.saturating_sub(1)));
+                    self.clip_judgements.insert(
+                        id,
+                        (
+                            self.clip_block,
+                            self.clips.saturating_sub(1),
+                            self.clip_epoch,
+                        ),
+                    );
                 }
                 let local = &self.locals[id];
                 let whole = full_mask(&local.ty);
@@ -2696,6 +2715,8 @@ impl Elaborator<'_, '_> {
                 let structs = &self.decls.structs;
                 let fits = element == *target
                     || matches!(memory.place.ty, Type::Array(..))
+                    // A ref points into a run of memory, whatever it is.
+                    || matches!(memory.place.base, Base::Ref(_))
                     || match (
                         whole_qwords(&target, structs),
                         whole_qwords(&memory.place.ty, structs),
@@ -3483,6 +3504,54 @@ impl Elaborator<'_, '_> {
                 let ty = args[0].ty.clone();
                 call(Builtin::Mr32, args, ty, Some(Placement::identity(4)))
             }
+            "floatBitsToUint" | "floatBitsToInt" | "uintBitsToFloat" | "intBitsToFloat" => {
+                // The same register's bits under another type: no
+                // instruction.
+                self.count(name, "1 argument", &args, 1..=1, pos)?;
+                let arg = args.into_iter().next().unwrap();
+                let lanes = u8::try_from(arg.ty.vf_lanes().unwrap_or(0)).unwrap_or(0);
+                let (fits, expected, ty) = match name {
+                    "floatBitsToUint" | "floatBitsToInt" => {
+                        let unsigned = name == "floatBitsToUint";
+                        let ty = match (lanes, unsigned) {
+                            (1, true) => Type::Uint32,
+                            (1, false) => Type::Int32,
+                            (n, true) => Type::UVec(n),
+                            (n, false) => Type::IVec(n),
+                        };
+                        (arg.ty.is_float(), "a float or a vector", ty)
+                    }
+                    _ => {
+                        let ty = if lanes == 1 {
+                            Type::Float
+                        } else {
+                            Type::Vec(lanes)
+                        };
+                        let fits = if name == "uintBitsToFloat" {
+                            matches!(arg.ty, Type::Uint32 | Type::UVec(_))
+                        } else {
+                            matches!(arg.ty, Type::Int32 | Type::IVec(_))
+                        };
+                        let expected = if name == "uintBitsToFloat" {
+                            "a uint32 or a uvec"
+                        } else {
+                            "an int32 or an ivec"
+                        };
+                        (fits, expected, ty)
+                    }
+                };
+                self.expect_type(&arg, fits, &context, expected)?;
+                let placement = arg.placement;
+                Ok(Expr {
+                    kind: ExprKind::Convert {
+                        conversion: Conversion::Bits,
+                        operand: Box::new(arg),
+                    },
+                    ty,
+                    placement,
+                    pos,
+                })
+            }
             "abs" => {
                 self.count(name, "1 argument", &args, 1..=1, pos)?;
                 self.expect_type(
@@ -3526,14 +3595,17 @@ impl Elaborator<'_, '_> {
             }
             "any" | "adc" | "clipped" => {
                 self.count(name, "1 to 3 judgements", &args, 1..=3, pos)?;
+                // The clip flags hold the last four judgements. The newest
+                // read must be in this block: VCL waits for a judgement's
+                // flags only within its block. The others may be older, if
+                // no path between them judged differently.
+                let mut newest: Option<(usize, usize, Pos)> = None;
                 for arg in &args {
                     self.expect_type(arg, arg.ty == Type::ClipFlags, &context, "clipflags")?;
-                    // The clip flags hold the last four judgements, of this
-                    // block (VCL does not carry them across a branch).
                     if let ExprKind::Local(id) = arg.kind
-                        && let Some(&(block, index)) = self.clip_judgements.get(&id)
+                        && let Some(&(block, index, epoch)) = self.clip_judgements.get(&id)
                     {
-                        let reason = if block != self.clip_block {
+                        let reason = if epoch != self.clip_epoch {
                             Some("a branch or a loop boundary lies between")
                         } else if self.clips - 1 - index >= 4 {
                             Some("four newer judgements pushed it out")
@@ -3543,7 +3615,23 @@ impl Elaborator<'_, '_> {
                         if let Some(reason) = reason {
                             return err(VuslMessage::ClipOutOfReach { reason }, arg.pos);
                         }
+                        if newest.is_none_or(|(_, newest, _)| index > newest) {
+                            newest = Some((block, index, arg.pos));
+                        }
+                    } else {
+                        // A clipw here, the newest, in this block.
+                        newest = Some((self.clip_block, usize::MAX, arg.pos));
                     }
+                }
+                if let Some((block, _, at)) = newest
+                    && block != self.clip_block
+                {
+                    return err(
+                        VuslMessage::ClipOutOfReach {
+                            reason: "a branch or a loop boundary lies between",
+                        },
+                        at,
+                    );
                 }
                 match name {
                     "any" => call(Builtin::Any, args, Type::Bool, None),
@@ -3861,11 +3949,20 @@ impl Elaborator<'_, '_> {
                         self.coerce(value, &ty, &format!("parameter '{}'", param.name.name))?;
                     // A constant the body never assigns is a constant there:
                     // its conditions fold, as a macro's would.
-                    match as_const(&value) {
-                        Some(constant)
-                            if !body_writes(self.decls, &function.body.stmts, &param.name.name) =>
+                    let unwritten =
+                        !body_writes(self.decls, &function.body.stmts, &param.name.name);
+                    match (as_const(&value), &value.kind) {
+                        (Some(constant), _) if unwritten => Symbol::Const(constant, ty.clone()),
+                        // The caller's local itself, when nothing changes it
+                        // during the call: the body does not assign the
+                        // parameter, no out or inout argument names the
+                        // local, and no yield refreshes it.
+                        (None, ExprKind::Local(local))
+                            if unwritten
+                                && !self.xitop_locals.contains(local)
+                                && !written_by_call(&function.params, args, arg) =>
                         {
-                            Symbol::Const(constant, ty.clone())
+                            Symbol::Local(*local)
                         }
                         _ => {
                             let local = self.new_local(
@@ -4009,6 +4106,27 @@ fn whole_qwords(ty: &Type, structs: &[super::layout::StructDef]) -> Option<u32> 
 /// as the first range's.
 /// Whether statements may write the variable `name`: assign it, step it,
 /// or pass it to a function that takes it `out` or `inout`.
+/// Whether an `out` or `inout` argument of a call names the same variable
+/// as `arg`, a plain name: then the call may change it.
+fn written_by_call(params: &[ast::Param], args: &[ast::Expr], arg: &ast::Expr) -> bool {
+    let ast::ExprKind::Name(name) = &arg.kind else {
+        return true;
+    };
+    fn root(expr: &ast::Expr) -> Option<&str> {
+        match &expr.kind {
+            ast::ExprKind::Name(ident) => Some(&ident.name),
+            ast::ExprKind::Field { base, .. } | ast::ExprKind::Index { base, .. } => root(base),
+            _ => None,
+        }
+    }
+    params.iter().zip(args).any(|(param, other)| {
+        matches!(
+            param.qualifier,
+            Some((Qualifier::Out | Qualifier::Inout, _))
+        ) && root(other).is_none_or(|other| other == name.name)
+    })
+}
+
 fn body_writes(decls: &Declarations, stmts: &[ast::Stmt], name: &str) -> bool {
     stmts.iter().any(|stmt| stmt_writes(decls, stmt, name))
 }

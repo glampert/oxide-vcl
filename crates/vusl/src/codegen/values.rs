@@ -549,7 +549,7 @@ pub(super) fn inputs<'e>(expr: &'e Expr, locals: &mut Vec<LocalId>, places: &mut
 
 /// The expressions in `stmts` worth computing once before a loop whose
 /// effects are `effects`: the largest pure parts that read nothing the
-/// loop changes and cost an instruction. `bound` says whether a range
+/// loop changes and cost an instruction, outside its branches. `bound` says whether a range
 /// element's pointer exists outside the loop.
 pub(super) fn invariants<'s>(
     program: &Program,
@@ -581,6 +581,9 @@ impl Invariants<'_> {
         for stmt in stmts {
             match stmt {
                 Stmt::SetLocal { value, .. } | Stmt::Store { value, .. } => self.expr(value, out),
+                // What only one branch reads would hold a register on every
+                // path for some of them: it stays where it is. What both
+                // read is read on every path.
                 Stmt::If {
                     cond,
                     then,
@@ -588,8 +591,18 @@ impl Invariants<'_> {
                     ..
                 } => {
                     self.expr(cond, out);
-                    self.stmts(then, out);
-                    self.stmts(otherwise, out);
+                    let mut first = Vec::new();
+                    let mut second = Vec::new();
+                    self.stmts(then, &mut first);
+                    self.stmts(otherwise, &mut second);
+                    let keys: Vec<Option<String>> =
+                        second.iter().map(|expr| expr_key(expr)).collect();
+                    for expr in first {
+                        let key = expr_key(expr);
+                        if key.is_some() && keys.contains(&key) {
+                            out.push(expr);
+                        }
+                    }
                 }
                 Stmt::Loop { kind, body, .. } => {
                     if let LoopKind::Condition {

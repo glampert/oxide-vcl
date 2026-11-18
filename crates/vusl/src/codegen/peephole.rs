@@ -6,12 +6,14 @@
 //! - A temporary written by one instruction and then moved whole into a
 //!   register is written there directly: `mul.xyz t, a, b` and
 //!   `move.xyz r, t` become `mul.xyz r, a, b`.
-//! - A copy whose destination is read only later in its block, while its
-//!   source keeps its value, is gone: those readers read the source
-//!   (inlining copies a function's `in` arguments).
+//! - A copy whose destination is only read after it, while its source
+//!   keeps its value, is gone: those readers read the source. "While"
+//!   covers the paths between: a loop around the readers that changes the
+//!   source keeps the copy.
 //! - An address made as a base plus a constant and only used to address
-//!   memory later in its block is gone: those accesses take the base and
-//!   the offset (`iaddiu t, b, 3` then `sq x, 1(t)` is `sq x, 4(b)`).
+//!   memory, under the same conditions, is gone: those accesses take the
+//!   base and the offset (`iaddiu t, b, 3` then `sq x, 1(t)` is
+//!   `sq x, 4(b)`).
 //! - A copy of Q into a lane that nothing reads is dropped: lowering makes
 //!   one after every division, and readers that take Q directly leave it
 //!   unused.
@@ -116,7 +118,6 @@ fn memory_offset(operand: &str, name: &str) -> Option<i64> {
 }
 
 fn fold_offsets(lines: &mut Vec<(Line, Option<Pos>)>) {
-    let mentions = count_mentions(lines);
     let mut index = 0;
     while index < lines.len() {
         let Some((to, from, amount)) = (match &lines[index].0 {
@@ -128,46 +129,24 @@ fn fold_offsets(lines: &mut Vec<(Line, Option<Pos>)>) {
             index += 1;
             continue;
         };
-        let end = (index + 1..lines.len())
-            .find(|&at| !matches!(lines[at].0, Line::Inst(_)))
-            .unwrap_or(lines.len());
-        let block = &lines[index + 1..end];
+        let Some(end) = live_range(lines, index, &to, &from) else {
+            index += 1;
+            continue;
+        };
         // Every use is a memory operand, with an offset that still fits.
-        let mut uses = 0;
-        let mut last = None;
-        let mut foldable = true;
-        for (at, line) in block.iter().enumerate() {
-            let Line::Inst(inst) = &line.0 else {
-                continue;
-            };
-            if !inst_names(inst).contains(&to) {
-                continue;
-            }
-            uses += 1;
-            last = Some(at);
-            let every = inst.operands.iter().all(|operand| {
+        let foldable = lines[index + 1..=end].iter().all(|line| match &line.0 {
+            Line::Inst(inst) => inst.operands.iter().all(|operand| {
                 !names(operand).any(|name| name == to)
                     || memory_offset(operand, &to)
                         .is_some_and(|offset| (offset + amount).abs() <= MAX_OFFSET)
-            });
-            if !every || writes(inst, &to) {
-                foldable = false;
-            }
-        }
-        let rewritten = |name: &str, upto: usize| {
-            block[..upto].iter().any(|line| match &line.0 {
-                Line::Inst(inst) => writes(inst, name),
-                _ => false,
-            })
-        };
-        let folds = foldable
-            && mentions.get(&to) == Some(&(uses + 1))
-            && last.is_some_and(|last| !rewritten(&from, last + 1));
-        if !folds {
+            }),
+            _ => true,
+        });
+        if !foldable {
             index += 1;
             continue;
         }
-        for line in &mut lines[index + 1..end] {
+        for line in &mut lines[index + 1..=end] {
             if let Line::Inst(inst) = &mut line.0 {
                 for operand in &mut inst.operands {
                     if let Some(offset) = memory_offset(operand, &to) {
@@ -181,7 +160,6 @@ fn fold_offsets(lines: &mut Vec<(Line, Option<Pos>)>) {
 }
 
 fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
-    let mentions = count_mentions(lines);
     let mut index = 0;
     while index < lines.len() {
         let Some((to, from)) = (match &lines[index].0 {
@@ -191,32 +169,20 @@ fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
             index += 1;
             continue;
         };
-        // The block after the copy: up to the next label or directive.
-        let end = (index + 1..lines.len())
-            .find(|&at| !matches!(lines[at].0, Line::Inst(_)))
-            .unwrap_or(lines.len());
-        let block = &lines[index + 1..end];
-        let named = |line: &(Line, Option<Pos>), name: &str| match &line.0 {
-            Line::Inst(inst) => inst_names(inst).iter().any(|seen| seen == name),
-            _ => false,
+        let Some(end) = live_range(lines, index, &to, &from) else {
+            index += 1;
+            continue;
         };
-        let uses = block.iter().filter(|line| named(line, &to)).count();
-        let last_use = block.iter().rposition(|line| named(line, &to));
-        let rewritten = |name: &str, upto: usize| {
-            block[..upto].iter().any(|line| match &line.0 {
-                Line::Inst(inst) => writes(inst, name),
-                _ => false,
-            })
-        };
-        let propagates = to != from
-            && mentions.get(&to) == Some(&(uses + 1))
-            && last_use
-                .is_some_and(|last| !rewritten(&to, block.len()) && !rewritten(&from, last + 1));
-        if !propagates {
+        // VI01 stays a block's: a label between may be reached from
+        // where FCAND has rewritten it.
+        let crosses = lines[index + 1..=end]
+            .iter()
+            .any(|line| !matches!(line.0, Line::Inst(_)));
+        if from == "vi01" && crosses {
             index += 1;
             continue;
         }
-        for line in &mut lines[index + 1..end] {
+        for line in &mut lines[index + 1..=end] {
             if let Line::Inst(inst) = &mut line.0 {
                 for operand in &mut inst.operands {
                     *operand = renamed(operand, &to, &from);
@@ -225,6 +191,71 @@ fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
         }
         lines.remove(index);
     }
+}
+
+/// For `to`, defined at `index` from `from`: the last line where `to` is
+/// live, when the definition can go and `from` stand for `to` up to
+/// there. That needs every other mention of `to` after the definition,
+/// none writing it, and `from` unchanged in between. A branch from
+/// further on back into that range (a loop around the uses) extends it to
+/// the branch; a branch from before the definition into it, past the
+/// definition, rules it out.
+fn live_range(lines: &[(Line, Option<Pos>)], index: usize, to: &str, from: &str) -> Option<usize> {
+    if to == from {
+        return None;
+    }
+    let names_to = |line: &(Line, Option<Pos>)| match &line.0 {
+        Line::Inst(inst) => inst_names(inst).iter().any(|name| name == to),
+        _ => false,
+    };
+    if lines[..index].iter().any(names_to) {
+        return None;
+    }
+    let last = (index + 1..lines.len())
+        .rev()
+        .find(|&at| names_to(&lines[at]))?;
+    let labels: HashMap<&str, usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(at, line)| match &line.0 {
+            Line::Label(label) => Some((label.as_str(), at)),
+            _ => None,
+        })
+        .collect();
+    let mut end = last;
+    loop {
+        let mut grown = end;
+        for (at, line) in lines.iter().enumerate() {
+            let Line::Inst(inst) = &line.0 else {
+                continue;
+            };
+            if !is_branch(&inst.mnemonic) {
+                continue;
+            }
+            let target = inst
+                .operands
+                .last()
+                .and_then(|label| labels.get(label.as_str()));
+            match target {
+                Some(&target) if target > index && target <= end => {
+                    if at < index {
+                        return None;
+                    }
+                    grown = grown.max(at);
+                }
+                _ => {}
+            }
+        }
+        if grown == end {
+            break;
+        }
+        end = grown;
+    }
+    let written = lines[index + 1..=end].iter().any(|line| match &line.0 {
+        Line::Inst(inst) => writes(inst, to) || writes(inst, from),
+        _ => false,
+    });
+    (!written).then_some(end)
 }
 
 /// The register names in an operand: `ft_4[x]` names `ft_4`, `3(ixtop_0)`

@@ -12,7 +12,7 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 | 3. End-to-end baseline | Done |
 | 4. Optimizer | Done |
 | 5. VU features | Done |
-| 6. Ports and benchmarks | Not started |
+| 6. Ports and benchmarks | Done |
 | 7. Docs | Not started |
 
 ## Context
@@ -107,10 +107,10 @@ The following are not constructs. Each is an error with a suggested rewrite:
 | `mat3`, `mat4` | 3 or 4 qwords, columns (GLSL) | `layout(row_major)` stores rows. `m[i]` is the i-th stored qword, a row when row_major, so indexing is always direct; this differs from GLSL. The index must be constant. A local matrix takes its initializer's storage |
 | `int16` | VI, 16-bit wrap | Signed compares. A memory `int16` takes a 32-bit lane: `ilw` reads the low 16 bits, `isw` stores them zero-extended. There is no `int`; writing it is an error that suggests `int16` |
 | `bool` | VI non-zero, or a pending flag test | A float comparison is a masked `sub` and `fsand` (S, or S and Z, the operands swapped for `>` and `>=`; `!=` adds an `iaddi`), `any()` FCAND's `vi01`, `||` `ior`, an `int16` `!=` `isub`. The rest (`&&`, `!`, other `int16` comparisons) set 0 or 1 around a branch |
-| `int32`, `uint32`, `ivec2..4`, `uvec2..4` | VF lanes as raw 32-bit integers | Unpacked integers, `ftoi` results, packed colours: move, store and convert only. Signedness only matters to `itof` and to the reflected C++ type. `uint32(i)` from an `int16` is `mfir` |
+| `int32`, `uint32`, `ivec2..4`, `uvec2..4` | VF lanes as raw 32-bit integers | Unpacked integers, `ftoi` results, packed colours: move, store and convert only. Signedness only matters to `itof` and to the reflected C++ type. `uint32(i)` from an `int16` is `mfir`. `floatBitsToUint(v)`, `floatBitsToInt`, `uintBitsToFloat` and `intBitsToFloat` give the same register's bits under the other type, with no instruction |
 | `qword` | 128 opaque bits | GIF tags, A+D packets; `.x`..`.w` readable and writable as `int16` |
 | `clipflags` | one CLIPW judgement | From `clipw()`, consumed by `any()`/`adc()` |
-| `ref<T>` | VI qword address | Explicit addressing. `ref<T>(m)` is the address of memory `m`, a `T` or an array of them; `ref<T>(m, a)` an `int16` address `a` within `m`. `r.member` and `r[i]` are memory through it, and it passes as memory to functions and `xgkick`. `r + n` advances `n * sizeof(T)` qwords, with `n` constant unless `sizeof(T) == 1`; `r - s` is a distance in elements under the same rule; refs compare; `int16(r)` is the address. A ref stays within the memory it was first set from, which gives stores through it an alias region |
+| `ref<T>` | VI qword address | Explicit addressing. `ref<T>(m)` is the address of memory `m`, a `T` or an array of them; `ref<T>(m, a)` an `int16` address `a` within `m`. `r.member` and `r[i]` are memory through it, and it passes as memory to functions and `xgkick`. `r + n` advances `n * sizeof(T)` qwords, with `n` constant unless `sizeof(T) == 1`; `r - s` is a distance in elements under the same rule; refs compare; `int16(r)` is the address. `ref<T>(m)` of memory of another type views it under `T`'s layout, which must fit in it; an array, or memory reached through a ref, is a run of memory any `T` fits. A ref stays within the memory it was first set from, which gives stores through it an alias region |
 
 **Placement rules:**
 
@@ -195,7 +195,9 @@ the same goes for a range-for element. The qualifier sets the access, as in
 
 **Offsets after a dependent array.** Members after a dependent array, such as a whole `Packet`
 after `particles[count]`, get run-time offsets. These are computed with adds, since there is no
-multiply, so the element stride must be small.
+multiply, so the element stride must be small. A member there may instead take a fixed qword with
+`layout(offset = q)`; the arrays before it must then end by `q`, which reflection reports as a
+limit on their lengths.
 
 **Sizes.** The compiler computes each struct's size as a fixed part plus per-count terms. An open
 array's length comes from the loop that writes it: a range-for zipped with `particles[count]`
@@ -225,7 +227,10 @@ The GLSL statement set is supported, plus these:
   `layout(xitop)` parameters are read again, and nothing read from memory is kept. A yield in a
   range-for is an error: its elements are in the batch it stops on.
 - **`return;`, or the end of `main`:** `--exit`.
-- **Functions:** always inlined. `in`, `out` and `inout` parameters; no recursion.
+- **Functions:** always inlined. `in`, `out` and `inout` parameters; no recursion. An `in`
+  argument that is a constant is a constant in the body, so conditions on it fold; one that is a
+  local the call does not change (the body does not assign the parameter and no `out` or `inout`
+  argument names the local) is that local; anything else is copied.
 - **Program name:** one entry per file. The name comes from `#pragma program(name)` and gives
   `name_CodeStart`/`End`; otherwise it is the file stem.
 - **Scalar comparisons in conditions** have fixed lowerings:
@@ -248,15 +253,19 @@ The GLSL statement set is supported, plus these:
 | `min`, `max`, `abs`, `clamp` | `mini`, `max`, `abs`; `clamp` is both |
 
 **Conversions and moves:** `ftoi0/4/12/15`, `itof0/4/12/15` (with `vec4(iv)` and `ivec4(v)` as the
-0 forms), `mr32()`, and `int(iv.x)`/`iv.x = i` (`mtir`/`mfir`).
+0 forms), `mr32()`, `int(iv.x)`/`iv.x = i` (`mtir`/`mfir`), and the `floatBitsTo*`/`*BitsToFloat`
+reinterpretations, which cost nothing. A float whose bits are read this way keeps them through
+copies: see the raw moves under Units.
 
 **Clip flags:**
 
-- `clipw(vec3 judge, float w)`, `any(c...)` and `adc(c...)`. `adc` returns an `int16` whose bit 15
-  is set when any judgement is outside; the other bits are unspecified (`fcand vi01, mask` plus
-  `iaddiu t, vi01, 0x7fff`).
-- The compiler picks the `fcand` mask from how many recent judgements are combined. It errors when
-  those `clipw`s are not the last ones in the same block, and emits `fcset 0` once.
+- `clipw(vec3 judge, float w)`, `any(c...)`, `adc(c...)` and `clipped(c...)`. `adc` returns an
+  `int16` whose bit 15 is set when any judgement is outside; the other bits are unspecified
+  (`fcand vi01, mask` plus `iaddiu t, vi01, 0x7fff`). `clipped` is FCAND's 0 or 1 itself.
+- The compiler picks the `fcand` mask from how many recent judgements are combined. The flags hold
+  the last four, so the judgements read must be within four of the newest `clipw`, and the newest
+  must be in the reading block, where VCL waits for its flags. Older ones may be in earlier
+  blocks when no branch between them judges. Anything else is an error. `fcset 0` comes once.
 
 **EFU (VU1):** `esadd`, `ersadd`, `eleng`, `erleng`, `esum`, `ercpr`, `esqrt`, `ersqrt`, `esin`,
 `eatan`, `eexp`. The result lands in P and is read through `mfp`. The domains are documented.
@@ -812,8 +821,11 @@ the hand-written programs:
      counter steps.
 4. **LICM.** Before a loop, the largest pure parts of its body that read nothing the loop changes
    and cost an instruction are lowered once: loads, constants and products of invariants. The loop
-   then finds them in registers. At most 16 values are kept; when vcl runs out of registers, the
-   program is generated again with 6, then none (`vusl::compile`).
+   then finds them in registers. A part inside a branch is taken only when both arms compute it.
+   Parts inside nested loops count too. VI values leave only loops of one block: in a loop with
+   branches they would hold VI registers its own counters and pointers need. At most 16 values
+   are kept; when vcl runs out of registers or spills, the program is generated again with 6, then
+   none, and the compile with the fewest spills is kept (`vusl::compile`).
 5. **Memory:**
    - one `lq` of all four lanes serves every lane read from a qword, and VCL narrows its mask;
    - qword assembly: consecutive stores to lanes of one qword become one masked `sq` when their
@@ -825,13 +837,18 @@ the hand-written programs:
      `addq`/`mulq` into a lane) until the next FDIV operation or label. Lowering's copy of Q is
      dropped when nothing reads it;
    - I literals: `loi` and an `addi`/`muli` into the lane wanted, hoisted out of loops;
-   - VF00 for 0 and 1.
+   - VF00 for 0 and 1;
+   - raw moves: a copy of raw bits, or of a float whose bits are read, that the peephole leaves
+     becomes a reload from memory or four `mr32`s. vcl may schedule a MOVE in the upper pipe as
+     MAX of the source with itself, which flushes bit patterns that read as denormals.
 8. **Lanes.** A scalar whose instruction can put it in any lane (Q and P copies, constants,
    `mfir`, negation) is made in the lane its store or component write wants.
 9. **Peephole.** A temporary written by one instruction and then moved whole into a register is
-   written there directly, and a copy whose destination is read only later in its block, while its
-   source keeps its value, is replaced by its source (inlining copies a function's `in`
-   arguments).
+   written there directly. A copy whose destination is only read after it, while its source keeps
+   its value on every path between, is replaced by its source; an address made as a base plus a
+   constant and only used in memory operands, under the same condition, becomes those operands'
+   offsets. A branch back into that stretch (a loop around it) extends it to the branch, so a
+   loop that changes the source keeps the copy.
 
 Scheduling, pairing, register allocation, field narrowing and dead code are left to oxide-vcl.
 
@@ -912,7 +929,7 @@ Data goes under `tests/vusl/`. Runners live in `crates/vusl/tests/` (library lev
 | `reflect/<case>/` | `expected.json` and `expected.h`. When a `c++` is on PATH, the header is also compiled with `-std=c++17 -fsyntax-only` together with a second header that shares a struct |
 | `codegen/<case>/` | `expected.vcl`, the `--stop-at-vcl` output, one per idiom (`crates/oxide-vusl/tests/codegen.rs`). Each also compiles through vcl. The instruction counts must not grow past the hand-written sequence the case cites |
 | `crates/vusl/tests/semantics.rs` | Differential test: programs compiled through oxide-vcl run in `vu_model`'s `Config::TIMED` (VCL's schedules rely on Q, P and the flags landing at their latency, which the logical model does not keep), on seeded memories of exactly representable values. Their data memory and kick addresses must be the interpreter's. The particles program runs on a crafted batch. Later, a small random program generator |
-| `programs/<case>/` | Ports of the four scene programs (GPL-3.0 sources, with licence notes like the corpus). In `Config::TIMED` on every scene: packets identical to the hand-written program's and cycles ≤ its cycles, both compiled with `--mode=oxide --opt=all`. An ignored report test prints the table |
+| `programs/<case>/` | Ports of the four scene programs (GPL-3.0 and GPL-2.0 sources, with licence notes like the corpus). In `Config::TIMED` on every scene: packets identical to the hand-written program's and cycles ≤ its cycles, both compiled with `--mode=oxide --opt=all`, and the port's data memory and kicks the interpreter's. An ignored report test prints the table in `docs/VUSL_PERFORMANCE.md` |
 
 ## Milestones (each ends with fmt, clippy, the full release suite and the public corpus 52/52)
 

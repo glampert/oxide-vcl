@@ -613,7 +613,7 @@ fn wording(message: &VuslMessage) -> Wording {
             format!("the clipw judgement is no longer in the clip flags: {reason}"),
             None,
             Some(
-                "read a judgement with any() or adc() after its clipw, in the same block and within four judgements",
+                "read judgements with any(), adc() or clipped() within four of them, the newest in its clipw's block, with no branch between that judges",
             ),
         ),
         NotYet { what } => plain(format!("{what} is not implemented yet")),

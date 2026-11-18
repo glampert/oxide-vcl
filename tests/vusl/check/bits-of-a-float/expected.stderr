@@ -1,0 +1,4 @@
+input.vusl(6): error: 'floatBitsToUint' needs a float or a vector, not int16
+   6 |     block.bits = floatBitsToUint(block.count);
+     |                                  ^
+oxide-vusl: 1 error; no output written

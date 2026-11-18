@@ -112,12 +112,28 @@ struct Interpreter<'p, 'm> {
     max_steps: usize,
 }
 
+/// A VF lane as the VU reads it: a zero exponent is zero, and the all-ones
+/// exponent a large number.
 fn float(bits: u32) -> f32 {
-    f32::from_bits(bits)
+    let sign = bits & 0x8000_0000;
+    match (bits >> 23) & 0xff {
+        0 => f32::from_bits(sign),
+        0xff => f32::from_bits(sign | f32::MAX.to_bits()),
+        _ => f32::from_bits(bits),
+    }
 }
 
+/// A result as the VU keeps it: no denormal, infinity or NaN, so an
+/// underflow is zero and an overflow saturates.
 fn bits(value: f32) -> u32 {
-    value.to_bits()
+    let sign = value.to_bits() & 0x8000_0000;
+    if !value.is_finite() {
+        sign | f32::MAX.to_bits()
+    } else if value.is_subnormal() {
+        sign
+    } else {
+        value.to_bits()
+    }
 }
 
 /// The lanes a value of `ty` takes in memory from `lane`.

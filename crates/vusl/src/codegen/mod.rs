@@ -120,8 +120,10 @@ pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<
         exit: String::new(),
         clips: 0,
         clips_reachable_from: 0,
+        clips_in_block_from: 0,
         cache: Cache::default(),
         q_holds: None,
+        bits_read: bit_read_locals(program),
     };
     lowering.program_text(source)?;
     let (text, origins) = lowering.out.finish();
@@ -146,11 +148,16 @@ struct Lowering<'p> {
     /// readable: a branch or a loop boundary loses track of the flags.
     clips: usize,
     clips_reachable_from: usize,
+    /// The first judgement since the last label: the newest one read must
+    /// be in its block, where VCL waits for its flags.
+    clips_in_block_from: usize,
     /// The values registers hold that the code can use again.
     cache: Cache,
     /// The register lane whose value Q holds too, while no FDIV operation
     /// or label has come since: its readers take Q directly.
     q_holds: Option<(Vf, Lane)>,
+    /// The float locals whose exact bits are read: their copies are raw.
+    bits_read: Vec<bool>,
 }
 
 fn float_text(value: f32) -> String {
@@ -159,6 +166,133 @@ fn float_text(value: f32) -> String {
         text
     } else {
         format!("{text}.0")
+    }
+}
+
+/// The float locals whose bits a `floatBitsTo*` conversion reads, and the
+/// locals their values are copied from: copies of those keep every bit.
+fn bit_read_locals(program: &Program) -> Vec<bool> {
+    fn root(expr: &Expr) -> Option<LocalId> {
+        match &expr.kind {
+            ExprKind::Local(id) => Some(*id),
+            ExprKind::Swizzle { base, .. } => root(base),
+            _ => None,
+        }
+    }
+    fn place(place: &Place, read: &mut Vec<LocalId>) {
+        for (index, _) in &place.offset.indices {
+            expr(index, read);
+        }
+    }
+    fn expr(e: &Expr, read: &mut Vec<LocalId>) {
+        match &e.kind {
+            ExprKind::Const(_) | ExprKind::Local(_) => {}
+            ExprKind::Load(at) | ExprKind::Address(at) => place(at, read),
+            ExprKind::Convert {
+                conversion,
+                operand,
+            } => {
+                if *conversion == Conversion::Bits
+                    && operand.ty.is_float()
+                    && let Some(id) = root(operand)
+                {
+                    read.push(id);
+                }
+                expr(operand, read);
+            }
+            ExprKind::RefTo {
+                address: operand, ..
+            }
+            | ExprKind::Swizzle { base: operand, .. }
+            | ExprKind::Neg(operand)
+            | ExprKind::Not(operand)
+            | ExprKind::Column {
+                matrix: operand, ..
+            } => expr(operand, read),
+            ExprKind::Binary { lhs, rhs, .. }
+            | ExprKind::Compare { lhs, rhs, .. }
+            | ExprKind::And(lhs, rhs)
+            | ExprKind::Or(lhs, rhs) => {
+                expr(lhs, read);
+                expr(rhs, read);
+            }
+            ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
+                for arg in args {
+                    expr(arg, read);
+                }
+            }
+        }
+    }
+    fn stmts(list: &[Stmt], read: &mut Vec<LocalId>, copies: &mut Vec<(LocalId, LocalId)>) {
+        for stmt in list {
+            match stmt {
+                Stmt::SetLocal { local, value, .. } => {
+                    if let Some(source) = root(value) {
+                        copies.push((*local, source));
+                    }
+                    expr(value, read);
+                }
+                Stmt::Store {
+                    place: at, value, ..
+                } => {
+                    place(at, read);
+                    expr(value, read);
+                }
+                Stmt::Copy { to, from, .. } => {
+                    place(to, read);
+                    place(from, read);
+                }
+                Stmt::Kick { place: at, .. } => place(at, read),
+                Stmt::If {
+                    cond,
+                    then,
+                    otherwise,
+                    ..
+                } => {
+                    expr(cond, read);
+                    stmts(then, read, copies);
+                    stmts(otherwise, read, copies);
+                }
+                Stmt::Loop { kind, body, .. } => {
+                    if let LoopKind::Condition {
+                        cond_stmts,
+                        cond,
+                        step,
+                        ..
+                    } = kind
+                    {
+                        stmts(cond_stmts, read, copies);
+                        expr(cond, read);
+                        stmts(step, read, copies);
+                    }
+                    stmts(body, read, copies);
+                }
+                Stmt::Break { .. }
+                | Stmt::Continue { .. }
+                | Stmt::Exit { .. }
+                | Stmt::Yield { .. }
+                | Stmt::Barrier { .. } => {}
+            }
+        }
+    }
+    let mut read = Vec::new();
+    let mut copies = Vec::new();
+    stmts(&program.body, &mut read, &mut copies);
+    let mut marked = vec![false; program.locals.len()];
+    for id in read {
+        marked[id] = true;
+    }
+    loop {
+        let mut grew = false;
+        for &(local, source) in &copies {
+            if marked[local] && !marked[source] {
+                marked[source] = true;
+                grew = true;
+            }
+        }
+        if !grew {
+            return marked;
+        }
     }
 }
 
@@ -235,6 +369,7 @@ impl Lowering<'_> {
     /// A label here. Q may differ on the paths that meet at it.
     fn label_here(&mut self, label: &str) {
         self.q_holds = None;
+        self.clips_in_block_from = self.clips;
         self.out.place_label(label);
     }
 
@@ -660,7 +795,10 @@ impl Lowering<'_> {
                 if !short_circuits(cond) {
                     before = self.cache.clone();
                 }
-                self.clips_reachable_from = self.clips;
+                // A branch that judges leaves the judgements' ages
+                // different by path.
+                let clips = self.clips;
+                self.clips_in_block_from = self.clips;
                 self.stmts(then)?;
                 if !otherwise.is_empty() {
                     self.out.pos = Some(*pos);
@@ -668,10 +806,11 @@ impl Lowering<'_> {
                 }
                 self.cache = before.clone();
                 self.label_here(&otherwise_label);
-                self.clips_reachable_from = self.clips;
                 self.stmts(otherwise)?;
                 self.label_here(&end);
-                self.clips_reachable_from = self.clips;
+                if self.clips != clips {
+                    self.clips_reachable_from = self.clips;
+                }
                 self.cache = before;
                 let mut effects = Effects::of(self.program, then);
                 effects.add(self.program, otherwise);
@@ -1345,6 +1484,7 @@ impl Lowering<'_> {
     /// newest lowest.
     fn clip_mask(&mut self, args: &[Expr]) -> Lowered<u32> {
         let mut mask = 0;
+        let mut newest = None;
         for arg in args {
             let judgement = match &arg.kind {
                 ExprKind::Local(id) => match self.locals[*id] {
@@ -1365,6 +1505,7 @@ impl Lowering<'_> {
                     arg.pos,
                 )));
             }
+            newest = newest.max(Some(judgement));
             let age = self.clips - 1 - judgement;
             if age >= 4 {
                 return Err(Box::new(problem(
@@ -1375,6 +1516,14 @@ impl Lowering<'_> {
                 )));
             }
             mask |= 0x3f << (6 * age);
+        }
+        if newest.is_some_and(|newest| newest < self.clips_in_block_from) {
+            return Err(Box::new(problem(
+                VuslMessage::ClipOutOfReach {
+                    reason: "a branch or a loop boundary lies between",
+                },
+                args[0].pos,
+            )));
         }
         Ok(mask)
     }
@@ -1493,7 +1642,7 @@ impl Lowering<'_> {
                 }
             }
             ty => {
-                let raw = ty.is_raw();
+                let raw = ty.is_raw() || self.bits_read[id];
                 let reg = self.local_vf(id);
                 let current = self.placements[id];
                 let fixed = local.fixed;
@@ -2681,6 +2830,13 @@ impl Lowering<'_> {
         let mut moved: Vec<(Vf, Vec<Lane>)> = Vec::new();
         for (index, component) in components.into_iter().enumerate() {
             let target = Lane::from_index(index).expect("four components at most");
+            // VF00's lanes are 0 in x, y and z and 1 in w: such components
+            // are its lanes in place.
+            let component = match component {
+                Component::Zero if target != Lane::W => Component::Lane(Vf::Zero, target),
+                Component::One if target == Lane::W => Component::Lane(Vf::Zero, target),
+                component => component,
+            };
             match component {
                 Component::Lane(source, lane) if lane == target && source != reg => {
                     match moved.iter_mut().find(|(register, _)| *register == source) {

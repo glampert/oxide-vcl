@@ -861,6 +861,86 @@ fn raw_bits_move_exactly() {
 }
 
 #[test]
+fn float_bits_read_exactly() {
+    // Floats whose bits are read keep them through copies, even bits that
+    // read as denormals; reading them costs no instruction.
+    let source = "struct Block { vec4 a; vec4 b; int16 n; int16 pad0; int16 pad1; int16 pad2; uvec4 out0; vec4 out1; uint32 low; uint32 high; float pad3; float pad4; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   vec4 chosen = block.a;\n\
+                  \x20   if (block.n > 0)\n\
+                  \x20       chosen = block.b;\n\
+                  \x20   vec4 kept = chosen;\n\
+                  \x20   if (block.n > 1)\n\
+                  \x20       kept = mr32(chosen);\n\
+                  \x20   block.out0 = floatBitsToUint(kept);\n\
+                  \x20   block.out1 = uintBitsToFloat(floatBitsToUint(block.b));\n\
+                  \x20   block.low = floatBitsToUint(kept.x);\n\
+                  \x20   block.high = floatBitsToUint(kept.y);\n\
+                  }\n";
+    let compiled = compile(source);
+    assert!(!compiled.vcl.contains("ftoi"), "{}", compiled.vcl);
+    agree_compiled(compiled, 6, |memory, _, _| {
+        let n = (memory[3][0] >> 23 & 3) as u16;
+        memory[0] = [1, 0x512, 3, 0x7fff];
+        memory[1] = [0x8000_0005, 6, 0x200, 9];
+        set_int(memory, 2, 0, n);
+    });
+}
+
+#[test]
+fn in_parameters_alias_only_what_the_call_leaves_alone() {
+    // `grow(w, w)` writes `w` through `to` while reading `v`: `v` is a copy
+    // of `w` there. `twice(v)` reads `v` itself.
+    let source = "struct Block { vec4 a; vec4 out0; vec4 out1; };\n\
+                  vec4 twice(vec4 v) { return v + v; }\n\
+                  void grow(vec4 v, out vec4 to) { to = v + v; to = to + v; }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   vec4 v = block.a;\n\
+                  \x20   block.out0 = twice(v);\n\
+                  \x20   vec4 w = v;\n\
+                  \x20   grow(w, w);\n\
+                  \x20   block.out1 = w;\n\
+                  }\n";
+    let compiled = compile(source);
+    let a = [1.0_f32, 2.0, 0.5, -1.5];
+    let mut memory = vec![[0_u32; 4]; 1024];
+    memory[0] = a.map(f32::to_bits);
+    let mut machine = Machine::new(memory, 0, 0);
+    interp::run(&compiled.checked.program, &mut machine, 1000).unwrap();
+    assert_eq!(machine.memory[1], a.map(|v| (v * 2.0).to_bits()));
+    assert_eq!(machine.memory[2], a.map(|v| (v * 3.0).to_bits()));
+    agree_compiled(compiled, 4, |_, _, _| {});
+}
+
+#[test]
+fn copies_stay_while_a_loop_changes_their_source() {
+    // `start` copies `from` before the loop, which advances `from` after
+    // reading `start`: the copy cannot read `from` instead.
+    let source = "struct Delta { int16 count; int16 pad0; int16 pad1; int16 pad2; };\n\
+                  struct Block { int16 n; int16 pad0; int16 pad1; int16 pad2; vec4 data[8]; Delta deltas[8]; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   ref<vec4> from = ref<vec4>(block.data);\n\
+                  \x20   ref<vec4> start = from;\n\
+                  \x20   ref<Delta> to = ref<Delta>(block.deltas);\n\
+                  \x20   int16 left = block.n;\n\
+                  \x20   do\n\
+                  \x20   {\n\
+                  \x20       to.count = from - start;\n\
+                  \x20       from += 1;\n\
+                  \x20       to += 1;\n\
+                  \x20       left--;\n\
+                  \x20   } while (left > 0);\n\
+                  }\n";
+    agree(source, 6, |memory, _, _| {
+        let n = 1 + (memory[3][0] >> 23 & 3) as u16;
+        set_int(memory, 0, 0, n);
+    });
+}
+
+#[test]
 fn the_particle_program() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/vusl");
     let source = std::fs::read_to_string(format!("{root}/check/particles/input.vusl")).unwrap();
