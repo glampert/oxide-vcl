@@ -1,5 +1,5 @@
 //! VUSL, the Vector Unit Shading Language: a GLSL-like language for PS2 VU1
-//! microprograms (`docs/plans/VUSL.md`).
+//! microprograms (`docs/VUSL.md`, `docs/VUSL_COMPILER.md`).
 //!
 //! A program goes through the compiler's preprocessor in C syntax, then the
 //! frontend checks it and generates VCL source, which [`vcl::compile`]

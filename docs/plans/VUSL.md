@@ -13,7 +13,7 @@ The milestones are defined under [Milestones](#milestones-each-ends-with-fmt-cli
 | 4. Optimizer | Done |
 | 5. VU features | Done |
 | 6. Ports and benchmarks | Done |
-| 7. Docs | Not started |
+| 7. Docs | Done |
 
 ## Context
 
@@ -302,8 +302,8 @@ each one to the next statement or to file scope:
 | `#pragma unroll(N)`, `#pragma unroll` (full, constant trip count), `#pragma nounroll` | Frontend unrolling. `unroll(N)`, N from 1 to 16, applies to range-fors: a loop over groups of N elements, its body N times with the elements N strides apart, then the rest. A length read at run time splits with `iand`, so N must be a power of two there. `#pragma unroll` repeats a `for` loop with constant bounds, or a range-for of constant length, fully. An unrolled loop cannot `break` or `continue` |
 | `#pragma barrier` | `--barrier` at that point |
 
-Without a pipeline pragma, a rotated loop gets `--LoopCS 1,0` inside its guard. The guard
-guarantees the count, and oxide-vcl's `loops` optimization decides whether to keep it.
+A loop without a pipeline pragma gets no hint, and oxide-vcl's `loops` optimization decides
+whether to pipeline it.
 
 ### Example: quake2's particles program
 
@@ -919,14 +919,14 @@ On failure, nothing is written: all files or none, like oxide mode's `write_all_
 ## Testing
 
 Data goes under `tests/vusl/`. Runners live in `crates/vusl/tests/` (library level) and
-`crates/oxide-vusl/tests/driver.rs`. `VUSL_UPDATE=1` regenerates the expected files. They include
-`vu_model.rs` and `scenes.rs` by path, as the oxide-vcl tests do.
+`crates/oxide-vusl/tests/` (through the driver); `docs/VUSL_COMPILER.md` lists them.
+`VUSL_UPDATE=1` regenerates the expected files. They include `vu_model.rs` and `scenes.rs` by
+path, as the oxide-vcl tests do.
 
 | Suite | What it checks |
 |---|---|
 | Unit tests | Lexer, parser round trip, placements, layout, lane solver |
-| `errors/<case>/` | `input.vusl` plus `expected.stderr`: every strict rule, type and layout error |
-| `reflect/<case>/` | `expected.json` and `expected.h`. When a `c++` is on PATH, the header is also compiled with `-std=c++17 -fsyntax-only` together with a second header that shares a struct |
+| `check/<case>/` | `input.vusl` plus `expected.stderr`: every strict rule, type and layout error, and the warnings. Cases with `expected.json` and `expected.h` are the reflection suite; when a C++ compiler is present, all their headers are compiled together with `-std=c++17 -fsyntax-only -pedantic -Werror` |
 | `codegen/<case>/` | `expected.vcl`, the `--stop-at-vcl` output, one per idiom (`crates/oxide-vusl/tests/codegen.rs`). Each also compiles through vcl. The instruction counts must not grow past the hand-written sequence the case cites |
 | `crates/vusl/tests/semantics.rs` | Differential test: programs compiled through oxide-vcl run in `vu_model`'s `Config::TIMED` (VCL's schedules rely on Q, P and the flags landing at their latency, which the logical model does not keep), on seeded memories of exactly representable values. Their data memory and kick addresses must be the interpreter's. The particles program runs on a crafted batch. Later, a small random program generator |
 | `programs/<case>/` | Ports of the four scene programs (GPL-3.0 and GPL-2.0 sources, with licence notes like the corpus). In `Config::TIMED` on every scene: packets identical to the hand-written program's and cycles ≤ its cycles, both compiled with `--mode=oxide --opt=all`, and the port's data memory and kicks the interpreter's. An ignored report test prints the table in `docs/VUSL_PERFORMANCE.md` |

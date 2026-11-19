@@ -98,7 +98,7 @@ The Cargo workspace has four crates:
   cases are in `tests/preprocessor/`.
 - `crates/vusl` and `crates/oxide-vusl`, VUSL: a GLSL-like language for VU1
   microprograms that compiles to VCL, and its `oxide-vusl` driver
-  ([plan](docs/plans/VUSL.md)).
+  ([reference](docs/VUSL.md), [compiler](docs/VUSL_COMPILER.md)).
 
 The workspace version (`Cargo.toml`) is the project's version; `oxide-vcl -h`
 prints it with the build date.
@@ -137,6 +137,13 @@ Using the compiler:
 - [Compatibility and known limitations](docs/COMPATIBILITY.md)
 - [Original defects and their fixes](docs/VCL_BUGS.md)
 - [Code generation compared with openvcl](docs/OPENVCL_COMPARISON.md)
+
+VUSL, a shading language compiled to VCL:
+
+- [VUSL reference](docs/VUSL.md): language, costs, pragmas, reflection, command line
+- [The VUSL compiler](docs/VUSL_COMPILER.md): phases, lowering, optimizations, tests
+- [VUSL ports against the hand-written programs](docs/VUSL_PERFORMANCE.md)
+- [The VUSL plan](docs/plans/VUSL.md): the design and its milestones
 
 How vcl 1.4beta7 works, and how the port reproduces it:
 
@@ -180,7 +187,6 @@ Testing and evidence:
 - [Instruction corpus](docs/INSTRUCTION_CORPUS.md)
 - [Runtime oracle](docs/RUNTIME.md)
 - [Optimization plan beyond the original](docs/OPTIMIZATION_PLAN.md)
-- [VUSL: a shading language compiled to VCL](docs/plans/VUSL.md)
 
 ## License
 

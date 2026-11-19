@@ -1,6 +1,6 @@
 //! `oxide-vusl`: the VUSL driver. It reads a program, preprocesses it in C
 //! syntax, checks it, generates VCL and compiles that with `vcl::compile`,
-//! writing the listing and the reflection files (`docs/plans/VUSL.md`). Exit statuses are oxide-vcl's in oxide
+//! writing the listing and the reflection files (`docs/VUSL.md`). Exit statuses are oxide-vcl's in oxide
 //! mode: 1 when a run fails, 2 for a bad command line.
 //!
 //! Everything it prints goes through [`vcl::diagnostics::Reporter`].

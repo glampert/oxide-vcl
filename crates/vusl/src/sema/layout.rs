@@ -1,4 +1,4 @@
-//! Struct layouts in VU data memory: "VU packing" (`docs/plans/VUSL.md`).
+//! Struct layouts in VU data memory: "VU packing" (`docs/VUSL.md`, Memory).
 //!
 //! Members go in order. A scalar takes one lane of a qword and a `vecN` N
 //! consecutive lanes; a member that does not fit in the rest of the qword

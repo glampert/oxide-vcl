@@ -22,8 +22,13 @@ untracked notes are in `CLAUDE.local.md` when present.
   `vcl_cli` library target so tests share the argument parser) and all
   integration tests (`tests/`).
 - `crates/vusl` and `crates/oxide-vusl` (branch `vusl`): VUSL, a GLSL-like
-  language compiled to VCL, and its driver; the plan and its milestones are
-  `docs/plans/VUSL.md`.
+  language compiled to VCL, and its driver. `docs/VUSL.md` is the language
+  for users, `docs/VUSL_COMPILER.md` the implementer's view,
+  `docs/VUSL_PERFORMANCE.md` the ports against their originals, and
+  `docs/plans/VUSL.md` the plan and its milestones.
+- `tests/vusl`: VUSL test data: `check` (errors, warnings and reflection),
+  `codegen` (one generated-VCL case per idiom), `programs` (ports of corpus
+  programs, run on their scenes) and `include`.
 - `tests/corpus`: public VU programs with the original's recorded runs.
 - `tests/probes`: small programs written for this project, each pinning one
   behaviour, with the original's recorded runs.
