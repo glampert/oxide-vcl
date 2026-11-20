@@ -1,0 +1,5 @@
+// A library returns values in registers, into whole variables.
+#pragma library(mathlib, address = 400)
+struct Block { vec4 a; float f; float g; float h; float k; };
+export void square(out float value);
+void main(layout(address = 0) inout Block block) { square(block.f); }

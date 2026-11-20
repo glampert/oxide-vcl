@@ -940,6 +940,79 @@ fn copies_stay_while_a_loop_changes_their_source() {
     });
 }
 
+/// A library's header, its source, and where it lives in micro memory.
+const LIBRARY_HEADER: &str = "#pragma once\n\
+                              #pragma library(mathlib, address = 400, vf = 16, vi = 11)\n\
+                              struct Scratch { vec4 kept; vec4 pad; };\n\
+                              layout(address = 900) inout Scratch scratch;\n\
+                              export float twiceSum(vec4 v, inout int16 count);\n\
+                              export void store(ref<vec4> at, vec4 value);\n\
+                              export int16 bump(int16 value);\n";
+const LIBRARY_SOURCE: &str = "#include \"mathlib.vush\"\n\
+                              export float twiceSum(vec4 v, inout int16 count)\n\
+                              {\n\
+                              \x20   count = count + 1;\n\
+                              \x20   scratch.kept = v;\n\
+                              \x20   return dot(v, v) + v.x;\n\
+                              }\n\
+                              export void store(ref<vec4> at, vec4 value)\n\
+                              {\n\
+                              \x20   at[0] = value * 2.0;\n\
+                              }\n\
+                              export int16 bump(int16 value) { return value + 3; }\n";
+const LIBRARY_ADDRESS: usize = 400;
+
+/// `caller` compiled, and the library at its address after it, as one
+/// program. The caller includes the library's source, so the interpreter
+/// runs the exports' bodies where the code calls them.
+fn with_library(caller: &str) -> Compiled {
+    let mut files = MemoryFiles::new();
+    files.insert("mathlib.vush", LIBRARY_HEADER);
+    files.insert("mathlib.vusl", LIBRARY_SOURCE);
+    let library = compile_with(LIBRARY_SOURCE, &files);
+    let program = compile_with(caller, &files);
+    let pairs = vu_model::Program::parse(&program.assembly)
+        .unwrap()
+        .pair_count();
+    assert!(pairs <= LIBRARY_ADDRESS, "the caller takes {pairs} pairs");
+    let padding = format!("{:9}{:<59}NOP\n", "", "NOP").repeat(LIBRARY_ADDRESS - pairs);
+    Compiled {
+        checked: program.checked,
+        vcl: format!("{}\n{}", program.vcl, library.vcl),
+        assembly: format!("{}\n{padding}{}", program.assembly, library.assembly),
+    }
+}
+
+#[test]
+fn library_calls_mean_their_exports() {
+    // Values live across the calls stay out of the library's registers;
+    // results come back into variables, and stores through a ref reach
+    // the caller's memory.
+    let source = "#include \"mathlib.vusl\"\n\
+                  struct Block { vec4 a; vec4 b; int16 n; int16 m; int16 k; int16 pad1; vec4 out0; float f; float g; float h; float j; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   vec4 kept = block.b + block.a;\n\
+                  \x20   int16 n = block.n;\n\
+                  \x20   float s = twiceSum(block.a, n);\n\
+                  \x20   store(ref<vec4>(block.out0), block.b);\n\
+                  \x20   int16 k = bump(n);\n\
+                  \x20   for (int16 i = 0; i < 2; ++i)\n\
+                  \x20       k = bump(k);\n\
+                  \x20   block.f = s;\n\
+                  \x20   block.g = kept.y;\n\
+                  \x20   block.h = kept.w;\n\
+                  \x20   block.m = n;\n\
+                  \x20   block.k = k;\n\
+                  }\n";
+    let compiled = with_library(source);
+    assert_eq!(compiled.vcl.matches("jalr").count(), 4, "{}", compiled.vcl);
+    agree_compiled(compiled, 6, |memory, _, _| {
+        let n = (memory[5][1] >> 23 & 63) as u16;
+        set_int(memory, 2, 0, n);
+    });
+}
+
 #[test]
 fn the_particle_program() {
     let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/vusl");

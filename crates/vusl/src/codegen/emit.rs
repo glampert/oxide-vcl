@@ -64,6 +64,10 @@ pub struct Output {
     vf_names: Vec<String>,
     vi_names: Vec<String>,
     labels: usize,
+    /// Before every label: a library entry's name, so the entries of one
+    /// listing, and the programs beside them in micro memory, name theirs
+    /// apart.
+    pub label_prefix: String,
 }
 
 /// A name's characters a VCL variable may hold: letters, digits and `_`.
@@ -95,10 +99,23 @@ impl Output {
         Vi::Var(self.vi_names.len() - 1)
     }
 
+    /// Physical register VF`number`, which a library call passes a value
+    /// in: its name is not a variable's, so no pass renames it.
+    pub fn vf_physical(&mut self, number: u8) -> Vf {
+        self.vf_names.push(format!("vf{number:02}"));
+        Vf::Var(self.vf_names.len() - 1)
+    }
+
+    /// Physical register VI`number`, as [`Output::vf_physical`].
+    pub fn vi_physical(&mut self, number: u8) -> Vi {
+        self.vi_names.push(format!("vi{number:02}"));
+        Vi::Var(self.vi_names.len() - 1)
+    }
+
     /// A new label, named after `hint`.
     pub fn label(&mut self, hint: &str) -> String {
         self.labels += 1;
-        format!("l{}_{}", sanitized(hint), self.labels)
+        format!("{}l{}_{}", self.label_prefix, sanitized(hint), self.labels)
     }
 
     pub fn vf_name(&self, reg: Vf) -> String {

@@ -49,7 +49,11 @@ pub fn preprocess(
 
 /// A checked program and its warnings, located in the source files.
 pub struct Checked {
+    /// The program, or for a library's own build the library itself.
     pub program: sema::hir::Program,
+    /// A library's entries, one per export in entry-table order; none for a
+    /// program.
+    pub entries: Vec<sema::hir::Program>,
     pub warnings: Vec<Diagnostic>,
     /// The file each of the program's structs was declared in.
     pub struct_files: Vec<String>,
@@ -89,9 +93,35 @@ impl Checked {
         self.generate_with(codegen::Settings::default())
     }
 
+    /// The program's VCL, or for a library every entry's, one after the
+    /// other.
     pub fn generate_with(&self, settings: codegen::Settings) -> Result<Vcl, Box<Failure>> {
+        if !self.is_library() {
+            return self.generate_program(&self.program, settings);
+        }
+        let mut text = String::new();
+        let mut origins = Vec::new();
+        for entry in &self.entries {
+            let vcl = self.generate_program(entry, settings)?;
+            text.push_str(&vcl.text);
+            origins.extend(vcl.origins);
+        }
+        Ok(Vcl { text, origins })
+    }
+
+    /// Whether this is a library's own build: entries to compile, no
+    /// program.
+    pub fn is_library(&self) -> bool {
+        !self.entries.is_empty()
+    }
+
+    fn generate_program(
+        &self,
+        program: &sema::hir::Program,
+        settings: codegen::Settings,
+    ) -> Result<Vcl, Box<Failure>> {
         let locator = self.locator();
-        match codegen::generate(&self.program, &self.source, settings) {
+        match codegen::generate(program, &self.source, settings) {
             Ok(generated) => Ok(Vcl {
                 text: generated.text,
                 origins: generated
@@ -160,13 +190,58 @@ pub fn compile(
     checked: &Checked,
     options: &Options,
 ) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
+    if checked.is_library() {
+        return compile_library(checked, options);
+    }
+    compile_program(checked, &checked.program, options)
+}
+
+/// A library's own build: an entry table, one pair per export and its
+/// delay slot, each a branch to the export's code, then every export
+/// compiled as a program of its own. Entry `k` so stays at the library's
+/// address plus `2k` whatever its code becomes.
+fn compile_library(
+    checked: &Checked,
+    options: &Options,
+) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
+    let name = &checked.program.name;
+    let mut table = format!(
+        "; {name}: a VUSL library of {} entries\n\t\t.vu\n\t\t.align 4\n\t\t.global\t{name}_CodeStart\n\t\t.global\t{name}_CodeEnd\n{name}_CodeStart:\n",
+        checked.entries.len()
+    );
+    let mut text = String::new();
+    let mut origins = Vec::new();
+    let mut code = String::new();
+    let mut compiled = vcl::Compiled::default();
+    for entry in &checked.entries {
+        let (vcl, entry_compiled) = compile_program(checked, entry, options)?;
+        let jump = format!("{:<14}{}_CodeStart", "b", entry.name);
+        table.push_str(&format!("{}\n", vcl::emit::pair("NOP", &jump)));
+        table.push_str(&format!("{}\n", vcl::emit::pair("NOP", "NOP")));
+        text.push_str(&vcl.text);
+        origins.extend(vcl.origins);
+        code.push_str(&entry_compiled.assembly);
+        compiled.instruction_pairs += entry_compiled.instruction_pairs;
+        compiled.warnings.extend(entry_compiled.warnings);
+    }
+    compiled.instruction_pairs += 2 * checked.entries.len();
+    compiled.assembly = format!("{table}{code}\t\t.align 4\n{name}_CodeEnd:\n");
+    Ok((Vcl { text, origins }, compiled))
+}
+
+/// `program`'s VCL compiled, as [`compile`] describes.
+fn compile_program(
+    checked: &Checked,
+    program: &sema::hir::Program,
+    options: &Options,
+) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
     let mut failure = None;
     let mut best: Option<(Vcl, vcl::Compiled)> = None;
     for hoist_limit in HOIST_LIMITS {
         let vcl = checked
-            .generate_with(codegen::Settings { hoist_limit })
+            .generate_program(program, codegen::Settings { hoist_limit })
             .map_err(|failure| Box::new(CompileFailure::Generate(failure)))?;
-        match assemble(&vcl, &checked.program.name, options) {
+        match assemble(&vcl, &program.name, options) {
             Ok(compiled) => {
                 let fewer = best
                     .as_ref()
@@ -309,6 +384,7 @@ pub fn check(name: &str, preprocessed: &Preprocessed) -> Result<Checked, Box<Fai
                 .collect();
             Ok(Checked {
                 program,
+                entries: checking.entries,
                 warnings,
                 struct_files,
                 source: name.to_string(),

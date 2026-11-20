@@ -225,6 +225,11 @@ impl Interpreter<'_, '_> {
                 }
             }
             Stmt::Barrier { .. } => {}
+            // A library call means its export inlined.
+            Stmt::Call { setup, body, .. } => {
+                self.stmts(setup)?;
+                self.stmts(body)?;
+            }
         }
         Ok(Flow::Normal)
     }

@@ -19,6 +19,7 @@ use super::emit::{Vf, Vi};
 use crate::sema::hir::*;
 use crate::sema::layout::{Extent, StructDef};
 use crate::sema::types::{Lane, Type};
+use crate::syntax::ast::Qualifier;
 
 /// A value lowering can find again.
 #[derive(Clone, Debug, PartialEq)]
@@ -157,6 +158,16 @@ pub(super) struct Region {
     path: Vec<Step>,
 }
 
+impl Region {
+    /// Any memory: what a library call may store to.
+    pub fn anywhere() -> Self {
+        Region {
+            param: usize::MAX,
+            path: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Step {
     Member(usize),
@@ -202,6 +213,8 @@ fn steps(structs: &[StructDef], mut id: Option<usize>, path: &[usize], out: &mut
 
 fn base_struct(program: &Program, base: Base) -> Option<usize> {
     let ty = match base {
+        // A library caller's memory, which the library knows nothing of.
+        Base::Param(usize::MAX) => return None,
         Base::Param(index) => &program.params[index].ty,
         Base::Element(element) => &program.elements[element].ty,
         Base::Ref(local) => match &program.locals[local].ty {
@@ -222,6 +235,7 @@ pub(super) fn region(program: &Program, place: &Place) -> Region {
 /// The region of the members `path` from `base`.
 fn base_region(program: &Program, base: Base, path: &[usize]) -> Region {
     let mut region = match base {
+        Base::Param(usize::MAX) => return Region::anywhere(),
         Base::Param(param) => Region {
             param,
             path: Vec::new(),
@@ -274,6 +288,14 @@ fn may_alias(program: &Program, region: &Region, at: Option<(Vi, i64, i64)>, rea
     {
         return (offset..offset + qwords).contains(&read_offset);
     }
+    // A store anywhere, through a ref from a library's caller or by a
+    // library call, never writes `uniform` memory, which nothing writes.
+    if region.param == usize::MAX
+        && read.region.param != usize::MAX
+        && program.params[read.region.param].qualifier == Qualifier::Uniform
+    {
+        return false;
+    }
     params_overlap(program, region.param, read.region.param)
         && (region.path.starts_with(&read.region.path)
             || read.region.path.starts_with(&region.path))
@@ -322,6 +344,17 @@ impl Effects {
                     self.add(program, body);
                 }
                 Stmt::Yield { .. } => self.yields = true,
+                // A library call sets its parameters' locals and results,
+                // and may store anywhere.
+                Stmt::Call { setup, args, .. } => {
+                    self.add(program, setup);
+                    for local in args.iter().filter_map(|arg| arg.output) {
+                        if !self.locals.contains(&local) {
+                            self.locals.push(local);
+                        }
+                    }
+                    self.stores.push(Region::anywhere());
+                }
                 Stmt::Kick { .. }
                 | Stmt::Break { .. }
                 | Stmt::Continue { .. }
@@ -618,6 +651,7 @@ impl Invariants<'_> {
                     }
                     self.stmts(body, out);
                 }
+                Stmt::Call { setup, .. } => self.stmts(setup, out),
                 Stmt::Copy { .. }
                 | Stmt::Kick { .. }
                 | Stmt::Break { .. }

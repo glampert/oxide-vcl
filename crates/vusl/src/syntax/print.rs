@@ -38,15 +38,24 @@ pub fn file(file: &File) -> String {
             }
             Item::Function(function) => {
                 let params: Vec<String> = function.params.iter().map(param).collect();
-                let _ = writeln!(
+                let _ = write!(
                     out,
-                    "{} {}({})",
+                    "{}{} {}({})",
+                    if function.export { "export " } else { "" },
                     type_name(&function.ret),
                     function.name.name,
                     params.join(", ")
                 );
-                block(&mut out, &function.body, 0);
-                out.push('\n');
+                if function.prototype {
+                    out.push_str(";\n");
+                } else {
+                    out.push('\n');
+                    block(&mut out, &function.body, 0);
+                    out.push('\n');
+                }
+            }
+            Item::Memory(memory) => {
+                let _ = writeln!(out, "{};", param(memory));
             }
         }
     }

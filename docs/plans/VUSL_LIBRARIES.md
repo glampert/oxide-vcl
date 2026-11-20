@@ -6,9 +6,9 @@
 |---|---|
 | 0. Design | Done (this document) |
 | 1. Calls in oxide-vcl | Done |
-| 2. Libraries in VUSL | Not started |
-| 3. The doom3 clipper as a library | Not started |
-| 4. Docs | Not started |
+| 2. Libraries in VUSL | Done |
+| 3. The doom3 clipper as a library | Done |
+| 4. Docs | Done |
 
 ## Context
 
@@ -110,11 +110,15 @@ branches are relative, so its listing can be placed anywhere.
 ```glsl
 // clipper.vush
 #pragma once
-#pragma library(clipper, address = 1600, vf = 16, vi = 11)
+#pragma library(clipper, address = 1536, vf = 24, vi = 10, saved_vf = 8, saved_vi = 4, save = saves)
 #include "doom3.vush"
 
+struct ClipSaves { qword q[9]; };
+struct ClipSpill { qword q[7]; };
 layout(address = 0) uniform Frame frame;              // the library's own memory
 layout(address = 957) inout ClipBuffers clip;
+layout(address = 1008) inout ClipSaves saves;          // its saved registers
+layout(address = 1017, spill) inout ClipSpill spill;   // its work area
 
 export void ClipTriangle(inout ref<WindowVertex> cursor, inout int16 room,
                          ref<Projected> a, ref<Projected> b, ref<Projected> c, float pass);
@@ -124,6 +128,10 @@ export void ClipTriangle(inout ref<WindowVertex> cursor, inout int16 room,
   it is uploaded to, and its register bank: VF*F*–VF31 and VI*I*–VI14. Arguments, results and the
   library's own values use the bank, and every call clobbers it, with VI15 (the link), VI01, ACC,
   Q, P, I and the MAC and clip flags. The defaults are VF16 and VI11.
+- `saved_vf = n`, `saved_vi = n` and `save = memory` let the library work in the *n* registers below
+  each bank too: an entry stores them to `memory` on entry, behind a barrier, and loads them back
+  before it returns. A call then clobbers only the bank. Without saves the clipper needs VI06–VI14
+  as its bank, and its callers cannot keep their loop state through a call.
 - **Memory at file scope.** The header binds the library's memory with the same placements as
   `main`'s parameters. In a caller these are memory the program does not name but the library
   uses: they take part in the overlap check against `main`'s parameters (unless one says `alias`),
@@ -154,7 +162,8 @@ The table costs one branch per call.
 - **A call** to an exported function becomes the arguments moved into their registers, the entry
   address `iaddiu`, a `--call` block and the JALR, then the results moved out. Values live across
   it stay out of the bank.
-- **The value cache** forgets every value read from memory, Q, and the clip flags' judgements.
+- **The value cache** forgets every value read from memory other than `uniform` memory, Q, and the
+  clip flags' judgements.
 - **The interpreter** runs a call as the inlined body when the definition is visible, so tests
   include the library's source rather than only its header; a program that sees only the
   prototype still compiles.
@@ -174,20 +183,27 @@ The table costs one branch per call.
 
 ## Costs
 
-- **Cycles per call:** about 6 to 8. That is the address `iaddiu`, the JALR and its delay slot, the
-  entry table's branch and its delay slot, the JR and its delay slot, the argument and result
-  moves, and the scheduling lost at the call. The clipper runs only for
-  triangles outside the guard band, so the scenes' totals should move by well under 1%; the
-  programs suite measures it.
+Measured in `docs/VUSL_PERFORMANCE.md` ("Libraries"): the two library ports and the clipper take
+34% fewer instructions than the two inlined ports, and the scenes from 29% fewer to 12% more cycles
+than the hand-written programs (the inlined ports: 3% to 43% fewer).
+
+- **Register pressure** is most of it: what a loop keeps live across a call cannot use the bank,
+  and vcl keeps a value that crosses streams in one register for all of them, so some of the
+  callers' values live in the work area for the whole program.
+- **Each call:** the address `iaddiu`, the JALR, the entry table's branch and the JR, each with its
+  delay slot, the argument and result moves, the saves and restores, and the scheduling lost at
+  the call.
 - **Specialization:** constants that inlining folds into the callee, such as world_lm's pass, are
   arguments instead.
-- **Register pressure** near calls: values live across a call cannot use the bank.
 
 ## Decisions
 
-- **The bank** is VF16–VF31 and VI11–VI14 by default: the clipper's passes need more VF
-  registers than eight. A library may also spill to a work area of its own.
-- **Library memory:** a library owns data memory, declared in its header.
+- **The bank** is VF16–VF31 and VI11–VI14 by default. The clipper's is VF24–VF31 and VI10–VI14
+  (its five VI arguments), with VF16–VF23 and VI06–VI09 saved. A library may also spill to a
+  work area of its own.
+- **Library memory:** a library owns data memory, declared in its header. Memory it only reads may
+  overlap its callers'; memory it writes may not. The clipper's saves and work area take
+  1008–1023, which doom3's memory map leaves free.
 - **Entry addresses** are numbers: the header gives the library's address, and the entry table
   fixes each entry's offset.
 - **Branch:** the work continues on `vusl`.

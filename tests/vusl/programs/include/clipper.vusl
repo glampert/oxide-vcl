@@ -1,0 +1,8 @@
+// The clipper library's own build (clipper.vush).
+#include "clipper.vush"
+
+export void ClipTriangle(inout ref<WindowVertex> cursor, inout int16 room,
+                         ref<Projected> a, ref<Projected> b, ref<Projected> c, float pass)
+{
+    clipTriangle(frame, clip, cursor, room, a, b, c, pass);
+}

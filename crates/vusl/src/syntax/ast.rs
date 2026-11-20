@@ -25,6 +25,9 @@ pub enum Item {
     Struct(StructDecl),
     Const(ConstDecl),
     Function(Function),
+    /// `layout(...) qualifier Type name;`: memory a library binds at file
+    /// scope, as `main` binds its parameters.
+    Memory(Param),
 }
 
 /// `#pragma name` or `#pragma name(arguments)`.
@@ -151,13 +154,17 @@ pub struct Param {
     pub pos: Pos,
 }
 
-/// `type name(parameters) { body }`.
+/// `type name(parameters) { body }`, or with `export` before it, a
+/// library's entry. A prototype (`export type name(parameters);`) has an
+/// empty body.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Function {
     pub ret: TypeName,
     pub name: Ident,
     pub params: Vec<Param>,
     pub body: Block,
+    pub export: bool,
+    pub prototype: bool,
     pub pos: Pos,
 }
 

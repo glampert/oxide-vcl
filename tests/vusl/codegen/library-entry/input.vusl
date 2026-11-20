@@ -1,0 +1,16 @@
+// A library's entry: its registers kept to the bank (.init_vf/.init_vi),
+// the parameters bound where the caller put them, the result in the next
+// register of its kind, and --return through VI15. A ref from the caller
+// may point at any memory.
+#pragma library(mathlib, address = 400, vf = 16, vi = 11)
+export float lengthOf(vec4 v, int16 count);
+export void store(ref<vec4> at, vec4 value);
+export float lengthOf(vec4 v, int16 count)
+{
+    return dot(v, v) + float(count);
+}
+export void store(ref<vec4> at, vec4 value)
+{
+    at[0] = value * 2.0;
+    at[1] = value;
+}

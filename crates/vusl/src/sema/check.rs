@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use super::consteval;
-use super::hir::{Const, Param, ParamPlacement, Vif};
+use super::hir::{Const, Library, Param, ParamPlacement, Vif};
 use super::layout::{MemberSpec, Packer, StructDef, Unpack};
 use super::types::{Lane, Length, StructId, Type, builtin_type};
 use super::{Checked, Problem, problem};
@@ -22,8 +22,23 @@ pub struct Declarations<'a> {
     /// File-scope constants: their value and type.
     pub consts: HashMap<String, (Const, Type)>,
     pub functions: HashMap<String, &'a ast::Function>,
-    pub main: &'a ast::Function,
+    /// `main`, which a library's own build has none of.
+    pub main: Option<&'a ast::Function>,
     pub program_name: Option<String>,
+    /// `#pragma library(...)`: the library the program calls, or is.
+    pub library: Option<Library>,
+    /// The library's exports, in declaration order: their entry indices.
+    pub exports: Vec<String>,
+    /// The library's memory, bound at file scope.
+    pub memory: Vec<&'a ast::Param>,
+}
+
+impl Declarations<'_> {
+    /// Whether a call of `name` calls the library rather than inlining:
+    /// in a program, which has `main`, calls of exports do.
+    pub fn calls_library(&self, name: &str) -> bool {
+        self.main.is_some() && self.exports.iter().any(|export| export == name)
+    }
 }
 
 impl Declarations<'_> {
@@ -125,11 +140,80 @@ pub fn declarations<'a>(
     let mut functions: HashMap<String, &'a ast::Function> = HashMap::new();
     let mut main = None;
     let mut program_name: Option<String> = None;
+    let mut library: Option<Library> = None;
+    let mut exports: Vec<String> = Vec::new();
+    let mut memory: Vec<&'a ast::Param> = Vec::new();
     let xitop = xitop_names(file);
     for item in &file.items {
         match item {
+            Item::Pragma(pragma) if pragma.name.name == "library" => {
+                if library.is_some() {
+                    return Err(Box::new(problem(
+                        VuslMessage::Redeclared {
+                            name: "#pragma library".into(),
+                        },
+                        pragma.pos,
+                    )));
+                }
+                library = Some(library_pragma(pragma, &consts)?);
+            }
             Item::Pragma(pragma) => {
                 program_pragma(pragma, &mut program_name, warnings)?;
+            }
+            Item::Memory(param) => {
+                if library.is_none() {
+                    return Err(Box::new(problem(
+                        VuslMessage::OutsideLibrary {
+                            what: "memory at file scope",
+                        },
+                        param.pos,
+                    )));
+                }
+                if memory
+                    .iter()
+                    .any(|other| other.name.name == param.name.name)
+                {
+                    return Err(Box::new(problem(
+                        VuslMessage::Redeclared {
+                            name: param.name.name.clone(),
+                        },
+                        param.name.pos,
+                    )));
+                }
+                memory.push(param);
+            }
+            Item::Function(function) if function.export => {
+                if library.is_none() {
+                    return Err(Box::new(problem(
+                        VuslMessage::OutsideLibrary { what: "export" },
+                        function.pos,
+                    )));
+                }
+                let name = &function.name.name;
+                match functions.get(name) {
+                    // A definition after its prototype, with the same
+                    // signature.
+                    Some(earlier) if earlier.prototype && !function.prototype => {
+                        if !same_signature(earlier, function) {
+                            return Err(Box::new(
+                                problem(
+                                    VuslMessage::ExportMismatch { name: name.clone() },
+                                    function.name.pos,
+                                )
+                                .with_note(
+                                    earlier.name.pos,
+                                    VuslMessage::FirstDeclaredHere { name: name.clone() },
+                                ),
+                            ));
+                        }
+                        functions.insert(name.clone(), function);
+                    }
+                    _ => {
+                        names.declare(&function.name)?;
+                        exports.push(name.clone());
+                        functions.insert(name.clone(), function);
+                    }
+                }
             }
             Item::Struct(decl) => {
                 names.declare(&decl.name)?;
@@ -179,11 +263,14 @@ pub fn declarations<'a>(
             }
         }
     }
-    let Some(main) = main else {
-        return Err(Box::new(problem(VuslMessage::NoMain, Pos::default())));
-    };
-    if main.ret.name.name != "void" || main.ret.argument.is_some() {
-        return Err(Box::new(problem(VuslMessage::MainReturns, main.ret.pos)));
+    match main {
+        None if library.is_none() => {
+            return Err(Box::new(problem(VuslMessage::NoMain, Pos::default())));
+        }
+        Some(main) if main.ret.name.name != "void" || main.ret.argument.is_some() => {
+            return Err(Box::new(problem(VuslMessage::MainReturns, main.ret.pos)));
+        }
+        _ => {}
     }
     Ok(Declarations {
         structs,
@@ -192,6 +279,85 @@ pub fn declarations<'a>(
         functions,
         main,
         program_name,
+        library,
+        exports,
+        memory,
+    })
+}
+
+/// Whether two declarations of a function have the same signature.
+fn same_signature(a: &ast::Function, b: &ast::Function) -> bool {
+    let ty = |ty: &ast::TypeName| crate::syntax::print::type_name(ty);
+    ty(&a.ret) == ty(&b.ret)
+        && a.params.len() == b.params.len()
+        && a.params.iter().zip(&b.params).all(|(x, y)| {
+            ty(&x.ty) == ty(&y.ty)
+                && x.qualifier.map(|(q, _)| q) == y.qualifier.map(|(q, _)| q)
+                && x.name.name == y.name.name
+        })
+}
+
+/// `#pragma library(name, address = A, vf = F, vi = I)`.
+fn library_pragma(
+    pragma: &ast::Pragma,
+    consts: &HashMap<String, (Const, Type)>,
+) -> Checked<Library> {
+    let bad = || {
+        Box::new(problem(
+            VuslMessage::BadPragma {
+                name: "library".into(),
+                expected: "(name, address = A, vf = F, vi = I, saved_vf = SF, saved_vi = SI, save = memory): the library's micro address, the first VF and VI registers of its bank (at most 31 and 14), and how many registers below each it saves, in its memory `save`",
+            },
+            pragma.pos,
+        ))
+    };
+    let args = pragma.args.as_deref().ok_or_else(bad)?;
+    let mut name = None;
+    let (mut address, mut vf, mut vi) = (None, 16, 11);
+    let (mut saved_vf, mut saved_vi, mut save) = (0, 0, None);
+    for arg in args {
+        match arg.name.as_ref().map(|name| name.name.as_str()) {
+            None if arg.is_flag() && name.is_none() => name = arg.key().map(str::to_string),
+            Some("saved_vf") => saved_vf = integer_value(arg, consts).ok_or_else(bad)?,
+            Some("saved_vi") => saved_vi = integer_value(arg, consts).ok_or_else(bad)?,
+            Some("save") => save = Some(name_value(arg).ok_or_else(bad)?.to_string()),
+            Some("address") => {
+                address = integer_value(arg, consts).filter(|&value| value < 2048);
+                if address.is_none() {
+                    return Err(bad());
+                }
+            }
+            Some("vf") => {
+                vf = integer_value(arg, consts)
+                    .filter(|&v| (1..=31).contains(&v))
+                    .ok_or_else(bad)?
+            }
+            Some("vi") => {
+                vi = integer_value(arg, consts)
+                    .filter(|&v| (2..=14).contains(&v))
+                    .ok_or_else(bad)?
+            }
+            _ => return Err(bad()),
+        }
+    }
+    let (Some(name), Some(address)) = (name, address) else {
+        return Err(bad());
+    };
+    // Saved registers below the banks: VF01 up and VI02 up (VI01 is the
+    // clip flags'), and somewhere to save them.
+    let saves = saved_vf + saved_vi > 0;
+    if saved_vf >= vf || saved_vi + 2 > vi || saves != save.is_some() {
+        return Err(bad());
+    }
+    Ok(Library {
+        name,
+        address: address as u16,
+        vf: vf as u8,
+        vi: vi as u8,
+        saved_vf: saved_vf as u8,
+        saved_vi: saved_vi as u8,
+        save,
+        pos: pragma.pos,
     })
 }
 
@@ -498,9 +664,18 @@ fn array_length(
 /// `main`'s parameters, bound in memory.
 pub fn bindings(decls: &Declarations) -> Checked<Vec<Param>> {
     let mut params: Vec<Param> = Vec::new();
-    let mut seen: HashMap<String, Pos> = HashMap::new();
-    for param in &decls.main.params {
+    // main's parameters and the library's memory are named apart: the
+    // library's are seen only in its functions.
+    let mut seen: [HashMap<String, Pos>; 2] = [HashMap::new(), HashMap::new()];
+    let declared = decls
+        .main
+        .iter()
+        .flat_map(|main| &main.params)
+        .map(|param| (param, false))
+        .chain(decls.memory.iter().map(|param| (*param, true)));
+    for (param, library) in declared {
         let name = &param.name.name;
+        let seen = &mut seen[usize::from(library)];
         if let Some(first) = seen.get(name) {
             return Err(Box::new(
                 problem(
@@ -579,8 +754,11 @@ pub fn bindings(decls: &Declarations) -> Checked<Vec<Param>> {
                 }
                 "spill" if arg.is_flag() => spill = true,
                 "alias" => {
-                    let other = name_value(arg)
-                        .and_then(|other| params.iter().position(|earlier| earlier.name == other));
+                    let other = name_value(arg).and_then(|other| {
+                        params
+                            .iter()
+                            .position(|earlier| earlier.name == other && earlier.library == library)
+                    });
                     alias = Some(other.ok_or_else(|| {
                         bad_value(key, "the name of an earlier parameter", arg.pos)
                     })?);
@@ -695,6 +873,7 @@ pub fn bindings(decls: &Declarations) -> Checked<Vec<Param>> {
             placement,
             spill,
             alias,
+            library,
             pos: param.name.pos,
         });
     }
@@ -727,6 +906,16 @@ fn check_overlaps(decls: &Declarations, params: &[Param]) -> Checked<()> {
         for &(second, other_start, other_end) in &regions[position + 1..] {
             let aliased =
                 params[second].alias == Some(first) || params[first].alias == Some(second);
+            // Memory a library only reads, such as the frame constants, may
+            // be the caller's too: the library reads it at the call, and
+            // never writes it. Memory it writes is its own.
+            let read_only =
+                |param: &Param| matches!(param.qualifier, Qualifier::Uniform | Qualifier::In);
+            let shared = (params[first].library != params[second].library)
+                && [first, second]
+                    .iter()
+                    .all(|&index| !params[index].library || read_only(&params[index]));
+            let aliased = aliased || shared;
             let empty = start == end || other_start == other_end;
             if !aliased && !empty && start < other_end && other_start < end {
                 return Err(Box::new(problem(

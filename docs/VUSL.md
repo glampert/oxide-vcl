@@ -52,14 +52,15 @@ A file holds, at file scope:
 - **Types:** `struct` declarations.
 - **Constants:** `const int16 kName = 45;` and `const float kHalf = 0.5;`.
 - **Functions:** C-like definitions, with `in` (the default), `out` and `inout` parameters. Every
-  call is inlined, so a function costs nothing and cannot recurse. A function that is never
-  called is not checked, and there is a warning about it.
+  call is inlined, so a function costs nothing and cannot recurse, except a call of a
+  [library](#libraries)'s export. A function that is never called is not checked, and there is a
+  warning about it.
 - **One `main`:** `void main(...)`. Its parameters are the program's memory (see
   [main's parameters](#mains-parameters)).
 - **Pragmas** (see [pragmas](#pragmas)).
 
 There are no global variables. Data reaches the program through `main`'s parameters, and
-functions see only their own parameters.
+functions see only their own parameters and, in a library, the library's memory.
 
 The text goes through the C-syntax preprocessor first (`docs/PREPROCESSOR.md`, "C syntax
 (VUSL)"): `#include`, `#define` with arguments, `#if`, `#pragma once`. `__VUSL__` is defined as 1.
@@ -354,6 +355,7 @@ The most instructions each construct emits. Value reuse, hoisting and the peepho
 | A range-for | A guard, a pointer step per distinct stride, the exit branch |
 | A struct copy | 2 per qword |
 | A function call | 0: inlined. An `in` argument that is a local the call leaves alone, or a constant, is not copied |
+| A library call | A move per argument and result, the entry address, the JALR and its delay slot, the entry table's branch and its delay slot, the library's saves and restores, its JR and its delay slot |
 | `xgkick` | 1, plus the address when it is not in a register |
 
 ## What the compiler does for you
@@ -426,6 +428,85 @@ A loop without a pipeline pragma gets no hint, and oxide-vcl's `loops` optimizat
 whether to pipeline it. A loop is pipelined only when it is one block (no `if`, `break` or
 `continue`) that ends in its exit branch, with no `xgkick`, XTOP, XITOP or barrier inside. Unknown
 pragmas are warnings.
+
+## Libraries
+
+A library is code compiled once, kept resident in micro memory, and called by any program: for
+code several programs share whose size matters more than a call's cycles, such as a clipper.
+Calls go through oxide-vcl's `--call` and `--return` (`docs/VCL_REFERENCE.md`, calls), so a
+program that calls a library needs `--mode=oxide`, the default.
+
+**The header** is VUSL that the library and its callers both include. It names the library, binds
+the library's memory, and declares its exports:
+
+```glsl
+// mathlib.vush
+#pragma once
+#pragma library(mathlib, address = 1536, vf = 24, vi = 10, saved_vf = 4, saved_vi = 2, save = saves)
+
+struct Constants { vec4 scale; };
+struct Saves { qword q[5]; };
+layout(address = 0) uniform Constants constants;   // memory the library only reads
+layout(address = 1000) inout Saves saves;          // where it saves registers
+
+export vec4 scaled(vec4 value, int16 times);
+```
+
+- **`#pragma library(name, address = A, vf = F, vi = I, ...)`**:
+  - `address` is the micro address the library is uploaded to, in 64-bit instructions.
+  - `vf` and `vi` start its register bank, VF*F*–VF31 and VI*I*–VI14 (by default VF16 and VI11).
+    Arguments and results travel in the bank, and every call may change all of it, VI15 (the link)
+    and VI01 too.
+  - `saved_vf = n` and `saved_vi = n` let the library also work in the *n* registers below each
+    bank, which it saves on entry and puts back before it returns. `save = memory` names the
+    library memory they go to: an `inout` struct at an address, with a qword for each four VI
+    registers and one for each VF register.
+- **Memory at file scope.** A header binds the library's memory with `main`'s placements. Only the
+  library's functions see it by name. Memory the library writes must not overlap its callers'
+  memory; memory it only reads may, such as frame constants. A `layout(spill)` memory is the
+  library's work area.
+- **Exports** are declared with `export` and no body, in the order of the library's entry table:
+  export *k* is at `address + 2k`. The library's source repeats each one with its body, and
+  functions that are not exported are inlined into them.
+
+**The calling convention** comes from the signature. In declaration order, `int16` and `ref<T>`
+parameters take VI*I*, VI*I+1*, ..., and `float`, vectors and raw integer types take VF*F*,
+VF*F+1*, ..., in their lanes from x. A return value takes the next register of its kind. `in` and
+`inout` values travel in, `out` and `inout` values and the result travel back. Memory passes by
+ref, and a ref the library gets may point anywhere, so its stores may change any memory but
+`uniform` memory. A signature that does not fit the bank is an error. An `out` or `inout`
+argument must be a whole variable.
+
+**A program** includes the header and calls the exports like functions:
+
+```glsl
+#include "mathlib.vush"
+
+struct Block { vec4 value; int16 count; int16 pad0; int16 pad1; int16 pad2; vec4 result; };
+
+void main(layout(address = 4) inout Block block)
+{
+    block.result = scaled(block.value, block.count);
+}
+```
+
+A call moves its arguments into their registers, calls, and moves the results out. What is live
+across it stays out of the bank, or goes to the program's work area, so values the program keeps
+in registers through a call cost registers. Afterwards the program reads memory again, but not
+`uniform` memory.
+
+**The library's build** is a file with the header, the exports' bodies and no `main`. It writes one
+listing: the entry table, a branch and its delay slot per export, then each export compiled as a
+program of its own. The table keeps the entries' addresses when the library's code changes, so
+callers need only the header.
+
+**The interpreter** runs a call as the export's body, so a program checked against the
+interpreter includes the library's source rather than only its header. A program that sees only
+the prototypes still compiles.
+
+Rejected: `export` or file-scope memory without `#pragma library`; a definition whose signature is
+not its prototype's; a library build that leaves an export undefined; memory, `bool`, matrices or
+`clipflags` as export parameters; `yield` in an export.
 
 ## Reflection
 

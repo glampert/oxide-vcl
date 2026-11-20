@@ -1,0 +1,3 @@
+// The bank VI13-VI14 holds two int16 values, not three.
+#pragma library(mathlib, address = 400, vi = 13)
+export void scale(int16 a, int16 b, int16 c) { }

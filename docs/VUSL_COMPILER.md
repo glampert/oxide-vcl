@@ -54,6 +54,11 @@ Neither crate has external dependencies. The `vcl` crate provides the preprocess
 
 `vusl::compile` runs 6 and 7 up to three times (see [hoisting](#hoisting)).
 
+A file with `#pragma library` and no `main` is a library's own build (`elaborate::library`): its
+checked result is the library (its memory, no code) and one *entry* program per export, in
+entry-table order. `vusl::compile` compiles each entry on its own, as above, and writes the entry
+table before them ([libraries](#libraries)).
+
 ### Elaboration
 
 Inlining is by substitution: a function's parameters are symbols in a scope of their own.
@@ -177,6 +182,40 @@ keeps at most `Settings::hoist_limit` values. `vusl::compile` generates the prog
 the one with the fewest. A vcl error other than running out of registers or work area ends the
 attempts.
 
+## Libraries
+
+A library's calls go through oxide-vcl's `--call` and `--return` (`docs/VCL_REFERENCE.md`,
+calls), which give vcl the register contract it cannot see across programs.
+
+- **Declarations** (`sema/check.rs`). `#pragma library` gives a `Library`: the name, the micro
+  address, the banks and the saved registers. File-scope memory is bound after `main`'s parameters
+  with `Param::library` set, under names of its own that only functions see. The overlap check
+  lets library memory that is `uniform` or `in` share a caller's memory. Exports keep their
+  declaration order, which is their entry index; a definition replaces its prototype when the
+  signatures agree.
+- **The calling convention** (`elaborate::call_registers`) is computed the same way for a call and
+  for the entry, from the signature alone.
+- **A call** (`Elaborator::library_call`). A call of an export from a program is
+  `Stmt::Call`: the inlined setup and body, which the interpreter runs, and a `CallArg` per value,
+  with its register, the expression passed in and the local it comes back into. A call that sees
+  only the prototype has no body. The clip epoch advances: the library judges.
+- **Lowering a call** (`Lowering::library_call`). The setup is lowered, each argument computed
+  into its physical register (`Output::vf_physical`, a name the peephole passes never take for a
+  variable), then `iaddiu entry, vi00, address`, a `--call` block reading the arguments and
+  writing the whole bank, VI15 and VI01, and `jalr vi15, entry`. After it the value cache forgets
+  what was read from memory other than `uniform` memory, Q is unknown, the clip judgements are out
+  of reach, and each result is moved into its local.
+- **An entry** (`hir::Entry`). Its parameters are locals bound in `--enter` to their registers, VI15
+  with them. `.init_vf` and `.init_vi` keep it to the bank and the saved registers. A saved
+  register comes in under a name of its own, is stored to the `save` memory (four VI registers a
+  qword, `isw`; a VF register a qword, `sq`), and the code then runs behind a `--barrier`, so the
+  register is free there. Before `--return vi15`, behind another barrier, the saved registers are
+  loaded back and bound as outputs with the results. A ref parameter's `Within` is any memory
+  (`Base::Param(usize::MAX)`), whose stores alias everything but `uniform` memory. Labels take the
+  entry's name as a prefix, since entries share one listing.
+- **The library's listing** (`compile_library`) is the entry table, `b <entry>_CodeStart` and a NOP
+  pair per export, then each entry's listing.
+
 ## The peephole passes
 
 `codegen/peephole.rs` runs over the finished instruction list (`emit::Line`), in this order:
@@ -184,7 +223,8 @@ attempts.
 1. **`coalesce_moves`.** A temporary written by one instruction and then moved whole into a register
    is written there directly.
 2. **`propagate_copies`.** A copy (`move`, `iaddiu r, t, 0`) whose destination is only read after it
-   is replaced by its source. The source must keep its value up to the destination's last reader
+   is replaced by its source. A variable that a declaration line names (an entry's `in_vi
+   icursor_3(vi11)`) keeps its name, and counts those lines among its mentions. The source must keep its value up to the destination's last reader
    in program order. A branch from further on back into that stretch extends it to the branch, so
    a loop that changes the source keeps the copy. A branch from before the copy into the stretch
    rules it out (`live_range`). A VI01 source stays within its block, since FCAND rewrites it.
@@ -229,9 +269,9 @@ driver prints.
 | `tests/vusl/check/<case>/` (`crates/oxide-vusl/tests/check.rs`) | `input.vusl` and `expected.stderr`: every error and warning, through the driver. Cases with an `expected.json` and `expected.h` are also the reflection suite |
 | `crates/oxide-vusl/tests/reflect.rs` | The reflection of those cases, and every header compiled together with `c++ -std=c++17 -fsyntax-only -Wall -Wextra -Werror -pedantic` when a compiler is present (`CXX` picks it) |
 | `tests/vusl/codegen/<case>/` (`crates/oxide-vusl/tests/codegen.rs`) | `expected.vcl`, the `--stop-at-vcl` output, for each idiom below. Each also compiles through vcl |
-| `crates/vusl/tests/semantics.rs` | Differential tests: inline programs compiled through oxide-vcl run in `vu_model`'s timed configuration on seeded memories of exactly representable values, and their data memory and kicks must be the interpreter's. `agree_resumed` resumes at yields with new batches |
-| `crates/vusl/tests/programs.rs` | The ports in `tests/vusl/programs` on their scenes: packets identical to the hand-written program's, no more cycles, and memory and kicks the interpreter's. Its ignored `report` test prints `docs/VUSL_PERFORMANCE.md`'s table |
-| `crates/vusl/tests/reference.rs` | Every complete program in `docs/VUSL.md` checks and compiles |
+| `crates/vusl/tests/semantics.rs` | Differential tests: inline programs compiled through oxide-vcl run in `vu_model`'s timed configuration on seeded memories of exactly representable values, and their data memory and kicks must be the interpreter's. `agree_resumed` resumes at yields with new batches; `with_library` lays a program and a library out in one micro memory |
+| `crates/vusl/tests/programs.rs` | The ports in `tests/vusl/programs` on their scenes: packets identical to the hand-written program's, no more cycles, and memory and kicks the interpreter's. A `<case>_lib` port runs with its library at the library's address, and instead of the cycle bound takes fewer instructions, its library's included, than the inlined `<case>`. Its ignored `report` test prints `docs/VUSL_PERFORMANCE.md`'s table |
+| `crates/vusl/tests/reference.rs` | Every complete program in `docs/VUSL.md` checks and compiles, with its header blocks as include files |
 | `crates/oxide-vusl/tests/driver.rs` | The command line: options, outputs written all or none, exit statuses, diagnostics |
 
 The semantics and programs suites use `crates/oxide-vcl/tests/support/vu_model.rs` and
@@ -261,6 +301,9 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `load-reuse` | One `lq` for every lane of a qword, again after a store, and raw bits copied |
 | `ref-cursor` | A ref as an output cursor, and the count written |
 | `unrolled-range` | `unroll(2)` on a run-time count: `iand`, pairs, then the rest |
+| `library-call` | A library call: arguments into the bank, the `--call` block, the JALR, the result moved out |
+| `library-entry` | A library's entries: the bank's `.init_vf`/`.init_vi`, parameters bound in `--enter`, `--return vi15` |
+| `library-saves` | An entry's saved registers: stored behind a barrier on entry, loaded back before `--return` |
 | `particles` | The particles port: 16 upper and 16 lower instructions in its loop, where the hand-written loop has 19 and 17 |
 
 ## Debugging

@@ -1,0 +1,4 @@
+input.vusl(3): error: yield outside main
+   3 | export void scale(int16 count) { yield; }
+     |                                  ^^^^^
+oxide-vusl: 1 error; no output written

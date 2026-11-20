@@ -2,8 +2,12 @@
 //! holds `input.vusl` and `hand-written`, the name of the corpus case it
 //! ports. Both are compiled in oxide mode and run in the VU model, timed,
 //! on every scene `scenes.rs` has for the corpus case: the GIF packets must
-//! be the hand-written program's, and the cycles no more than its. The
-//! ignored `report` prints the cycles and instructions of each.
+//! be the hand-written program's, and the cycles no more than its. A port
+//! that calls a library (`<case>_lib`, beside the inlined `<case>`) runs with
+//! the library (`include/<name>.vusl`) at its address: it trades cycles for
+//! size, so it must instead take fewer instructions, the library's
+//! included, than the inlined port. The ignored `report` prints the cycles
+//! and instructions of each.
 
 #[path = "../../oxide-vcl/tests/support/scenes.rs"]
 #[allow(dead_code)]
@@ -39,6 +43,8 @@ struct Built {
     program: Program,
     instructions: usize,
     checked: Option<vusl::Checked>,
+    /// The instructions of the library a port calls, if it calls one.
+    library: Option<usize>,
 }
 
 fn hand_written(corpus: &str) -> Built {
@@ -60,13 +66,14 @@ fn hand_written(corpus: &str) -> Built {
         program: Program::parse(&compiled.assembly).unwrap(),
         instructions: compiled.instruction_pairs,
         checked: None,
+        library: None,
     }
 }
 
-fn ported(case: &Path) -> Built {
-    let path = case.join("input.vusl");
+/// The listing of `path`, checked and compiled, and its instructions.
+fn compile(path: &Path) -> (vusl::Checked, vcl::Compiled) {
     let name = path.to_string_lossy().into_owned();
-    let text = std::fs::read_to_string(&path).unwrap();
+    let text = std::fs::read_to_string(path).unwrap();
     let options = vusl::Options::default();
     let preprocessed = vusl::preprocess(&name, &text, &options, &FileSystem)
         .unwrap_or_else(|failure| panic!("{name}: {:?}", failure.error));
@@ -81,24 +88,54 @@ fn ported(case: &Path) -> Built {
             vusl::CompileFailure::Vcl { vcl, errors } => panic!("{}\n{errors:?}", vcl.text),
         },
     };
+    (checked, compiled)
+}
+
+fn ported(case: &Path) -> Built {
+    let (checked, compiled) = compile(&case.join("input.vusl"));
+    let mut assembly = compiled.assembly.clone();
+    let mut library = None;
+    // A port that calls a library: the library at its address after it.
+    if let Some(lib) = &checked.program.library {
+        let path = root()
+            .join("tests/vusl/programs/include")
+            .join(format!("{}.vusl", lib.name));
+        let (_, code) = compile(&path);
+        let pairs = Program::parse(&assembly).unwrap().pair_count();
+        let address = usize::from(lib.address);
+        assert!(
+            pairs <= address,
+            "{}: {pairs} pairs reach the library",
+            lib.name
+        );
+        let padding = format!("{:9}{:<59}NOP\n", "", "NOP").repeat(address - pairs);
+        assembly = format!("{assembly}\n{padding}{}", code.assembly);
+        library = Some(code.instruction_pairs);
+    }
     Built {
-        program: Program::parse(&compiled.assembly).unwrap(),
+        program: Program::parse(&assembly).unwrap(),
         instructions: compiled.instruction_pairs,
         checked: Some(checked),
+        library,
     }
 }
 
-/// The qwords of a program's layout(spill) parameters, which only the
-/// compiled code writes.
+/// The qwords of a program's layout(spill) parameters, and of the library
+/// it calls its saved registers, which only the compiled code writes.
 fn work_areas(checked: &vusl::Checked) -> Vec<usize> {
     let program = &checked.program;
+    let save = program
+        .library
+        .as_ref()
+        .and_then(|library| library.save.clone());
     let mut qwords = Vec::new();
     for param in &program.params {
+        let saves = param.library && Some(&param.name) == save.as_ref();
         if let (
             true,
             vusl::sema::hir::ParamPlacement::Address(address),
             vusl::sema::types::Type::Struct(id),
-        ) = (param.spill, param.placement, &param.ty)
+        ) = (param.spill || saves, param.placement, &param.ty)
         {
             let size = program.structs[*id].size.fixed;
             qwords.extend(address as usize..(address + size) as usize);
@@ -182,8 +219,20 @@ fn ports_draw_the_same_and_are_no_slower() {
     assert!(!cases.is_empty());
     let mut failures = Vec::new();
     for case in &cases {
-        let (name, _, _, runs) = runs(case);
+        let (name, _, vusl, runs) = runs(case);
         assert!(!runs.is_empty(), "{name}: no scenes");
+        if let Some(library) = vusl.library {
+            let inlined = name
+                .strip_suffix("_lib")
+                .expect("a library port is <case>_lib");
+            let inlined = ported(&case.with_file_name(inlined)).instructions;
+            if vusl.instructions + library >= inlined {
+                failures.push(format!(
+                    "{name}: {} instructions and a library of {library}, the inlined port {inlined}",
+                    vusl.instructions
+                ));
+            }
+        }
         for run in runs {
             if !run.same {
                 failures.push(format!("{name} {}: the packets differ", run.scene));
@@ -191,7 +240,7 @@ fn ports_draw_the_same_and_are_no_slower() {
             if let Some(mismatch) = &run.mismatch {
                 failures.push(format!("{name} {}: {mismatch}", run.scene));
             }
-            if run.vusl > run.hand {
+            if run.vusl > run.hand && vusl.library.is_none() {
                 failures.push(format!(
                     "{name} {}: {} cycles, the hand-written program {}",
                     run.scene, run.vusl, run.hand
@@ -207,8 +256,12 @@ fn ports_draw_the_same_and_are_no_slower() {
 fn report() {
     for case in cases() {
         let (name, hand, vusl, runs) = runs(&case);
+        let library = vusl
+            .library
+            .map(|pairs| format!(" and a library of {pairs}"))
+            .unwrap_or_default();
         println!(
-            "{name}: {} instructions, hand-written {}",
+            "{name}: {} instructions{library}, hand-written {}",
             vusl.instructions, hand.instructions
         );
         for run in runs {

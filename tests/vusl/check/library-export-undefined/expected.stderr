@@ -1,0 +1,5 @@
+input.vusl(3): error: export 'scale' has no definition in the library
+   3 | export void scale(int16 count);
+     |             ^^^^^
+     = help: define it after its prototype, with the same signature
+oxide-vusl: 1 error; no output written

@@ -31,29 +31,8 @@ pub fn program(
     default_name: &str,
     warnings: &mut Vec<Problem>,
 ) -> Checked<Program> {
-    let mut elaborator = Elaborator {
-        decls,
-        names: decls.struct_names(),
-        locals: Vec::new(),
-        state: Vec::new(),
-        elements: Vec::new(),
-        scopes: vec![HashMap::new()],
-        pending: Vec::new(),
-        calls: Vec::new(),
-        loops: Vec::new(),
-        uses: Uses::default(),
-        accesses: Vec::new(),
-        access_set: HashSet::new(),
-        called: HashSet::new(),
-        warnings,
-        clips: 0,
-        clip_block: 0,
-        clip_epoch: 0,
-        clip_judgements: HashMap::new(),
-        xitop_locals: Vec::new(),
-        ranges: 0,
-        spills: Vec::new(),
-    };
+    let main = decls.main.expect("a program has main");
+    let mut elaborator = Elaborator::new(decls, warnings);
     let mut prologue = Vec::new();
     for (index, param) in params.iter().enumerate() {
         if param.spill {
@@ -91,29 +70,25 @@ pub fn program(
                 if matches!(placement, ParamPlacement::Xtop { .. }) {
                     elaborator.uses.xtop = true;
                 }
-                Symbol::Memory(Memory {
-                    place: Place {
-                        base: Base::Param(index),
-                        path: Vec::new(),
-                        offset: Offset::default(),
-                        ty: param.ty.clone(),
-                        lane: Lane::X,
-                        length: None,
-                    },
-                    access: param.qualifier,
-                    name: param.name.clone(),
-                    root: Some((index, Vec::new())),
-                })
+                memory_symbol(param, index)
             }
         };
-        elaborator.declare(&ident, symbol)?;
+        if param.library {
+            elaborator.library_memory.push((ident, symbol));
+        } else {
+            elaborator.declare(&ident, symbol)?;
+        }
     }
     let mut body = prologue;
-    body.extend(elaborator.block(&decls.main.body.stmts)?);
+    body.extend(elaborator.block(&main.body.stmts)?);
     let mut unused: Vec<&&ast::Function> = decls
         .functions
         .values()
-        .filter(|function| !elaborator.called.contains(&function.name.name))
+        .filter(|function| {
+            !function.prototype
+                && !function.export
+                && !elaborator.called.contains(&function.name.name)
+        })
         .collect();
     unused.sort_by_key(|function| function.pos);
     for function in unused {
@@ -136,7 +111,293 @@ pub fn program(
         body,
         uses: elaborator.uses,
         accesses: elaborator.accesses,
+        library: decls.library.clone(),
+        entry: None,
     })
+}
+
+/// A library's own build: the library itself (its memory, no code), and
+/// one entry program per export, in entry-table order. An entry's
+/// parameters are locals that arrive in registers, and its results leave
+/// in them.
+pub fn library(
+    decls: &Declarations,
+    params: Vec<Param>,
+    warnings: &mut Vec<Problem>,
+) -> Checked<(Program, Vec<Program>)> {
+    let library = decls.library.clone().expect("a library");
+    // The saved registers' memory: four VI registers a qword, one VF each.
+    let save = match &library.save {
+        None => None,
+        Some(name) => {
+            let needed = u32::from(library.saved_vi).div_ceil(4) + u32::from(library.saved_vf);
+            let param = params
+                .iter()
+                .find(|param| param.library && &param.name == name);
+            let fits = |param: &&Param| match (param.placement, &param.ty) {
+                (ParamPlacement::Address(_), Type::Struct(id)) => {
+                    decls.structs[*id].size.fixed >= needed && param.qualifier == Qualifier::Inout
+                }
+                _ => false,
+            };
+            match param.filter(fits) {
+                Some(Param {
+                    placement: ParamPlacement::Address(address),
+                    ..
+                }) => Some(*address),
+                _ => {
+                    return err(
+                        VuslMessage::SaveMemory {
+                            name: name.clone(),
+                            qwords: needed,
+                        },
+                        library.pos,
+                    );
+                }
+            }
+        }
+    };
+    let mut entries = Vec::new();
+    for (index, export) in decls.exports.iter().enumerate() {
+        let function = decls.functions[export];
+        if function.prototype {
+            return err(
+                VuslMessage::ExportUndefined {
+                    name: export.clone(),
+                },
+                function.name.pos,
+            );
+        }
+        let mut elaborator = Elaborator::new(decls, warnings);
+        for (position, param) in params.iter().enumerate() {
+            let ident = ast::Ident {
+                name: param.name.clone(),
+                pos: param.pos,
+            };
+            if param.spill {
+                elaborator.spills.push(param.name.clone());
+                continue;
+            }
+            elaborator.declare(&ident, memory_symbol(param, position))?;
+        }
+        let types = function
+            .params
+            .iter()
+            .map(|param| resolve_type(&param.ty, &decls.struct_ids))
+            .collect::<Checked<Vec<Type>>>()?;
+        let ret = resolve_type(&function.ret, &decls.struct_ids)?;
+        let (registers, result) = call_registers(&library, function, &types, &ret)?;
+        elaborator.scopes.push(HashMap::new());
+        let mut interface = Vec::new();
+        for ((param, ty), register) in function.params.iter().zip(&types).zip(&registers) {
+            let qualifier = param
+                .qualifier
+                .map_or(Qualifier::In, |(qualifier, _)| qualifier);
+            let placement = register_placement(ty);
+            let local = elaborator.new_local(&param.name.name, ty.clone(), None, false, param.pos);
+            let input = qualifier != Qualifier::Out;
+            if input {
+                elaborator.state[local].set = full_mask(ty);
+                elaborator.state[local].placement = placement;
+            }
+            if let Type::Ref(_) = ty {
+                // The caller's memory, which the library knows nothing of.
+                elaborator.locals[local].within = Some(any_memory());
+            }
+            elaborator.declare(&param.name, Symbol::Local(local))?;
+            interface.push(EntryParam {
+                local,
+                register: *register,
+                placement,
+                input,
+                output: qualifier != Qualifier::In,
+            });
+        }
+        let stmts = &function.body.stmts;
+        let (stmts, returned) = match stmts.split_last() {
+            Some((
+                ast::Stmt {
+                    kind: StmtKind::Return(value),
+                    ..
+                },
+                rest,
+            )) => (rest, value.as_ref()),
+            _ => (stmts.as_slice(), None),
+        };
+        // The export's body follows a function's rules: no yield, no
+        // return before its end, no recursion.
+        elaborator.calls.push((export.clone(), function.pos));
+        let mut body = elaborator.statements(stmts)?;
+        if let (Some(value), Some(register)) = (returned, result) {
+            let value = elaborator.rvalue(value)?;
+            let value = elaborator.coerce(value, &ret, "the returned value")?;
+            body.append(&mut elaborator.pending);
+            let local = elaborator.new_local("result", ret.clone(), None, false, value.pos);
+            let placement = register_placement(&ret);
+            body.push(Stmt::SetLocal {
+                local,
+                column: None,
+                components: None,
+                value,
+                pos: function.pos,
+            });
+            interface.push(EntryParam {
+                local,
+                register,
+                placement,
+                input: false,
+                output: true,
+            });
+        }
+        elaborator.scopes.pop();
+        entries.push(Program {
+            name: format!("{}_{}", library.name, export),
+            structs: decls.structs.clone(),
+            params: params.clone(),
+            locals: elaborator.locals,
+            elements: elaborator.elements,
+            body,
+            uses: elaborator.uses,
+            accesses: elaborator.accesses,
+            library: Some(library.clone()),
+            entry: Some(Entry {
+                export: export.clone(),
+                index,
+                params: interface,
+                save,
+            }),
+        });
+    }
+    // The library as a whole reads, writes and uses what its entries do.
+    let mut accesses: Vec<Access> = Vec::new();
+    let mut uses = Uses::default();
+    for entry in &entries {
+        for access in &entry.accesses {
+            if !accesses.contains(access) {
+                accesses.push(access.clone());
+            }
+        }
+        uses.merge(&entry.uses);
+    }
+    let program = Program {
+        name: library.name.clone(),
+        structs: decls.structs.clone(),
+        params,
+        locals: Vec::new(),
+        elements: Vec::new(),
+        body: Vec::new(),
+        uses,
+        accesses,
+        library: Some(library),
+        entry: None,
+    };
+    Ok((program, entries))
+}
+
+/// A parameter of `main`, or a library's memory, as a symbol.
+fn memory_symbol(param: &Param, index: usize) -> Symbol {
+    Symbol::Memory(Memory {
+        place: Place {
+            base: Base::Param(index),
+            path: Vec::new(),
+            offset: Offset::default(),
+            ty: param.ty.clone(),
+            lane: Lane::X,
+            length: None,
+        },
+        access: param.qualifier,
+        name: param.name.clone(),
+        root: Some((index, Vec::new())),
+    })
+}
+
+/// The lanes a value of type `ty` takes in its call register: from x.
+fn register_placement(ty: &Type) -> Option<Placement> {
+    ty.vf_lanes().map(Placement::identity)
+}
+
+/// What a ref from a caller may point at: any memory.
+fn any_memory() -> Within {
+    Within {
+        base: Base::Param(usize::MAX),
+        path: Vec::new(),
+        access: Qualifier::Inout,
+        root: None,
+    }
+}
+
+/// The registers an export's parameters and result travel in: in
+/// declaration order, VI`vi`, VI`vi + 1`, ... for `int16` and refs, and
+/// VF`vf`, ... for floats, vectors and raw integer types.
+pub fn call_registers(
+    library: &Library,
+    function: &ast::Function,
+    types: &[Type],
+    ret: &Type,
+) -> Checked<(Vec<Register>, Option<Register>)> {
+    let (mut vi, mut vf) = (library.vi, library.vf);
+    let mut next = |name: &str, ty: &Type, pos: Pos| -> Checked<Register> {
+        match ty {
+            Type::Int16 | Type::Ref(_) => {
+                if vi > 14 {
+                    return err(
+                        VuslMessage::ExportRegisters {
+                            name: function.name.name.clone(),
+                            kind: "vi",
+                            first: library.vi,
+                            last: 14,
+                        },
+                        pos,
+                    );
+                }
+                vi += 1;
+                Ok(Register::Vi(vi - 1))
+            }
+            Type::Float
+            | Type::Vec(_)
+            | Type::Int32
+            | Type::Uint32
+            | Type::IVec(_)
+            | Type::UVec(_) => {
+                if vf > 31 {
+                    return err(
+                        VuslMessage::ExportRegisters {
+                            name: function.name.name.clone(),
+                            kind: "vf",
+                            first: library.vf,
+                            last: 31,
+                        },
+                        pos,
+                    );
+                }
+                vf += 1;
+                Ok(Register::Vf(vf - 1))
+            }
+            Type::Struct(_) | Type::Array(..) => err(
+                VuslMessage::ExportParameter {
+                    name: name.into(),
+                    reason: "it is memory, which a ref passes",
+                },
+                pos,
+            ),
+            _ => err(
+                VuslMessage::ExportParameter {
+                    name: name.into(),
+                    reason: "its type has no register a call passes",
+                },
+                pos,
+            ),
+        }
+    };
+    let mut registers = Vec::new();
+    for (param, ty) in function.params.iter().zip(types) {
+        registers.push(next(&param.name.name, ty, param.pos)?);
+    }
+    let result = match ret {
+        Type::Void => None,
+        ty => Some(next(&function.name.name, ty, function.ret.pos)?),
+    };
+    Ok((registers, result))
 }
 
 /// What a name means in a scope.
@@ -241,6 +502,38 @@ struct Elaborator<'d, 'w> {
     ranges: usize,
     /// `layout(spill)` parameters: oxide-vcl's work area, not the program's.
     spills: Vec<String>,
+    /// The library's memory, which its functions see as names; `main`
+    /// does not.
+    library_memory: Vec<(ast::Ident, Symbol)>,
+}
+
+impl<'d, 'w> Elaborator<'d, 'w> {
+    fn new(decls: &'d Declarations<'d>, warnings: &'w mut Vec<Problem>) -> Self {
+        Elaborator {
+            decls,
+            names: decls.struct_names(),
+            locals: Vec::new(),
+            state: Vec::new(),
+            elements: Vec::new(),
+            scopes: vec![HashMap::new()],
+            pending: Vec::new(),
+            calls: Vec::new(),
+            loops: Vec::new(),
+            uses: Uses::default(),
+            accesses: Vec::new(),
+            access_set: HashSet::new(),
+            called: HashSet::new(),
+            warnings,
+            clips: 0,
+            clip_block: 0,
+            clip_epoch: 0,
+            clip_judgements: HashMap::new(),
+            xitop_locals: Vec::new(),
+            ranges: 0,
+            spills: Vec::new(),
+            library_memory: Vec::new(),
+        }
+    }
 }
 
 fn err<T>(message: VuslMessage, pos: Pos) -> Checked<T> {
@@ -3875,6 +4168,9 @@ impl Elaborator<'_, '_> {
         let ret = resolve_type(&function.ret, &self.decls.struct_ids)?;
         let mut scope: HashMap<String, (Symbol, Pos)> = HashMap::new();
         let mut setup = Vec::new();
+        let library_call = self.decls.calls_library(&name);
+        // Each parameter's type and symbol, for a library call.
+        let mut bound: Vec<(Type, Symbol)> = Vec::new();
         for (param, arg) in function.params.iter().zip(args) {
             if let Some(layout) = &param.layout {
                 return err(
@@ -4009,7 +4305,32 @@ impl Elaborator<'_, '_> {
                     param.name.pos,
                 );
             }
+            if library_call {
+                bound.push((ty.clone(), symbol.clone()));
+            }
             scope.insert(param.name.name.clone(), (symbol, param.name.pos));
+        }
+        // A function sees the library's memory by name, unless a parameter
+        // has that name.
+        for (ident, symbol) in &self.library_memory {
+            scope
+                .entry(ident.name.clone())
+                .or_insert_with(|| (symbol.clone(), ident.pos));
+        }
+        // A call that sees only the export's prototype has no body to
+        // inline: the call alone is what it does.
+        if library_call && function.prototype {
+            self.pending.extend(setup);
+            return self.library_call(
+                function,
+                &function.name.name,
+                bound,
+                Vec::new(),
+                Vec::new(),
+                None,
+                ret,
+                pos,
+            );
         }
         // The body: a value-returning function ends with `return value;`.
         let stmts = &function.body.stmts;
@@ -4059,8 +4380,119 @@ impl Elaborator<'_, '_> {
         self.scopes = saved_scopes;
         self.pending = saved_pending;
         let (body, value) = result?;
+        if library_call {
+            return self.library_call(
+                function,
+                &function.name.name,
+                bound,
+                setup,
+                body,
+                value,
+                ret,
+                pos,
+            );
+        }
         self.pending.extend(setup);
         self.pending.extend(body);
+        Ok(value)
+    }
+
+    /// A call of a library's export, as `Stmt::Call`: `bound` holds each
+    /// parameter's type and symbol, `setup` and `body` the call inlined,
+    /// and `value` its result in the callee's terms.
+    #[allow(clippy::too_many_arguments)]
+    fn library_call(
+        &mut self,
+        function: &ast::Function,
+        name: &str,
+        bound: Vec<(Type, Symbol)>,
+        setup: Vec<Stmt>,
+        mut body: Vec<Stmt>,
+        value: Option<Expr>,
+        ret: Type,
+        pos: Pos,
+    ) -> Checked<Option<Expr>> {
+        let library = self.decls.library.clone().expect("a library");
+        let types: Vec<Type> = bound.iter().map(|(ty, _)| ty.clone()).collect();
+        let (registers, result) = call_registers(&library, function, &types, &ret)?;
+        let mut args = Vec::new();
+        for ((param, (ty, symbol)), register) in function.params.iter().zip(bound).zip(registers) {
+            let qualifier = param
+                .qualifier
+                .map_or(Qualifier::In, |(qualifier, _)| qualifier);
+            let placement = register_placement(&ty);
+            let (input, output) = match symbol {
+                Symbol::Local(local) => (Some(self.read_local(local, pos)?), None),
+                Symbol::Const(constant, _) => (Some(constant_expr(constant, pos)), None),
+                Symbol::Alias(Target::Local {
+                    id,
+                    column: None,
+                    components: None,
+                }) => {
+                    let input = (qualifier == Qualifier::Inout)
+                        .then(|| self.read_local(id, pos))
+                        .transpose()?;
+                    (input, Some(id))
+                }
+                _ => {
+                    return err(
+                        VuslMessage::CallArgument {
+                            name: param.name.name.clone(),
+                        },
+                        param.name.pos,
+                    );
+                }
+            };
+            args.push(CallArg {
+                register,
+                ty,
+                placement,
+                input,
+                output,
+            });
+        }
+        let value = match (value, result) {
+            (value, Some(register)) => {
+                let local = self.new_local("result", ret.clone(), None, false, pos);
+                let placement = register_placement(&ret);
+                if let Some(value) = value {
+                    body.push(Stmt::SetLocal {
+                        local,
+                        column: None,
+                        components: None,
+                        value,
+                        pos,
+                    });
+                }
+                self.state[local].set = full_mask(&ret);
+                self.state[local].placement = placement;
+                args.push(CallArg {
+                    register,
+                    ty: ret.clone(),
+                    placement,
+                    input: None,
+                    output: Some(local),
+                });
+                Some(self.read_local(local, pos)?)
+            }
+            _ => None,
+        };
+        // The library's own judgements replace the clip flags'.
+        self.clip_epoch += 1;
+        let entry = self
+            .decls
+            .exports
+            .iter()
+            .position(|export| export == name)
+            .expect("an export");
+        self.pending.push(Stmt::Call {
+            export: name.to_string(),
+            entry: library.entry_address(entry),
+            setup,
+            args,
+            body,
+            pos,
+        });
         Ok(value)
     }
 }

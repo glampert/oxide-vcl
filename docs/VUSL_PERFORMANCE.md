@@ -75,6 +75,48 @@ scene.
     state in memory. The port spills only the current window, which changes once per full
     window.
 
+## Libraries
+
+`world_strips_lib` and `world_lm_lib` are the two doom3 ports with the clipper taken out into a
+library (`tests/vusl/programs/include/clipper.vush` and `clipper.vusl`). The library is resident at
+1536, takes 472 instructions, entry table included, and each program calls it. Its calls pass
+values in VF24–VF31 and VI10–VI14; it also works in VF16–VF23 and VI06–VI09, which it saves on
+entry and puts back. The inlined ports stay as they are, for reference.
+
+| Program | Instructions | With the library | Inlined port |
+|---|---:|---:|---:|
+| world_strips_lib | 276 | 748 | 765 |
+| world_lm_lib | 753 | 1225 | 1520 |
+| Both | 1029 | 1501 | 2285 |
+
+The two programs and the library together take 34% fewer instructions than the two inlined ports;
+each further program that clips adds its own code and not a clipper.
+
+| Program | Scene | Cycles | Hand-written | Change | Inlined port |
+|---|---|---:|---:|---:|---:|
+| world_strips_lib | wall | 2762 | 3896 | −29.1% | 2223 |
+| | floor | 47649 | 47371 | +0.6% | 43799 |
+| | side | 18576 | 19314 | −3.8% | 16479 |
+| world_lm_lib | wall | 2190 | 2259 | −3.1% | 2182 |
+| | wall lit | 3879 | 3476 | +11.6% | 3291 |
+| | floor | 47901 | 46153 | +3.8% | 44250 |
+| | floor lit | 95558 | 91197 | +4.8% | 87354 |
+| | side | 18732 | 18224 | +2.8% | 16834 |
+| | side lit | 37604 | 35403 | +6.2% | 32618 |
+
+The library ports trade cycles for size, so the programs suite holds them to their size, not to
+the hand-written program's cycles. The cycles go to:
+
+- **Registers across the call.** A call may change VI10–VI15 and VI01. The list path's loop keeps
+  its walk state, the XTOP register among it, live across the call, in what VI registers remain;
+  vcl keeps a value that crosses streams in one register for all of them, so some of those values
+  live in the work area for the whole program, and the scenes that never clip pay for them too.
+- **Each call:** the argument and result moves, the JALR and the entry table's branch, the
+  library's saves and restores of VI06–VI09 and VF16–VF23, the JR, and the scheduling that cannot
+  cross the call.
+- **Specialization:** the clipper's pass is an argument, where world_lm's inlined list pass folds
+  it.
+
 ## Raw bits
 
 vcl may schedule a MOVE in the upper pipe as MAX of the source with itself, which flushes bit

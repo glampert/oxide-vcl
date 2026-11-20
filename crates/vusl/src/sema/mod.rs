@@ -44,19 +44,38 @@ pub(crate) type Checked<T> = Result<T, Box<Problem>>;
 /// What checking found: the program, or the error that stopped it, and the
 /// warnings before.
 pub struct Checking {
+    /// The program, or for a library's own build the library: its memory
+    /// and no code.
     pub program: Result<hir::Program, Box<Problem>>,
+    /// A library's entries, one per export in entry-table order; none for a
+    /// program.
+    pub entries: Vec<hir::Program>,
     pub warnings: Vec<Problem>,
 }
 
 /// Checks `file`. A program without `#pragma program(name)` is named
-/// `default_name`.
+/// `default_name`. A file with `#pragma library` and no `main` is the
+/// library's own build.
 pub fn check(file: &ast::File, default_name: &str) -> Checking {
     let mut warnings = Vec::new();
-    let program = check::declarations(file, &mut warnings).and_then(|decls| {
+    let checked = check::declarations(file, &mut warnings).and_then(|decls| {
         let params = check::bindings(&decls)?;
-        elaborate::program(&decls, params, default_name, &mut warnings)
+        if decls.main.is_some() {
+            elaborate::program(&decls, params, default_name, &mut warnings)
+                .map(|program| (program, Vec::new()))
+        } else {
+            elaborate::library(&decls, params, &mut warnings)
+        }
     });
-    Checking { program, warnings }
+    let (program, entries) = match checked {
+        Ok((program, entries)) => (Ok(program), entries),
+        Err(problem) => (Err(problem), Vec::new()),
+    };
+    Checking {
+        program,
+        entries,
+        warnings,
+    }
 }
 
 #[cfg(test)]

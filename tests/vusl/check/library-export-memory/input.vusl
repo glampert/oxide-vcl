@@ -1,0 +1,4 @@
+// Memory goes to a library by ref: the call passes registers.
+#pragma library(mathlib, address = 400)
+struct Block { vec4 a; };
+export void scale(in Block block) { }

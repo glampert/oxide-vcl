@@ -1,0 +1,5 @@
+input.vusl(3): error: 'scale' passes more vi values than the library's bank holds (vi13-vi14)
+   3 | export void scale(int16 a, int16 b, int16 c) { }
+     |                                     ^
+     = help: pass fewer values, or start the bank lower with #pragma library(..., vf = F, vi = I)
+oxide-vusl: 1 error; no output written

@@ -150,6 +150,41 @@ pub enum VuslMessage {
     UnusedFunction {
         name: String,
     },
+    /// `export` or file-scope memory in a file without `#pragma library`.
+    OutsideLibrary {
+        what: &'static str,
+    },
+    /// An export's definition whose signature is not its prototype's.
+    ExportMismatch {
+        name: String,
+    },
+    /// An export parameter or result that cannot travel in a register.
+    ExportParameter {
+        name: String,
+        reason: &'static str,
+    },
+    /// An export's values that do not fit the library's register bank.
+    ExportRegisters {
+        name: String,
+        kind: &'static str,
+        first: u8,
+        last: u8,
+    },
+    /// An `out` or `inout` argument of a library call that is not a whole
+    /// variable.
+    CallArgument {
+        name: String,
+    },
+    /// A prototype that the library's own build never defines.
+    ExportUndefined {
+        name: String,
+    },
+    /// A library's `save` memory that is not an `inout` struct at a fixed
+    /// address with room for the saved registers.
+    SaveMemory {
+        name: String,
+        qwords: u32,
+    },
 
     // Expressions.
     UnknownName {
@@ -473,6 +508,56 @@ fn wording(message: &VuslMessage) -> Wording {
             format!("function '{name}' is never called, so it is not checked"),
             Some(name.clone()),
             None,
+        ),
+        OutsideLibrary { what } => (
+            format!("{what} needs #pragma library: only a library has it"),
+            None,
+            Some("name the library first: #pragma library(name, address = A)"),
+        ),
+        ExportMismatch { name } => (
+            format!("'{name}' is defined with another signature than its prototype"),
+            Some(name.clone()),
+            Some("an export's definition repeats its prototype's types, qualifiers and names"),
+        ),
+        ExportParameter { name, reason } => (
+            format!("'{name}' cannot be passed to a library: {reason}"),
+            Some(name.clone()),
+            Some("pass int16, ref<T>, float, vectors and raw integer types; memory goes by ref"),
+        ),
+        ExportRegisters {
+            name,
+            kind,
+            first,
+            last,
+        } => (
+            format!(
+                "'{name}' passes more {kind} values than the library's bank holds ({kind}{first:02}-{kind}{last:02})"
+            ),
+            Some(name.clone()),
+            Some(
+                "pass fewer values, or start the bank lower with #pragma library(..., vf = F, vi = I)",
+            ),
+        ),
+        CallArgument { name } => (
+            format!("the out or inout argument for '{name}' must be a variable"),
+            Some(name.clone()),
+            Some(
+                "a library returns values in registers, into whole variables: assign a member or component from one after the call",
+            ),
+        ),
+        SaveMemory { name, qwords } => (
+            format!(
+                "the library saves its registers in '{name}', which needs to be inout memory at an address, of {qwords} qwords at least"
+            ),
+            Some(name.clone()),
+            Some(
+                "declare it in the header: layout(address = A) inout Saves saves; four VI registers take a qword, a VF register one",
+            ),
+        ),
+        ExportUndefined { name } => (
+            format!("export '{name}' has no definition in the library"),
+            Some(name.clone()),
+            Some("define it after its prototype, with the same signature"),
         ),
         UnknownName { name } => about(format!("unknown name '{name}'"), name),
         UnknownFunction { name } => about(format!("unknown function '{name}'"), name),

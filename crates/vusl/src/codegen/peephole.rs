@@ -201,7 +201,7 @@ fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
 /// the branch; a branch from before the definition into it, past the
 /// definition, rules it out.
 fn live_range(lines: &[(Line, Option<Pos>)], index: usize, to: &str, from: &str) -> Option<usize> {
-    if to == from {
+    if to == from || declared(lines, to) {
         return None;
     }
     let names_to = |line: &(Line, Option<Pos>)| match &line.0 {
@@ -266,17 +266,35 @@ fn names(operand: &str) -> impl Iterator<Item = &str> {
         .filter(|token| token.starts_with(['f', 'i']) && token.contains('_'))
 }
 
-/// For each variable, the number of instructions that name it.
+/// For each variable, the number of lines that name it: instructions, and
+/// declarations such as a library entry's `in_vi icursor_3(vi11)`.
 fn count_mentions(lines: &[(Line, Option<Pos>)]) -> HashMap<String, usize> {
     let mut mentions = HashMap::new();
     for (line, _) in lines {
-        if let Line::Inst(inst) = line {
-            for name in inst_names(inst) {
-                *mentions.entry(name).or_insert(0) += 1;
+        match line {
+            Line::Inst(inst) => {
+                for name in inst_names(inst) {
+                    *mentions.entry(name).or_insert(0) += 1;
+                }
             }
+            Line::Text(text) => {
+                for name in names(text) {
+                    *mentions.entry(name.to_string()).or_insert(0) += 1;
+                }
+            }
+            Line::Label(_) => {}
         }
     }
     mentions
+}
+
+/// Whether a declaration line names `name`: then the variable is bound to
+/// a register there, and keeps its name.
+fn declared(lines: &[(Line, Option<Pos>)], name: &str) -> bool {
+    lines.iter().any(|(line, _)| match line {
+        Line::Text(text) => names(text).any(|other| other == name),
+        _ => false,
+    })
 }
 
 /// The variables an instruction names, each once.

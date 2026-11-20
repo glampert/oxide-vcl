@@ -1,0 +1,6 @@
+// Memory a library writes is its own: it overlaps no caller's.
+#pragma library(mathlib, address = 400)
+struct Scratch { vec4 kept; };
+layout(address = 4) inout Scratch scratch;
+struct Block { vec4 a[8]; };
+void main(layout(address = 0) inout Block block) { block.a[0] = block.a[1]; }

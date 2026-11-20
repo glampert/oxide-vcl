@@ -1,0 +1,4 @@
+// A library's own build defines every export it declares.
+#pragma library(mathlib, address = 400)
+export void scale(int16 count);
+export void shift(int16 amount) { }

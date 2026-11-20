@@ -7,9 +7,9 @@ use super::ast::*;
 use super::lexer::{Pos, Punct, Token, TokenKind};
 
 /// Words that cannot name anything.
-pub const KEYWORDS: [&str; 20] = [
+pub const KEYWORDS: [&str; 21] = [
     "struct", "if", "else", "for", "while", "do", "break", "continue", "return", "yield", "in",
-    "out", "inout", "uniform", "layout", "const", "precise", "true", "false", "ref",
+    "out", "inout", "uniform", "layout", "const", "precise", "true", "false", "ref", "export",
 ];
 
 /// Why the tokens are not a program.
@@ -193,6 +193,25 @@ impl Parser<'_> {
             return Ok(Item::Const(self.const_decl()?));
         }
         let pos = self.peek().pos;
+        if self.at_keyword("layout") {
+            // Memory at file scope: a library's.
+            let layout = self.layout()?;
+            let qualifier = self.qualifier();
+            let ty = self.type_name("the memory's type")?;
+            let name = self.ident("the memory's name")?;
+            self.expect(Punct::Semicolon)?;
+            return Ok(Item::Memory(Param {
+                layout,
+                qualifier,
+                ty,
+                name,
+                pos,
+            }));
+        }
+        let export = self.at_keyword("export");
+        if export {
+            self.advance();
+        }
         let ret = self.type_name("a declaration")?;
         let name = self.ident("a function's name")?;
         if !self.at_punct(Punct::OpenParen) {
@@ -202,12 +221,23 @@ impl Parser<'_> {
             });
         }
         let params = self.params()?;
-        let body = self.block()?;
+        let prototype = export && self.at_punct(Punct::Semicolon);
+        let body = if prototype {
+            let pos = self.advance().pos;
+            Block {
+                stmts: Vec::new(),
+                pos,
+            }
+        } else {
+            self.block()?
+        };
         Ok(Item::Function(Function {
             ret,
             name,
             params,
             body,
+            export,
+            prototype,
             pos,
         }))
     }

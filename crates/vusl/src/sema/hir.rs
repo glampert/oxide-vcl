@@ -23,6 +23,89 @@ pub struct Program {
     pub uses: Uses,
     /// What the program reads and writes in its parameters' memory.
     pub accesses: Vec<Access>,
+    /// The library the program calls, or whose entry it is.
+    pub library: Option<Library>,
+    /// For a library's entry: where its parameters arrive and its results
+    /// leave.
+    pub entry: Option<Entry>,
+}
+
+/// `#pragma library(name, address = A, vf = F, vi = I, saved_vf = SF,
+/// saved_vi = SI, save = memory)`: a library resident in micro memory at
+/// `address`, whose calls pass values in VF`vf`-VF31 and VI`vi`-VI14 and
+/// may change all of them. The `saved_*` registers below each bank the
+/// library also uses, saving them at an entry and restoring them before it
+/// returns, in its memory `save`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Library {
+    pub name: String,
+    pub address: u16,
+    pub vf: u8,
+    pub vi: u8,
+    pub saved_vf: u8,
+    pub saved_vi: u8,
+    /// The library memory the saved registers go to: its index among the
+    /// parameters, once bound, and its name.
+    pub save: Option<String>,
+    pub pos: Pos,
+}
+
+impl Library {
+    /// The micro address of export `index`: one entry-table pair each.
+    pub fn entry_address(&self, index: usize) -> u16 {
+        self.address + 2 * index as u16
+    }
+}
+
+/// A physical register a library call passes a value in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Register {
+    Vf(u8),
+    Vi(u8),
+}
+
+impl Register {
+    pub fn name(self) -> String {
+        match self {
+            Register::Vf(n) => format!("vf{n:02}"),
+            Register::Vi(n) => format!("vi{n:02}"),
+        }
+    }
+}
+
+/// One value of a library call: the register it travels in, the value
+/// passed in (`in`, `inout`) and the local it comes back into (`out`,
+/// `inout`, a return value).
+#[derive(Clone, Debug)]
+pub struct CallArg {
+    pub register: Register,
+    pub ty: Type,
+    pub placement: Option<Placement>,
+    pub input: Option<Expr>,
+    pub output: Option<LocalId>,
+}
+
+/// A library entry's interface: each parameter's local and register.
+#[derive(Clone, Debug)]
+pub struct Entry {
+    /// The export's name, and its index in the library's entry table.
+    pub export: String,
+    pub index: usize,
+    pub params: Vec<EntryParam>,
+    /// Where the library's saved registers go: the qword address of its
+    /// `save` memory.
+    pub save: Option<u32>,
+}
+
+#[derive(Clone, Debug)]
+pub struct EntryParam {
+    pub local: LocalId,
+    pub register: Register,
+    pub placement: Option<Placement>,
+    /// Arrives in its register (`in`, `inout`).
+    pub input: bool,
+    /// Leaves in its register (`out`, `inout`, the return value).
+    pub output: bool,
 }
 
 /// One of `main`'s parameters: memory the program reads or writes, or the
@@ -37,6 +120,8 @@ pub struct Param {
     pub spill: bool,
     /// `layout(alias = other)`: may overlap that parameter.
     pub alias: Option<usize>,
+    /// Memory the library the program calls binds at file scope.
+    pub library: bool,
     pub pos: Pos,
 }
 
@@ -107,6 +192,18 @@ pub struct Uses {
     pub efu: bool,
     pub xgkick: bool,
     pub yield_: bool,
+}
+
+impl Uses {
+    /// What `other` uses too.
+    pub fn merge(&mut self, other: &Uses) {
+        self.xtop |= other.xtop;
+        self.xitop |= other.xitop;
+        self.clip |= other.clip;
+        self.efu |= other.efu;
+        self.xgkick |= other.xgkick;
+        self.yield_ |= other.yield_;
+    }
 }
 
 /// A read or write of a parameter's member, by member indices from the
@@ -265,6 +362,18 @@ pub enum Stmt {
     },
     /// `#pragma barrier`.
     Barrier {
+        pos: Pos,
+    },
+    /// A call of a library's export, at micro address `entry`: `setup` sets
+    /// the parameters' locals, `args` passes them, and `body` is the
+    /// export inlined, which is what the call means (the interpreter runs
+    /// it; code generation calls the library instead).
+    Call {
+        export: String,
+        entry: u16,
+        setup: Vec<Stmt>,
+        args: Vec<CallArg>,
+        body: Vec<Stmt>,
         pos: Pos,
     },
 }
