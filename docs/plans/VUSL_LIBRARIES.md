@@ -5,7 +5,7 @@
 | Milestone | Status |
 |---|---|
 | 0. Design | Done (this document) |
-| 1. Calls in oxide-vcl | Not started |
+| 1. Calls in oxide-vcl | Done |
 | 2. Libraries in VUSL | Not started |
 | 3. The doom3 clipper as a library | Not started |
 | 4. Docs | Not started |
@@ -51,168 +51,148 @@ upload.
 
 ### Layer 1: calls in oxide-vcl (`Mode::Oxide` only)
 
-Two annotations, which vcl 1.4beta7 does not have. `docs/COMPATIBILITY.md` and
-`docs/VCL_REFERENCE.md` describe them as oxide-only.
+Two annotations, which vcl 1.4beta7 does not have. `docs/VCL_REFERENCE.md` ("Calls") is their
+reference, and `docs/COMPATIBILITY.md` notes them as oxide-only.
 
-**`--call` in a caller:**
+**`--call` in a caller,** right before the JALR it describes:
 
 ```text
---call clipper_ClipTriangle(vi13)
-in_vi   cursor(vi11)
-in_vi   room(vi12)
-in_vi   a(vi13)
-in_vf.x pass(vf24)
-out_vi  cursor(vi11)
-out_vi  room(vi12)
-clobber vf24-vf31, vi11-vi14, vi01, acc, q, p, i, status, mac, clip
+        iaddiu    vi11, n, 5            ; an argument, where the callee reads it
+        iaddiu    entry, vi00, 1600     ; the callee's micro address
+--call
+in_vi   vi11
+out_vi  vi11
+out_vi  vi12
+out_vf  vf24
+out_vi  vi15
 --endcall
+        jalr      vi15, entry
 ```
 
-- The name is the entry's symbol. The register in parentheses holds its address, which vcl loads
-  with `iaddiu` from the symbol's value (an absolute micro address that the assembler or linker
-  resolves). The link register is VI15 by convention, and is clobbered.
-- The `in_` and `out_` lines name the caller's values and the physical registers they travel in, as
-  in `--enter` and `--exit`. The allocator places arguments with the same external assignment it
-  uses at those boundaries (`docs/EXTERNAL_ALLOCATION.md`).
-- `clobber` lists everything the callee may change: VF and VI ranges, VI01, and the hardware
-  resources ACC, Q, P, I, the status and MAC flags, and the clip flags.
-- **In the flow graph,** the call is one instruction that falls through, not a branch. It reads its
-  `in_` registers and writes its `out_` registers and its clobbers.
-- **In the allocator,** a value live across the call gets a register outside the clobbers, or goes
-  to the work area.
-- **In the scheduler,** the call is a barrier: nothing moves across it. vcl emits the `iaddiu`, the
-  `jalr` and its delay slot. A loop holding a call does not pipeline, as with `xgkick`.
+- `in_` lines name the physical registers and hardware resources the callee reads; `out_` lines
+  those it writes, results and clobbers alike. The caller moves arguments into those registers and
+  results out of them with ordinary instructions.
+- The declared registers become implicit operands of the JALR, pinned to their physical
+  registers, as is its link register. The address register can be symbolic.
+- **In the flow graph,** the call ends its block and falls through to the next one, where the
+  callee returns. No tag list is needed, and the redundant-branch pass leaves it.
+- **In the allocator,** a value live across the call is kept out of every register the call
+  writes, or goes to the work area. The writes land as late as JALR's own latency, so an earlier
+  write of the same register (the address, say) does not collide with them.
+- **In the scheduler,** nothing moves across the call's block boundary, and a loop that holds a
+  call is not pipelined. The usual delay-slot exchange may move an earlier lower instruction into
+  the JALR's delay slot, which still runs before the callee.
 
 **`--return` in a library:**
 
 ```text
-.global clipper_ClipTriangle
+.init_vf vf24
+.init_vi vi11-vi12
 --enter
-in_vi   cursor(vi11)
-...
+in_vi   x(vi11)
+in_vi   vi15
 --endenter
-        ...
+        iaddiu    y, x, 10
 --return vi15
-out_vi  cursor(vi11)
-out_vi  room(vi12)
---endreturn
+out_vi  y(vi11)
+--endexit
 ```
 
-`--return` is an exit that ends in `jr vi15` and its delay slot instead of the E bit, with its
-outputs in the registers listed. The library restricts its allocation to its clobbers with
-`.init_vf` and `.init_vi`, which vcl already supports. One listing holds every entry of a library.
-Each entry is a `.global` label, and `-j` writes their offsets.
-
-A library entry may not `--cont`, and its code must not use `xtop` for memory the caller did not
-pass it.
+`--return` is an exit that ends with `jr vi15` and its delay slot instead of the E bit, with its
+outputs in the registers listed. The link register is an output, so nothing reuses it. The
+library keeps to its bank with `.init_vf` and `.init_vi`. Each entry is a program of its own: its
+branches are relative, so its listing can be placed anywhere.
 
 ### Layer 2: libraries in VUSL
 
-**A library file** names itself and exports functions:
+**The interface is a VUSL header** that the library and its callers both include:
 
 ```glsl
-#pragma library(clipper, vf = 24..31, vi = 11..14)
+// clipper.vush
+#pragma once
+#pragma library(clipper, address = 1600, vf = 16, vi = 11)
 #include "doom3.vush"
 
-layout(address = 0) uniform Frame frame;            // the library's own memory
+layout(address = 0) uniform Frame frame;              // the library's own memory
 layout(address = 957) inout ClipBuffers clip;
 
 export void ClipTriangle(inout ref<WindowVertex> cursor, inout int16 room,
-                         ref<Projected> a, ref<Projected> b, ref<Projected> c, float pass)
-{
-    ...
-}
+                         ref<Projected> a, ref<Projected> b, ref<Projected> c, float pass);
 ```
 
-- `#pragma library(name, vf = R, vi = R)` gives the register bank: the registers arguments,
-  results and the library's own values use, which every call clobbers. The defaults are VF24–VF31
-  and VI11–VI14.
-- **Memory at file scope.** A library may bind memory there, with the same placements as `main`'s
-  parameters: the clipper's buffers and the frame constants it reads. Programs see none of it
-  except through what they pass.
-- **The calling convention comes from the signature.** In declaration order, `in` and `inout`
-  values take bank registers in the lanes their types fix, and `out` and `inout` values return in
-  bank registers. A `ref<T>` passes as its VI address. A struct in memory passes as the ref to it.
-  A signature that does not fit the bank is an error.
+- `#pragma library(name, address = A, vf = F, vi = I)` names the library, gives the micro address
+  it is uploaded to, and its register bank: VF*F*–VF31 and VI*I*–VI14. Arguments, results and the
+  library's own values use the bank, and every call clobbers it, with VI15 (the link), VI01, ACC,
+  Q, P, I and the MAC and clip flags. The defaults are VF16 and VI11.
+- **Memory at file scope.** The header binds the library's memory with the same placements as
+  `main`'s parameters. In a caller these are memory the program does not name but the library
+  uses: they take part in the overlap check against `main`'s parameters (unless one says `alias`),
+  and the value cache forgets them at a call.
+- **Exports** are prototypes in the header (`export` and a signature, no body) and definitions in
+  the library's source. Entry *k*, in declaration order, is at `address + 2k`.
+- **The calling convention comes from the signature.** In declaration order, `int16` and `ref<T>`
+  parameters take VI11, VI12, ... and `float` and vector parameters VF*F*, VF*F+1*, ..., in the
+  lanes their types fix. A return value takes the next register of its kind. `in` and `inout`
+  values travel in; `out` and `inout` values and the return value travel back. A signature that
+  does not fit the bank is an error. Memory parameters are not allowed: a ref passes an address.
+- **A ref parameter** may point anywhere: the library knows nothing of the caller's memory, so
+  stores through it may change any memory, and reads through it are forgotten at its stores.
 - **Functions that are not exported** are inlined into the exports, as today.
-- **The compiler writes:**
-  - the library's `.vsm`, with one `--enter`/`--return` per export;
-  - an interface file, `clipper.vuslib`, in JSON. It records:
-    - the bank;
-    - for each export, its symbol, offset, argument and result registers with their lanes, and
-      the memory it reads and writes, both its own and through each ref argument;
-    - the library's memory bindings and size in instructions;
-  - optionally a C++ header with the size and symbols, for the program manager, which picks the
-    library's resident address.
 
-**A program imports it:**
+**The library build** (a file with `#pragma library`, export definitions and no `main`) writes one
+listing:
 
-```glsl
-#pragma import(clipper)              // found through -L <dir>
-```
+- an entry table, one pair per export and its delay slot: `b` to the export's code;
+- each export compiled as a program of its own: `--enter` binding its parameters to their
+  registers, the body, and `--return vi15` binding its results.
 
-- **A call** to an exported function becomes a `--call` block, not an inlined body. The call loads
-  the entry's address as `clipper_ClipTriangle`, an absolute symbol the build defines as the
-  library's resident address plus the entry's offset.
-- **The checker** checks the arguments against the interface: types, lanes and access. It checks
-  that the library's memory does not overlap `main`'s parameters, unless they say `alias` (for
-  example, the frame constants both read).
-- **Lowering** moves arguments into place, which the peephole and vcl's coalescing usually make
-  free. After the call it forgets every cached value the library may write: its own memory, the
-  regions of the refs it writes through, and the clobbered registers.
-- **Reflection** lists the libraries a program needs and the symbols it uses.
-- **The interpreter** runs an exported function as an inlined call, with the same meaning, so the
-  differential tests keep working.
-- **Inlining on request.** A `-D` switch (`VUSL_INLINE_LIBRARIES`) makes the compiler inline a
-  library's exports instead, for comparing size and cycles.
+Entry addresses so stay fixed when the library's code changes, and callers need only the header.
+The table costs one branch per call.
+
+**A caller** includes the header and calls the exports:
+
+- **A call** to an exported function becomes the arguments moved into their registers, the entry
+  address `iaddiu`, a `--call` block and the JALR, then the results moved out. Values live across
+  it stay out of the bank.
+- **The value cache** forgets every value read from memory, Q, and the clip flags' judgements.
+- **The interpreter** runs a call as the inlined body when the definition is visible, so tests
+  include the library's source rather than only its header; a program that sees only the
+  prototype still compiles.
 
 ### Layer 3: the doom3 clipper
 
 - `clipTriangle` and its helpers move from `tests/vusl/programs/include/doom3.vush` into a
   `clipper.vusl` library.
-- The world_strips and world_lm ports import it. The pass becomes a run-time argument: the
-  hand-written world_lm already runs one list pass for both draw passes, with the pass kept in
-  memory.
+- New copies of the world_strips and world_lm ports call it; the inlined ports stay for
+  reference. The pass becomes a run-time argument: the hand-written world_lm already runs one list
+  pass for both draw passes, with the pass kept in memory.
 - The VU model in the programs suite loads the library at its address next to the program.
 - The report gains a column for the library's size, and a line for the micro memory the two
   programs take with and without it.
-- doom3-bfg-ps2 uploads the library once into the resident region and defines its entry symbols.
-  That change is in the game repository and follows its commit rules.
+- doom3-bfg-ps2 uploads the library once into the resident region, at the address its header
+  gives. That change is in the game repository and follows its commit rules.
 
 ## Costs
 
-- **Cycles per call:** about 4 to 6. That is the address `iaddiu`, the JALR and its delay slot, the
-  JR and its delay slot, and the scheduling lost at the barrier. The clipper runs only for
+- **Cycles per call:** about 6 to 8. That is the address `iaddiu`, the JALR and its delay slot, the
+  entry table's branch and its delay slot, the JR and its delay slot, the argument and result
+  moves, and the scheduling lost at the call. The clipper runs only for
   triangles outside the guard band, so the scenes' totals should move by well under 1%; the
   programs suite measures it.
 - **Specialization:** constants that inlining folds into the callee, such as world_lm's pass, are
   arguments instead.
 - **Register pressure** near calls: values live across a call cannot use the bank.
 
-## A first step without layer 1
+## Decisions
 
-To prove the upload, addressing and measurement before the allocator work:
-
-- callers drop the bank from `.init_vf`/`.init_vi` entirely;
-- VUSL emits the JALR as raw code between two `--barrier`s;
-- the library ends each export with `--exitm` whose text is the JR and its delay slot.
-
-Every caller then loses the bank everywhere, not only across calls, and world_lm already spills
-VI values. This step is for measurement and is replaced by layer 1.
-
-## Open questions
-
-- **The bank's size.** VF24–VF31 and VI11–VI14 fit the clipper's signature (five VI arguments and
-  one float) and its own values, but its passes need more VF registers than eight. One choice is
-  a larger VF bank, VF16–VF31. The other is the library spilling to its own work area, like a
-  program. Measuring the clipper compiled under each bank decides it.
-- **Library memory.** The recommendation is that a library may own data memory (the clip buffers),
-  declared at file scope as above. The alternative passes all of it by ref, which costs argument
-  registers.
-- **Resolving entry addresses.** Either the build defines the entry symbols (`clipper_ClipTriangle =
-  base + offset`) when it links, or the program manager patches the `iaddiu` immediates at upload.
-  The first keeps programs plain; it needs the library's base address fixed at build time.
-- **Branch.** This could continue on `vusl` or start a branch of its own from it.
+- **The bank** is VF16–VF31 and VI11–VI14 by default: the clipper's passes need more VF
+  registers than eight. A library may also spill to a work area of its own.
+- **Library memory:** a library owns data memory, declared in its header.
+- **Entry addresses** are numbers: the header gives the library's address, and the entry table
+  fixes each entry's offset.
+- **Branch:** the work continues on `vusl`.
+- **The ports:** the inlined ports stay as they are, for reference; the library versions are new
+  copies (`world_strips_lib`, `world_lm_lib`) beside them.
 
 ## Milestones
 
@@ -220,25 +200,26 @@ Each ends with fmt, clippy, the full release suite and the public corpus at 52/5
 unchanged: the new annotations are rejected in vcl mode.
 
 1. **Calls in oxide-vcl.**
-   - Parse `--call`/`--endcall` and `--return`/`--endreturn`.
-   - The call as a flow-graph node; clobbers in webs and allocation; the scheduling barrier;
-     `jalr` and `jr` emission.
+   - Parse `--call`/`--endcall` and `--return`, which ends with `--endexit`.
+   - The call's registers as pinned implicit operands of its JALR; the call as a fallthrough in the
+     flow graph; `jr` emission for `--return`.
    - Tests: hand-written VCL callers and libraries run together in the VU model with the library at
      a fixed address. One case where values live across a call keep their registers; one where
      pressure forces a spill; one with calls on several paths.
    - `docs/VCL_REFERENCE.md` and `docs/COMPATIBILITY.md`.
 2. **Libraries in VUSL.**
-   - `#pragma library`, `export`, file-scope memory in libraries, and `#pragma import` with `-L`.
-   - The interface file; the calling convention; calls as `--call`; the checker's interface and
-     overlap checks; the cache rules after a call.
-   - The interpreter's inlined meaning, and `VUSL_INLINE_LIBRARIES`.
-   - Tests: check cases for bad imports, signatures and overlaps; codegen cases for a call and a
-     library entry; semantics tests that run a library and a program together.
+   - `#pragma library`, `export` and prototypes, and file-scope memory in libraries.
+   - The library build: the entry table and one entry program per export.
+   - The calling convention; calls as `--call`; the checker's signature and overlap checks; the
+     cache rules after a call.
+   - The interpreter's inlined meaning.
+   - Tests: check cases for bad signatures, prototypes and overlaps; codegen cases for a call and
+     a library entry; semantics tests that run a library and a program together.
 3. **The doom3 clipper as a library.**
    - The ports switched over, and the programs suite and report extended.
    - `docs/VUSL_PERFORMANCE.md` updated with the size saved and the cycles paid.
-4. **Docs.** `docs/VUSL.md` (libraries, imports, the calling convention) and
-   `docs/VUSL_COMPILER.md` (the interface file and call lowering).
+4. **Docs.** `docs/VUSL.md` (libraries, the header, the calling convention) and
+   `docs/VUSL_COMPILER.md` (the library build and call lowering).
 
 ## Verification
 

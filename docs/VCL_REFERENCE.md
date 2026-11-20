@@ -446,6 +446,83 @@ The output ends with the line `NEXT_STAGE` and no E bit. With no macro text,
 the exit simply ends without an E bit. `--exitm` cannot appear inside another
 exit block.
 
+### Calls: `--call` and `--return` (`--mode=oxide`)
+
+With `--mode=oxide`, a program can call code that is compiled apart from it,
+such as a library kept resident in micro memory. VCL only sees one program at
+a time, so the call states what the callee reads and writes, the way
+`--enter` and `--exit` state a program's interface. vcl 1.4beta7 has neither
+annotation.
+
+The caller writes a `--call` block right before the JALR it describes:
+
+```text
+.syntax new
+.init_vf_all
+.init_vi_all
+--enter
+in_vf   a(vf01)
+in_vi   n(vi01)
+--endenter
+        add       b, a, a
+        iaddiu    vi11, n, 5            ; the argument, where the callee reads it
+        iaddiu    entry, vi00, 200      ; the callee's micro address
+--call
+in_vi   vi11
+out_vi  vi11
+out_vi  vi12
+out_vf  vf24
+out_vi  vi15
+--endcall
+        jalr      vi15, entry
+        iaddiu    result, vi11, 0       ; the result
+        mul       c, b, a
+--exit
+out_vf  c(vf02)
+out_vi  result(vi02)
+--endexit
+```
+
+- `in_vf`, `in_vi` and `in_hw_*` name the physical registers and hardware
+  resources the callee reads; `out_vf`, `out_vi` and `out_hw_*` those it
+  writes, its results and everything else it may change. A mask (`in_vf.x`)
+  narrows a vector register. Symbolic names are not allowed: the callee knows
+  registers by number.
+- The JALR's address register can be symbolic. Its link register, like every
+  declared register, stays as spelled.
+- A value live across the call is kept out of every register the call
+  writes, or goes to the work area (see [Work memory](#work-memory)). Values
+  that are not live across it may use those registers.
+- The call ends its block and returns to the next one, after the JALR's
+  delay slot. Nothing is scheduled across it, and a loop that holds one is
+  not pipelined.
+- A `--call` block must be followed by a JALR, and holds only these
+  declarations.
+
+The callee is a program whose exit is `--return`:
+
+```text
+.syntax new
+.init_vf vf24
+.init_vi vi11-vi12
+--enter
+in_vi   x(vi11)
+in_vi   vi15
+--endenter
+        iaddiu    y, x, 10
+--return vi15
+out_vi  y(vi11)
+--endexit
+```
+
+`--return vi15` is an exit that ends with `jr vi15` and its delay slot
+instead of the E bit. The link register is an output, so nothing in the
+program reuses it, and it should be an input of the `--enter` block too.
+`.init_vf` and `.init_vi` keep the callee to the registers its callers expect
+it to change. Each entry of a library is a program of its own; its micro
+address is where its listing is placed, and its branches are relative, so the
+listing can go anywhere.
+
 ### `--cont`
 
 Stops the program here with an E bit, so that the next `MSCNT` resumes at the
@@ -1033,7 +1110,7 @@ file, and a value follows its letter directly: `-ofile.vsm`, not
 | `-h`, `--help` | Print the help screen. |
 | `-v`, `--version` | Print oxide-vcl's version and build date on standard output. Not in vcl 1.4beta7, which rejects both. |
 | `--mode=vcl` | Generate the code vcl 1.4beta7 generates, with its exit statuses. The default. |
-| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), and its optimizations ([Optimizations](#optimizations)). |
+| `--mode=oxide` | Enable oxide-vcl's own behaviour, which breaks compatibility with vcl 1.4beta7: its exit statuses (see [Exit status and messages](#exit-status-and-messages)), every fix (`--fix=all`), openvcl's math functions in `loi` expressions ([Math functions in `loi`](#math-functions-in-loi---modeoxide)), calls of code compiled apart ([Calls](#calls---call-and---return---modeoxide)), and its optimizations ([Optimizations](#optimizations)). |
 | `--fix=<names>` | Enable fixes for vcl 1.4beta7's defects, by name, separated by commas; `--fix=all` enables every one. May be repeated. See [Fixes](#fixes). |
 | `--opt=<names>` | With `--mode=oxide` only: run just the named optimizations, separated by commas; `--opt=all` (the default) runs every one, `--opt=none` none. May be repeated. See [Optimizations](#optimizations). |
 | `--no-opt=<names>` | With `--mode=oxide` only: do not run the named optimizations, whatever `--opt=` chose, in any order. May be repeated. |

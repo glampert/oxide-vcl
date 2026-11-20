@@ -122,6 +122,9 @@ impl Instruction {
                 BARRIER => Synthetic::Barrier,
                 EXIT_MACRO => Synthetic::ExitMacro,
                 LOOP_ABSOLUTE => Synthetic::LoopAbsolute,
+                CALL => Synthetic::Call,
+                END_CALL => Synthetic::EndCall,
+                RETURN => Synthetic::Return,
                 _ => Synthetic::Unknown,
             })
     }
@@ -141,6 +144,11 @@ pub enum Synthetic {
     Barrier,
     ExitMacro,
     LoopAbsolute,
+    /// `--call` (oxide mode): the register effects of the next JALR.
+    Call,
+    EndCall,
+    /// `--return reg` (oxide mode): an exit through JR.
+    Return,
     Unknown,
 }
 
@@ -189,6 +197,8 @@ pub struct ParserOptions {
     /// call such as `pow(2, 10)` stays one operand (`--mode=oxide`, for
     /// the math functions of `loi` expressions).
     pub grouped_parentheses: bool,
+    /// Accept `--call`, `--endcall` and `--return` (`--mode=oxide`).
+    pub calls: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -201,6 +211,7 @@ struct State {
     syntax: Syntax,
     short_memory_operands: bool,
     grouped_parentheses: bool,
+    calls: bool,
     mode: ParseMode,
     reorder: bool,
     raw_loop: bool,
@@ -214,6 +225,7 @@ impl State {
             syntax,
             short_memory_operands: false,
             grouped_parentheses: false,
+            calls: false,
             mode: ParseMode::Vcl,
             reorder: false,
             raw_loop: false,
@@ -240,6 +252,7 @@ pub fn parse_with_options(
     let mut state = State::new(options.syntax);
     state.short_memory_operands = options.short_memory_operands;
     state.grouped_parentheses = options.grouped_parentheses;
+    state.calls = options.calls;
     let mut program = Program::default();
     for (line, text, passthrough) in lines {
         if passthrough {
@@ -746,11 +759,16 @@ fn parse_instruction(
 ) -> Result<Instruction, ParseMessage> {
     let source_opcode = &tokens[*cursor].text;
     let (name, specified_mask, modifiers, optional, explicit_loop_id) = opcode_parts(source_opcode);
-    let metadata = instruction::lookup(&name, state.syntax).ok_or_else(|| {
-        ParseMessage::UnknownInstruction {
+    let metadata = instruction::lookup(&name, state.syntax)
+        .or_else(|| {
+            state
+                .calls
+                .then(|| instruction::lookup_oxide(&name))
+                .flatten()
+        })
+        .ok_or_else(|| ParseMessage::UnknownInstruction {
             opcode: source_opcode.to_string(),
-        }
-    })?;
+        })?;
     if source_opcode.contains('.') && !source_opcode.contains("..") && specified_mask.is_none() {
         return Err(ParseMessage::InvalidInstructionMask);
     }
@@ -1592,9 +1610,22 @@ fn validate_stream(program: &Program, allow_incomplete: bool, errors: &mut Vec<P
                     context = None;
                     None
                 }
-                Some(Synthetic::Exit | Synthetic::ExitMacro) if context.is_none() => {
+                Some(Synthetic::Exit | Synthetic::ExitMacro | Synthetic::Return)
+                    if context.is_none() =>
+                {
                     context = Some(Synthetic::Exit);
                     exits += 1;
+                    None
+                }
+                Some(Synthetic::Call) if context.is_none() => {
+                    context = Some(Synthetic::Call);
+                    None
+                }
+                Some(Synthetic::EndCall) if context == Some(Synthetic::Call) => {
+                    context = None;
+                    None
+                }
+                Some(Synthetic::Input | Synthetic::Output) if context == Some(Synthetic::Call) => {
                     None
                 }
                 Some(Synthetic::EndExit) if context == Some(Synthetic::Exit) => {
@@ -1612,6 +1643,9 @@ fn validate_stream(program: &Program, allow_incomplete: bool, errors: &mut Vec<P
                     | Synthetic::EndEnter
                     | Synthetic::Exit
                     | Synthetic::ExitMacro
+                    | Synthetic::Return
+                    | Synthetic::Call
+                    | Synthetic::EndCall
                     | Synthetic::EndExit
                     | Synthetic::Input
                     | Synthetic::Output

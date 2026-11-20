@@ -333,6 +333,12 @@ pub mod subtype {
         pub const BARRIER: u8 = 10;
         pub const EXIT_MACRO: u8 = 11;
         pub const LOOP_ABSOLUTE: u8 = 12;
+        /// `--call` (oxide mode): the next JALR calls code outside the
+        /// program, with the register effects the block declares.
+        pub const CALL: u8 = 13;
+        pub const END_CALL: u8 = 14;
+        /// `--return` (oxide mode): an exit that returns with JR.
+        pub const RETURN: u8 = 15;
     }
 }
 
@@ -416,6 +422,7 @@ pub mod id {
     pub const SQI: u16 = 163;
     pub const SQD: u16 = 164;
     pub const XGKICK: u16 = 165;
+    pub const JALR: u16 = 177;
     pub const XTOP: u16 = 166;
     pub const XITOP: u16 = 167;
     /// The abstract moves: integer and vector, either pipe, and the
@@ -438,6 +445,57 @@ pub fn lookup(name: &str, syntax: Syntax) -> Option<&'static InstructionDef> {
         0
     };
     INSTRUCTIONS[start..]
+        .iter()
+        .find(|instruction| instruction.name.eq_ignore_ascii_case(name))
+}
+
+/// The annotations oxide mode adds to the original's table, which keeps
+/// its 214 entries: `--call`, `--endcall` and `--return`
+/// (`docs/VCL_REFERENCE.md`, calls). Their indices follow the table's.
+pub static OXIDE_SYNTHETICS: &[InstructionDef] = &[
+    oxide_synthetic(214, "--call", subtype::synthetic::CALL, &[]),
+    oxide_synthetic(215, "--endcall", subtype::synthetic::END_CALL, &[]),
+    oxide_synthetic(
+        216,
+        "--return",
+        subtype::synthetic::RETURN,
+        &[OperandSpec {
+            class: class::IMMEDIATE,
+            direction: Direction::Read,
+            implicit: false,
+            latency: -1,
+            uses_mask: true,
+            immediate_kind: ImmediateKind::LITERAL,
+            patch: 0,
+        }],
+    ),
+];
+
+const fn oxide_synthetic(
+    index: u16,
+    name: &'static str,
+    subtype: u8,
+    operands: &'static [OperandSpec],
+) -> InstructionDef {
+    InstructionDef {
+        index,
+        name,
+        mask_mode: MaskMode::Unmasked,
+        issue_mask: issue::UPPER,
+        unit_mask: unit::NONE,
+        throughput: 0,
+        kind: InstructionKind::Synthetic,
+        order_flags: order::NONE,
+        subtype,
+        target_operand: 0,
+        hook: Hook::None,
+        operands,
+    }
+}
+
+/// An oxide-mode annotation by name, case-insensitively.
+pub fn lookup_oxide(name: &str) -> Option<&'static InstructionDef> {
+    OXIDE_SYNTHETICS
         .iter()
         .find(|instruction| instruction.name.eq_ignore_ascii_case(name))
 }

@@ -812,6 +812,15 @@ pub enum CompileMessage {
     LoopPeriodRange,
     UnknownSynthetic,
     ContWithEndMode,
+    /// A `--call` block not followed by a JALR (oxide mode).
+    CallWithoutJalr,
+    /// A `--call` declaration that is not a physical register or a
+    /// hardware resource.
+    CallRegisterNotPhysical {
+        name: String,
+    },
+    /// `--return` without an integer register to return through.
+    ReturnRegister,
     /// Old syntax read a symbolic name's trailing letters as a field
     /// selection: `token` is the name as written, `name` and `fields` how it
     /// was read.

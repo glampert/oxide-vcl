@@ -814,6 +814,14 @@ fn compile(message: &CompileMessage) -> Wording {
         UnknownSynthetic => Wording::new("unknown synthetic instruction"),
         ContWithEndMode => Wording::new("--cont after this block already ended")
             .help("--cont ends a block; it can't follow an exit or a branch"),
+        CallWithoutJalr => Wording::new("a --call block must be followed by a JALR")
+            .help("write the call after --endcall: jalr vi15, address"),
+        CallRegisterNotPhysical { name } => Wording::new(format!(
+            "--call declares physical registers, not '{name}'"
+        ))
+        .help("name the register the callee reads or writes, such as vi11 or vf24.xyz"),
+        ReturnRegister => Wording::new("--return needs the integer register to return through")
+            .help("write --return vi15"),
         FieldLettersInName {
             token,
             name,

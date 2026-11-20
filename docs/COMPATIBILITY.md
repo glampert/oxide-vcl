@@ -107,6 +107,15 @@ where the known boundary lies.
   that a copy into the constant register fails the run with 255 where vcl
   exits 0 without writing a listing ([COPIES.md](COPIES.md)).
 - Some valid programs remain outside complete compiler coverage.
+- `--call` and `--return` exist only in oxide mode: vcl 1.4beta7 rejects a
+  JALR whose target is not a tagged label of the program, and has no exit
+  that returns. The original's 214-record table is unchanged; oxide mode
+  looks the annotations up in a table of its own
+  ([VCL_REFERENCE.md](VCL_REFERENCE.md#calls---call-and---return---modeoxide)).
+  The cross-stream assignment reserves a value's register for every stream
+  it is live in, so a caller with no registers to spare outside the
+  callee's can fail to allocate where packing by time would fit
+  (`crates/oxide-vcl/tests/calls.rs`).
 - Immediate expressions: vcl 1.4beta7 accepts some that the port rejects,
   and keeps them as written: a missing left operand (`*3`, `2+*3`, `**3`)
   and empty parentheses after an operand (`pi()`, `foo()()`; `2()` is 2).

@@ -178,6 +178,17 @@ fn physical(name: &str, family: Family) -> Option<usize> {
     digits.parse::<usize>().ok().filter(|&id| id < limit)
 }
 
+/// The rows a `--return` exit ends with: JR through VI`link` and its delay
+/// slot.
+fn return_rows(link: usize) -> String {
+    let jump = format!("{:<14}{}", "jr", physical_name(Family::Integer, link));
+    format!(
+        "{}\n{}\n",
+        crate::emit::pair("NOP", &jump),
+        crate::emit::pair("NOP", "NOP")
+    )
+}
+
 fn physical_name(family: Family, id: usize) -> String {
     match family {
         Family::Vector => format!("VF{id:02}"),
@@ -221,6 +232,9 @@ enum End {
         tags: Vec<String>,
         conditional: bool,
         call: bool,
+        /// A JALR after a `--call` block (oxide mode): a call of code
+        /// outside the program, which returns to the next block.
+        external: bool,
     },
     Exit {
         macro_text: Option<String>,
@@ -462,7 +476,11 @@ fn flow_uids(statements: &[parser::Statement], targets: &BTreeSet<String>) -> Ve
             };
             match instruction.synthetic() {
                 Some(
-                    Synthetic::Enter | Synthetic::Exit | Synthetic::Barrier | Synthetic::ExitMacro,
+                    Synthetic::Enter
+                    | Synthetic::Exit
+                    | Synthetic::Barrier
+                    | Synthetic::ExitMacro
+                    | Synthetic::Return,
                 ) => {
                     counter += 1;
                     uid += 1;
@@ -737,6 +755,8 @@ impl Source {
             current: Region::default(),
             binding: None,
             raw_delay: None,
+            call: None,
+            calling: false,
         };
         let branch_labels = branch_label_set(&program);
         let uids = flow_uids(&program.statements, &branch_labels);
@@ -959,6 +979,71 @@ impl Source {
                 };
                 state.binding = Some(false);
             }
+            Synthetic::Return => {
+                // An exit that returns through JR and its delay slot
+                // instead of ending with the E bit. The link register is
+                // read there, so it stays live to the end.
+                let text = instruction
+                    .operands
+                    .iter()
+                    .find_map(|o| o.immediate.as_ref())
+                    .cloned()
+                    .unwrap_or_default();
+                let link = physical(text.trim(), Family::Integer)
+                    .filter(|&id| id != 0)
+                    .ok_or_else(|| error(line, CompileMessage::ReturnRegister))?;
+                let register = self
+                    .registers
+                    .get(&physical_name(Family::Integer, link), Family::Integer);
+                let block = state.current.block();
+                block.outputs.push(Access { register, mask: 1 });
+                block.output_forced.insert(register, link);
+                block.end = End::Exit {
+                    macro_text: Some(return_rows(link)),
+                };
+                state.binding = Some(false);
+            }
+            Synthetic::Call => {
+                state.call = Some(Vec::new());
+                state.calling = true;
+            }
+            Synthetic::EndCall => state.calling = false,
+            Synthetic::Input | Synthetic::Output if state.calling => {
+                // What the callee reads (`in_`) or writes (`out_`), from the
+                // call's side: reads and writes of the JALR.
+                let direction = if synthetic == Synthetic::Input {
+                    Direction::Read
+                } else {
+                    Direction::Write
+                };
+                for operand in instruction.operands {
+                    let Some(name) = operand.register.clone() else {
+                        continue;
+                    };
+                    let class = match operand.class {
+                        class::DECLARED_VECTOR => class::VECTOR,
+                        class::DECLARED_INTEGER => class::INTEGER,
+                        other => other,
+                    };
+                    let family = family(class);
+                    if family != Some(Family::Hardware)
+                        && family.is_none_or(|family| physical(&name, family).is_none())
+                    {
+                        return Err(error(
+                            line,
+                            CompileMessage::CallRegisterNotPhysical { name },
+                        ));
+                    }
+                    let declared = parser::Operand {
+                        class,
+                        direction,
+                        implicit: true,
+                        forced_register: None,
+                        ..operand
+                    };
+                    state.call.as_mut().expect("an open --call").push(declared);
+                }
+            }
             Synthetic::EndExit => state.binding = None,
             Synthetic::Input | Synthetic::Output => {
                 if instruction.mnemonic.eq_ignore_ascii_case("in_hw_mac") {
@@ -1103,8 +1188,46 @@ impl Source {
         line: usize,
         uid: u16,
     ) -> Result<(), CompileError> {
+        // The JALR a `--call` block describes reads and writes the
+        // registers it declares, as implicit operands pinned to them.
+        let mut instruction = instruction;
+        let call = state.call.take();
+        let external = call.is_some();
+        let mut declared = 0;
+        if let Some(operands) = call {
+            let jalr = instruction.metadata.subtype
+                == subtype::branch::JUMP | subtype::branch::REGISTER | subtype::branch::LINK;
+            if state.calling || !jalr || instruction.mode == ParseMode::Raw {
+                return Err(error(line, CompileMessage::CallWithoutJalr));
+            }
+            declared = operands.len();
+            instruction.operands.extend(operands);
+        }
         let located = self.lower(instruction, line)?;
         let is_branch = located.instruction.metadata.is_branch();
+        if external {
+            // The callee knows the declared registers and the link register
+            // by their physical names, so they stay where they are spelled.
+            let id = state.current.instructions.len();
+            let count = located.instruction.operands.len();
+            for (index, (operand, register)) in located
+                .instruction
+                .operands
+                .iter()
+                .zip(&located.operands)
+                .enumerate()
+            {
+                let Some(register) = *register else { continue };
+                let named = self.registers.named(register);
+                let pinned = named.family != Family::Hardware
+                    && (index >= count - declared
+                        || (operand.direction == Direction::Write && named.physical.is_some()));
+                if pinned {
+                    let write = operand.direction == Direction::Write;
+                    state.current.pinned.insert((id, write, register), register);
+                }
+            }
+        }
         if is_branch {
             if state.raw_delay.is_some() {
                 return Err(error(line, CompileMessage::BranchInRawDelaySlot));
@@ -1128,6 +1251,7 @@ impl Source {
                 conditional: metadata.subtype
                     == subtype::branch::JUMP | subtype::branch::CONDITIONAL,
                 call: metadata.subtype & subtype::branch::LINK != 0,
+                external,
             };
         }
 
@@ -1243,6 +1367,11 @@ struct ParseState {
     current: Region,
     binding: Option<bool>,
     raw_delay: Option<(usize, u8)>,
+    /// The registers a `--call` block declares, as implicit operands of the
+    /// JALR it describes: collected while the block is open (`calling`),
+    /// then held until that JALR.
+    call: Option<Vec<parser::Operand>>,
+    calling: bool,
 }
 
 /// The lowercased labels that are branch targets or indirect tags.
@@ -1382,6 +1511,7 @@ pub fn compile(
             allow_incomplete: false,
             short_memory_operands: options.fixes(Fix::Operands),
             grouped_parentheses: options.mode == crate::Mode::Oxide,
+            calls: options.mode == crate::Mode::Oxide,
         },
     )
     .map_err(|errors| {

@@ -338,9 +338,14 @@ pub(super) fn drop_redundant_branches(
     let mut changed = false;
     for &id in &analysis.reachable {
         let block = &region.blocks[id];
-        let End::Branch { call, .. } = block.end else {
+        let End::Branch { call, external, .. } = block.end else {
             continue;
         };
+        // A call of code outside the program (oxide mode's `--call`) is
+        // never redundant.
+        if external {
+            continue;
+        }
         // A call into the next block goes too when its link register is not
         // read afterwards (observed from vcl 1.4beta7 for a tagged JALR,
         // `audit-indirect-jalr-explicit`; a live link value is not observed).
