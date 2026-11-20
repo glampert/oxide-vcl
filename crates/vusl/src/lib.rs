@@ -206,7 +206,7 @@ fn compile_library(
 ) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
     let name = &checked.program.name;
     let mut table = format!(
-        "; {name}: a VUSL library of {} entries\n\t\t.vu\n\t\t.align 4\n\t\t.global\t{name}_CodeStart\n\t\t.global\t{name}_CodeEnd\n{name}_CodeStart:\n",
+        "; {name}: a VUSL library of {} exports\n\t\t.vu\n\t\t.align 4\n\t\t.global\t{name}_CodeStart\n\t\t.global\t{name}_CodeEnd\n{name}_CodeStart:\n",
         checked.entries.len()
     );
     let mut text = String::new();
@@ -220,7 +220,14 @@ fn compile_library(
         table.push_str(&format!("{}\n", vcl::emit::pair("NOP", "NOP")));
         text.push_str(&vcl.text);
         origins.extend(vcl.origins);
-        code.push_str(&entry_compiled.assembly);
+        // The table opened the listing's one VU section: dvp-as rejects
+        // a `.vu` inside it.
+        for line in entry_compiled.assembly.lines() {
+            if line.trim() != ".vu" {
+                code.push_str(line);
+                code.push('\n');
+            }
+        }
         compiled.instruction_pairs += entry_compiled.instruction_pairs;
         compiled.warnings.extend(entry_compiled.warnings);
     }

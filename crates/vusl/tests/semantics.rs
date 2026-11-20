@@ -984,6 +984,30 @@ fn with_library(caller: &str) -> Compiled {
 }
 
 #[test]
+fn a_library_listing_is_one_vu_section() {
+    // dvp-as rejects a `.vu` inside a VU section, so the entries' own
+    // listings lose theirs behind the entry table's.
+    let mut files = MemoryFiles::new();
+    files.insert("mathlib.vush", LIBRARY_HEADER);
+    let library = compile_with(LIBRARY_SOURCE, &files);
+    let sections = library
+        .assembly
+        .lines()
+        .filter(|line| line.trim() == ".vu")
+        .count();
+    assert_eq!(sections, 1, "{}", library.assembly);
+    assert!(
+        library
+            .assembly
+            .starts_with("; mathlib: a VUSL library of 3 exports\n")
+    );
+    for export in ["twiceSum", "store", "bump"] {
+        let start = format!("mathlib_{export}_CodeStart:");
+        assert!(library.assembly.contains(&start), "{}", library.assembly);
+    }
+}
+
+#[test]
 fn library_calls_mean_their_exports() {
     // Values live across the calls stay out of the library's registers;
     // results come back into variables, and stores through a ref reach

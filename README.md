@@ -143,7 +143,6 @@ VUSL, a shading language compiled to VCL:
 - [VUSL reference](docs/VUSL.md): language, costs, pragmas, reflection, command line
 - [The VUSL compiler](docs/VUSL_COMPILER.md): phases, lowering, optimizations, tests
 - [VUSL ports against the hand-written programs](docs/VUSL_PERFORMANCE.md)
-- [The VUSL plan](docs/plans/VUSL.md): the design and its milestones
 - [VUSL libraries plan](docs/plans/VUSL_LIBRARIES.md): code shared by several programs
 
 How vcl 1.4beta7 works, and how the port reproduces it:

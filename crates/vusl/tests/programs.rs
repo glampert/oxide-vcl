@@ -254,8 +254,19 @@ fn ports_draw_the_same_and_are_no_slower() {
 #[test]
 #[ignore = "prints the cycles of each port; run with --ignored --nocapture"]
 fn report() {
+    // The micro memory of the library ports and their one library, and of
+    // their inlined counterparts.
+    let (mut shared, mut library_size, mut inlined) = (0, 0, 0);
     for case in cases() {
         let (name, hand, vusl, runs) = runs(&case);
+        if let Some(size) = vusl.library {
+            let counterpart = name
+                .strip_suffix("_lib")
+                .expect("a library port is <case>_lib");
+            shared += vusl.instructions;
+            library_size = library_size.max(size);
+            inlined += ported(&case.with_file_name(counterpart)).instructions;
+        }
         let library = vusl
             .library
             .map(|pairs| format!(" and a library of {pairs}"))
@@ -279,5 +290,11 @@ fn report() {
                 println!("    against the interpreter: {mismatch}");
             }
         }
+    }
+    if library_size > 0 {
+        println!(
+            "library ports: {} instructions with their library of {library_size}, inlined {inlined}",
+            shared + library_size
+        );
     }
 }

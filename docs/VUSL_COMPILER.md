@@ -2,7 +2,7 @@
 
 How `oxide-vusl` turns a VUSL program into VCL and then a listing: the phases, what each one
 knows, the optimizations lowering does, and the tests. `docs/VUSL.md` is the language as users see
-it; `docs/plans/VUSL.md` is the design the work followed, with its milestones.
+it.
 
 ## Crates
 

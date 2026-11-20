@@ -9,6 +9,11 @@
 | 2. Libraries in VUSL | Done |
 | 3. The doom3 clipper as a library | Done |
 | 4. Docs | Done |
+| 5. The library in doom3-bfg-ps2 | Not started |
+
+Milestones 1–4 are complete in this repository. What remains is milestone 5, in the game
+repository: uploading the clipper once into the resident region, and the last check under
+Verification.
 
 ## Context
 
@@ -236,6 +241,9 @@ unchanged: the new annotations are rejected in vcl mode.
    - `docs/VUSL_PERFORMANCE.md` updated with the size saved and the cycles paid.
 4. **Docs.** `docs/VUSL.md` (libraries, the header, the calling convention) and
    `docs/VUSL_COMPILER.md` (the library build and call lowering).
+5. **The library in doom3-bfg-ps2.** Its program manager uploads `clipper.vsm` once into the
+   resident region at 1536, and the world programs that clip call it. The change follows the game
+   repository's commit rules.
 
 ## Verification
 

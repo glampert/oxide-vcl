@@ -651,8 +651,13 @@ fn exit_like_blocks(
         .iter()
         .copied()
         .filter(|&id| {
-            matches!(region.blocks[id].end, End::Exit { macro_text: None })
-                && region.blocks[id].operations.is_empty()
+            matches!(
+                region.blocks[id].end,
+                End::Exit {
+                    macro_text: None,
+                    ..
+                }
+            ) && region.blocks[id].operations.is_empty()
         })
         .collect();
     loop {
@@ -716,7 +721,10 @@ fn fold_branches_into_exits(
                 .iter()
                 .all(|&next| region.blocks[next].operations.is_empty() && exit_like.contains(&next))
         {
-            emission_blocks[id].end = End::Exit { macro_text: None };
+            emission_blocks[id].end = End::Exit {
+                macro_text: None,
+                rows: 0,
+            };
             // A branch to the physically next stream goes; any other folded
             // branch stays in its slot as a lower `nop`.
             let next = analysis.reachable.range((id + 1)..).next().copied();
@@ -1188,7 +1196,10 @@ impl<'a> ScheduleContext<'a> {
     /// Adds the padding rows an exit needs, or the branch's empty delay row.
     fn pad_block_end(&self, block_id: usize, block: &Block, raw: bool, rows: &mut Rows) {
         match block.end {
-            End::Exit { macro_text: None } | End::Continue => {
+            End::Exit {
+                macro_text: None, ..
+            }
+            | End::Continue => {
                 let lower: Vec<_> = rows
                     .iter()
                     .map(|pair| {
@@ -1921,9 +1932,12 @@ fn can_merge_streams(
     let end = match a.end {
         End::Fallthrough | End::Branch { .. } => crate::analysis::control::StreamEnd::Ordinary,
         End::Continue => crate::analysis::control::StreamEnd::Continue,
-        End::Exit { macro_text: None } => crate::analysis::control::StreamEnd::Exit,
+        End::Exit {
+            macro_text: None, ..
+        } => crate::analysis::control::StreamEnd::Exit,
         End::Exit {
             macro_text: Some(_),
+            ..
         } => crate::analysis::control::StreamEnd::ExitMacro,
     };
     crate::analysis::control::can_merge_adjacent(crate::analysis::control::MergeFacts {
@@ -2608,7 +2622,7 @@ impl Emitter<'_> {
             let source_comments = self.options.comments && commented;
             self.emit_rows(block, &finished, end_row, source_comments, output)?;
             offset += finished.rows.len();
-            self.emit_exit_macro(block, output);
+            offset += self.emit_exit_macro(block, output);
         }
         Ok(())
     }
@@ -2697,7 +2711,13 @@ impl Emitter<'_> {
     /// bit earlier instead: see [`Emitter::compact_exit`].
     fn end_row(&self, block: &Block, finished: &mut FinishedRows, walked: usize) -> Option<usize> {
         let ends = self.program.end_bit
-            && matches!(block.end, End::Exit { macro_text: None } | End::Continue);
+            && matches!(
+                block.end,
+                End::Exit {
+                    macro_text: None,
+                    ..
+                } | End::Continue
+            );
         if !ends {
             return None;
         }
@@ -2988,13 +3008,15 @@ impl Emitter<'_> {
         Ok((printed, spelled))
     }
 
-    /// Prints the macro text an `exitm` stream ends with.
-    fn emit_exit_macro(&self, block: &Block, output: &mut Compiled) {
+    /// Prints the macro text an `exitm` or `--return` stream ends with,
+    /// and returns the instruction pairs it holds.
+    fn emit_exit_macro(&self, block: &Block, output: &mut Compiled) -> usize {
         let End::Exit {
             macro_text: Some(text),
+            rows,
         } = &block.end
         else {
-            return;
+            return 0;
         };
 
         if self.options.mode == crate::Mode::Vcl {
@@ -3008,6 +3030,8 @@ impl Emitter<'_> {
                 output.assembly.push('\n');
             }
         }
+        output.instruction_pairs += rows;
+        *rows
     }
 
     /// Prints the pass-through text of the region. vcl writes a newline

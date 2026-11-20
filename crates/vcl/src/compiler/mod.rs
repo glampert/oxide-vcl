@@ -238,6 +238,9 @@ enum End {
     },
     Exit {
         macro_text: Option<String>,
+        /// The instruction pairs `macro_text` holds and the program's size
+        /// counts: a `--return`'s two rows, none for `exitm`'s text.
+        rows: usize,
     },
 }
 
@@ -964,7 +967,10 @@ impl Source {
             Synthetic::Enter => self.begin_enter(state),
             Synthetic::EndEnter => state.binding = None,
             Synthetic::Exit => {
-                state.current.block().end = End::Exit { macro_text: None };
+                state.current.block().end = End::Exit {
+                    macro_text: None,
+                    rows: 0,
+                };
                 state.binding = Some(false);
             }
             Synthetic::ExitMacro => {
@@ -976,6 +982,7 @@ impl Source {
                     .unwrap_or_default();
                 state.current.block().end = End::Exit {
                     macro_text: Some(text.trim_matches('"').to_string()),
+                    rows: 0,
                 };
                 state.binding = Some(false);
             }
@@ -1000,6 +1007,7 @@ impl Source {
                 block.output_forced.insert(register, link);
                 block.end = End::Exit {
                     macro_text: Some(return_rows(link)),
+                    rows: 2,
                 };
                 state.binding = Some(false);
             }

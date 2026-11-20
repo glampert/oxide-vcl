@@ -79,15 +79,15 @@ scene.
 
 `world_strips_lib` and `world_lm_lib` are the two doom3 ports with the clipper taken out into a
 library (`tests/vusl/programs/include/clipper.vush` and `clipper.vusl`). The library is resident at
-1536, takes 472 instructions, entry table included, and each program calls it. Its calls pass
+1536, takes 474 instructions, entry table included, and each program calls it. Its calls pass
 values in VF24–VF31 and VI10–VI14; it also works in VF16–VF23 and VI06–VI09, which it saves on
 entry and puts back. The inlined ports stay as they are, for reference.
 
 | Program | Instructions | With the library | Inlined port |
 |---|---:|---:|---:|
-| world_strips_lib | 276 | 748 | 765 |
-| world_lm_lib | 753 | 1225 | 1520 |
-| Both | 1029 | 1501 | 2285 |
+| world_strips_lib | 276 | 750 | 765 |
+| world_lm_lib | 753 | 1227 | 1520 |
+| Both | 1029 | 1503 | 2285 |
 
 The two programs and the library together take 34% fewer instructions than the two inlined ports;
 each further program that clips adds its own code and not a clipper.
@@ -122,4 +122,4 @@ the hand-written program's cycles. The cycles go to:
 vcl may schedule a MOVE in the upper pipe as MAX of the source with itself, which flushes bit
 patterns that read as denormal floats. world_lm's GIF tags hold such patterns, in their REGS lane.
 So a copy of raw bits that the peephole passes leave becomes a reload from memory or four `mr32`s
-(`docs/plans/VUSL.md`, Units). The same holds for a float whose bits `floatBitsToUint` reads.
+(`docs/VUSL_COMPILER.md`, Lowering). The same holds for a float whose bits `floatBitsToUint` reads.

@@ -319,6 +319,19 @@ fn a_call_block_needs_its_jalr_and_physical_registers() {
 }
 
 #[test]
+fn a_return_counts_its_rows() {
+    // The JR and its delay slot are part of the program's size.
+    let library = compile(ENTRY, "ENTRY").unwrap();
+    let pairs = Program::parse(&library.assembly).unwrap().pair_count();
+    assert_eq!(library.instruction_pairs, pairs, "{}", library.assembly);
+    assert!(
+        library.assembly.contains(&format!(";\tiCount={pairs}\n")),
+        "{}",
+        library.assembly
+    );
+}
+
+#[test]
 fn a_return_needs_its_register() {
     let source = ".syntax new\n\
                   .init_vi_all\n\

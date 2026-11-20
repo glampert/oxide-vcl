@@ -646,12 +646,18 @@ pub(super) fn raw_reduce_wrangled(
 
     // Tidy runs after reduction, so the E-bit padding follows
     // the reduced tail rather than the optimizer's table.
-    let padding =
-        if (raw || reduce) && matches!(end, End::Exit { macro_text: None } | End::Continue) {
-            reduced_exit_padding(region, table, &reduced)
-        } else {
-            padding
-        };
+    let padding = if (raw || reduce)
+        && matches!(
+            end,
+            End::Exit {
+                macro_text: None,
+                ..
+            } | End::Continue
+        ) {
+        reduced_exit_padding(region, table, &reduced)
+    } else {
+        padding
+    };
     let before_padding = reduced.window().len();
     reduced.pad(padding);
     let padded = reduced.window().len() - before_padding;

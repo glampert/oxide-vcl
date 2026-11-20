@@ -123,7 +123,7 @@ there (`driver_output.rs`,
 ## C syntax (VUSL)
 
 `PreprocessOptions::c_syntax` runs the same preprocessor over VUSL programs
-(`crates/vusl`, [plans/VUSL.md](plans/VUSL.md)), which are C-like. Standard
+(`crates/vusl`, [VUSL.md](VUSL.md)), which are C-like. Standard
 mode changes in four ways:
 
 - `;` is punctuation (`Punct::Semicolon`); only `//` and `/* */` are

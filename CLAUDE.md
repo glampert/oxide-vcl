@@ -25,7 +25,7 @@ untracked notes are in `CLAUDE.local.md` when present.
   language compiled to VCL, and its driver. `docs/VUSL.md` is the language
   for users, `docs/VUSL_COMPILER.md` the implementer's view,
   `docs/VUSL_PERFORMANCE.md` the ports against their originals, and
-  `docs/plans/VUSL.md` the plan and its milestones.
+  `docs/plans/VUSL_LIBRARIES.md` the libraries plan.
 - `tests/vusl`: VUSL test data: `check` (errors, warnings and reflection),
   `codegen` (one generated-VCL case per idiom), `programs` (ports of corpus
   programs, run on their scenes) and `include`.
