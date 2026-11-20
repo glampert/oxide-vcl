@@ -21,7 +21,7 @@ untracked notes are in `CLAUDE.local.md` when present.
 - `crates/oxide-vcl`: the `oxide-vcl` driver (`main.rs`, plus `cli.rs` as the
   `vcl_cli` library target so tests share the argument parser) and all
   integration tests (`tests/`).
-- `crates/vusl` and `crates/oxide-vusl` (branch `vusl`): VUSL, a GLSL-like
+- `crates/vusl` and `crates/oxide-vusl`: VUSL, a GLSL-like
   language compiled to VCL, and its driver. `docs/VUSL.md` is the language
   for users, `docs/VUSL_COMPILER.md` the implementer's view,
   `docs/VUSL_PERFORMANCE.md` the ports against their originals, and

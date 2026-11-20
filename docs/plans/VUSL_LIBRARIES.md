@@ -211,7 +211,6 @@ than the hand-written programs (the inlined ports: 3% to 43% fewer).
   1008–1023, which doom3's memory map leaves free.
 - **Entry addresses** are numbers: the header gives the library's address, and the entry table
   fixes each entry's offset.
-- **Branch:** the work continues on `vusl`.
 - **The ports:** the inlined ports stay as they are, for reference; the library versions are new
   copies (`world_strips_lib`, `world_lm_lib`) beside them.
 
