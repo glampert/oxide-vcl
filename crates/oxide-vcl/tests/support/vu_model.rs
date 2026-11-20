@@ -355,6 +355,8 @@ pub struct Execution {
     /// For each pair of the program: how often it issued, and the stall
     /// cycles before those issues.
     pub profile: Vec<(u64, u64)>,
+    /// The pair after the E delay slot, where MSCNT resumes.
+    pub resume: usize,
 }
 
 /// A non-interlocked result that changes its register or flag later.
@@ -524,6 +526,11 @@ impl Program {
         labels
     }
 
+    /// How many instruction pairs the program has.
+    pub fn pair_count(&self) -> usize {
+        self.pairs.len()
+    }
+
     /// Runs in [`Config::LOGICAL`] from the first pair.
     pub fn execute(&self, state: State, max_steps: usize) -> Result<Execution> {
         self.run(state, Config::LOGICAL, max_steps)
@@ -531,14 +538,26 @@ impl Program {
 
     /// Runs from the first pair until the pair after an E bit, for at most
     /// `max_steps` pairs.
-    pub fn run(&self, mut state: State, config: Config, max_steps: usize) -> Result<Execution> {
+    pub fn run(&self, state: State, config: Config, max_steps: usize) -> Result<Execution> {
+        self.run_from(state, 0, config, max_steps)
+    }
+
+    /// Runs from pair `start`, as MSCNT does after an earlier run ended
+    /// there ([`Execution::resume`]).
+    pub fn run_from(
+        &self,
+        mut state: State,
+        start: usize,
+        config: Config,
+        max_steps: usize,
+    ) -> Result<Execution> {
         if state.vf[0] != [0, 0, 0, 1.0_f32.to_bits()] || state.vi[0] != 0 {
             return Err("invalid constant register state".into());
         }
         let mut pipeline = Pipeline::default();
         let mut profile = vec![(0, 0); self.pairs.len()];
         let mut next_cycle = 0;
-        let mut pc = 0;
+        let mut pc = start;
         let mut delayed_branch = None;
         let mut end_delay = false;
         for step in 0..max_steps {
@@ -550,6 +569,7 @@ impl Program {
                         steps: step,
                         cycles: next_cycle,
                         profile,
+                        resume: pc,
                     });
                 }
                 return Err(format!("PC {pc} left program before E termination"));
@@ -595,6 +615,7 @@ impl Program {
                     steps: step + 1,
                     cycles: next_cycle,
                     profile,
+                    resume: pc + 1,
                 });
             }
             let next = delayed_branch.take().unwrap_or(pc + 1);

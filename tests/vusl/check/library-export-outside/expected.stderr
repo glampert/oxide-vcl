@@ -1,0 +1,5 @@
+input.vusl(3): error: export needs #pragma library: only a library has it
+   3 | export void scale(int16 count);
+     | ^
+     = help: name the library first: #pragma library(name, address = A)
+oxide-vusl: 1 error; no output written

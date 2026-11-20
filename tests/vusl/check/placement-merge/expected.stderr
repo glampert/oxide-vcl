@@ -1,0 +1,5 @@
+input.vusl(5): error: 't' is in lanes zw on one path here and xy on another
+   5 |     if (block.flag != 0)
+     |     ^
+     = help: declare it with layout(lane = ...): assignments then move into those lanes
+oxide-vusl: 1 error; no output written

@@ -1,0 +1,5 @@
+input.vusl(6): error: '+' combines lanes xy with lanes zw: no instruction moves them
+   6 |     block.out0.xy = a + b;
+     |                       ^
+     = help: assign one of them to a variable declared with layout(lane = ...), which moves its lanes
+oxide-vusl: 1 error; no output written

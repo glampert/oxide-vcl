@@ -1,0 +1,2 @@
+struct Batch { vec4 data[300]; };
+void main(layout(xtop, vif_base = 40, vif_offset = 266) in Batch batch) {}

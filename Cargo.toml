@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/vcl", "crates/oxide-vcl"]
+members = ["crates/vcl", "crates/oxide-vcl", "crates/vusl", "crates/oxide-vusl"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,6 +10,7 @@ publish = false
 
 [workspace.dependencies]
 vcl = { path = "crates/vcl" }
+vusl = { path = "crates/vusl" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

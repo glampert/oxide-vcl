@@ -1,0 +1,7 @@
+struct Block { vec4 position; int16 flag; int16 adc; };
+void main(layout(address = 0) inout Block block)
+{
+    clipflags judged = clipw(block.position.xyz, block.position.w);
+    if (block.flag != 0)
+        block.adc = adc(judged);
+}

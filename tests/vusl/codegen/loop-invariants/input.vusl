@@ -1,0 +1,18 @@
+// Loads and constants a loop does not change are lowered once before it,
+// and the loop ends when its pointer reaches the end, with no counter
+// (quake2-ps2's particles.vcl keeps fUV0, fUV1 and iRegRGBAQ in registers).
+struct Item { vec4 value; };
+struct Batch {
+    layout(lane = w) int16 count;
+    vec4 scale;
+    vec4 bias;
+    Item items[count];
+};
+
+void main(layout(xtop, vif_base = 0, vif_offset = 400) inout Batch batch)
+{
+    for (inout Item item : batch.items)
+    {
+        item.value = item.value * batch.scale * 0.5 + batch.bias;
+    }
+}

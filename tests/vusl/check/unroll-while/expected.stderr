@@ -1,0 +1,4 @@
+input.vusl(7): error: #pragma unroll with a count must come before a range-for (#pragma unroll alone unrolls a for loop with constant bounds)
+   7 |     #pragma unroll(2)
+     |     ^
+oxide-vusl: 1 error; no output written

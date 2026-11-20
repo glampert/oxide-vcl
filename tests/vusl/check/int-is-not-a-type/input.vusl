@@ -1,0 +1,2 @@
+struct Counts { int count; };
+void main() {}

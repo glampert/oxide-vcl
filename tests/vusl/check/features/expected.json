@@ -1,0 +1,232 @@
+{
+  "vusl": 1,
+  "program": {
+    "name": "features",
+    "source": "input.vusl",
+    "symbols": {
+      "start": "features_CodeStart",
+      "end": "features_CodeEnd"
+    },
+    "instructions": null
+  },
+  "uses": ["xtop", "clipw", "efu", "yield"],
+  "parameters": [
+    {
+      "name": "state",
+      "qualifier": "inout",
+      "type": "State",
+      "placement": {
+        "address": 0
+      },
+      "qwords": {
+        "fixed": 8
+      },
+      "reads": ["transform", "light", "weights", "frames"],
+      "writes": ["light", "frames"]
+    },
+    {
+      "name": "window",
+      "qualifier": "out",
+      "type": "Window",
+      "placement": {
+        "address": 10
+      },
+      "qwords": {
+        "fixed": 10
+      },
+      "reads": [],
+      "writes": ["corners.st", "corners.rgba", "corners.xyz", "corners.adc", "tag"]
+    },
+    {
+      "name": "batch",
+      "qualifier": "in",
+      "type": "Batch",
+      "placement": {
+        "xtop": true,
+        "vif_base": 40,
+        "vif_offset": 300
+      },
+      "qwords": {
+        "fixed": 2,
+        "per": [
+          {
+            "length": "count",
+            "qwords": 2
+          }
+        ]
+      },
+      "reads": ["scale", "count", "vertices.pos", "offset", "vertices.color"],
+      "writes": [],
+      "limit": {
+        "length": "count",
+        "max": 149,
+        "capacity": 300
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "Vertex",
+      "file": "input.vusl",
+      "layout": "f4e8cf89",
+      "qwords": {
+        "fixed": 2
+      },
+      "members": [
+        {
+          "name": "pos",
+          "type": "ivec4",
+          "qword": 0,
+          "lane": "x",
+          "unpack": {
+            "format": "v4_16",
+            "unsigned": false
+          }
+        },
+        {
+          "name": "color",
+          "type": "uvec4",
+          "qword": 1,
+          "lane": "x",
+          "unpack": {
+            "format": "v4_8",
+            "unsigned": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Corner",
+      "file": "input.vusl",
+      "layout": "5af91f1b",
+      "qwords": {
+        "fixed": 3
+      },
+      "members": [
+        {
+          "name": "st",
+          "type": "vec4",
+          "qword": 0,
+          "lane": "x"
+        },
+        {
+          "name": "rgba",
+          "type": "uvec4",
+          "qword": 1,
+          "lane": "x"
+        },
+        {
+          "name": "xyz",
+          "type": "ivec3",
+          "qword": 2,
+          "lane": "x"
+        },
+        {
+          "name": "adc",
+          "type": "int16",
+          "qword": 2,
+          "lane": "w"
+        }
+      ]
+    },
+    {
+      "name": "Window",
+      "file": "input.vusl",
+      "layout": "aa96d4d3",
+      "qwords": {
+        "fixed": 10
+      },
+      "members": [
+        {
+          "name": "tag",
+          "type": "qword",
+          "qword": 0
+        },
+        {
+          "name": "corners",
+          "type": "Corner",
+          "qword": 1,
+          "length": 3,
+          "stride": 3
+        }
+      ]
+    },
+    {
+      "name": "Batch",
+      "file": "input.vusl",
+      "layout": "db38c41d",
+      "qwords": {
+        "fixed": 2,
+        "per": [
+          {
+            "length": "count",
+            "qwords": 2
+          }
+        ]
+      },
+      "members": [
+        {
+          "name": "offset",
+          "type": "vec3",
+          "qword": 0,
+          "lane": "x"
+        },
+        {
+          "name": "count",
+          "type": "int16",
+          "qword": 0,
+          "lane": "w"
+        },
+        {
+          "name": "scale",
+          "type": "vec4",
+          "qword": 1,
+          "lane": "x"
+        },
+        {
+          "name": "vertices",
+          "type": "Vertex",
+          "qword": 2,
+          "length": "count",
+          "stride": 2
+        }
+      ]
+    },
+    {
+      "name": "State",
+      "file": "input.vusl",
+      "layout": "284612e4",
+      "qwords": {
+        "fixed": 8
+      },
+      "members": [
+        {
+          "name": "transform",
+          "type": "mat4",
+          "qword": 0,
+          "order": "column_major"
+        },
+        {
+          "name": "light",
+          "type": "vec4",
+          "qword": 4,
+          "lane": "x"
+        },
+        {
+          "name": "frames",
+          "type": "int16",
+          "qword": 5,
+          "lane": "x"
+        },
+        {
+          "name": "weights",
+          "type": "float",
+          "qword": 6,
+          "lane": "x",
+          "length": 2,
+          "stride": 1
+        }
+      ]
+    }
+  ]
+}

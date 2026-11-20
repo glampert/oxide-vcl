@@ -1,0 +1,2 @@
+#pragma optimize(fast)
+void main() {}

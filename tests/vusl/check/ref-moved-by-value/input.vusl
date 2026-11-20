@@ -1,0 +1,11 @@
+// A ref to a two-qword struct moved by a value computed at run time
+// would need a multiply.
+struct Pair { vec4 first; vec4 second; };
+struct Block { int16 n; Pair pairs[4]; };
+
+void main(layout(address = 0) inout Block block)
+{
+    ref<Pair> cursor = ref<Pair>(block.pairs);
+    cursor = cursor + block.n;
+    cursor.first = vec4(0.0);
+}

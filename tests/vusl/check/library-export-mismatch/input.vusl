@@ -1,0 +1,4 @@
+// An export's definition repeats its prototype's signature.
+#pragma library(mathlib, address = 400)
+export void scale(int16 count);
+export void scale(float count) { }

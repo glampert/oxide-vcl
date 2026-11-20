@@ -1,0 +1,5 @@
+input.vusl(1): error: unknown type 'int'
+   1 | struct Counts { int count; };
+     |                 ^^^
+     = help: VU integers are 16 bits: write int16
+oxide-vusl: 1 error; no output written

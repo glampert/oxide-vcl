@@ -139,11 +139,14 @@ impl<'a> Engine<'a> {
             line: 0,
             column: 0,
         };
-        if self.vuprog_at.is_none() {
-            self.warn_at(main, PreprocessMessage::MissingVuprog, Vec::new());
-        }
-        if self.endvuprog_at.is_none() {
-            self.warn_at(main, PreprocessMessage::MissingEndvuprog, Vec::new());
+        // VUSL has no #vuprog: its programs are named by a pragma.
+        if !self.options.c_syntax {
+            if self.vuprog_at.is_none() {
+                self.warn_at(main, PreprocessMessage::MissingVuprog, Vec::new());
+            }
+            if self.endvuprog_at.is_none() {
+                self.warn_at(main, PreprocessMessage::MissingEndvuprog, Vec::new());
+            }
         }
         Ok(())
     }
@@ -242,6 +245,15 @@ impl<'a> Engine<'a> {
         self.warn_at(token.loc(), message, all);
     }
 
+    /// The language of the files.
+    pub(super) fn syntax(&self) -> lexer::Syntax {
+        if self.options.c_syntax {
+            lexer::Syntax::C
+        } else {
+            lexer::Syntax::Vcl
+        }
+    }
+
     /// Splits a loaded file into tokens.
     pub(super) fn tokenize_file(&mut self, file: usize) -> Fallible<Vec<Token>> {
         let text = self.sources.file(file).text.clone();
@@ -260,9 +272,10 @@ impl<'a> Engine<'a> {
             line,
             column: 0,
         };
-        let lexed = lexer::tokenize(text, file, first_line).map_err(|error| {
-            self.error_at(at(error.line), PreprocessMessage::Lex { error: error.kind })
-        })?;
+        let lexed =
+            lexer::tokenize_with(text, file, first_line, self.syntax()).map_err(|error| {
+                self.error_at(at(error.line), PreprocessMessage::Lex { error: error.kind })
+            })?;
         for warning in lexed.warnings {
             self.warn_at(
                 at(warning.line),
@@ -384,17 +397,21 @@ impl<'a> Engine<'a> {
 
     fn process_code_line(&mut self, line: Vec<Token>) -> Fallible<()> {
         let expanded = self.expand_line(line)?;
-        // Remember the names left in the code: a macro defined after this
-        // would not apply here.
-        for token in &expanded {
+        self.record_undefined_names(&expanded);
+        self.output.extend(expanded);
+        Ok(())
+    }
+
+    /// Remembers the names left in the code: a macro defined after this
+    /// would not apply here.
+    fn record_undefined_names(&mut self, tokens: &[Token]) {
+        for token in tokens {
             if token.is_identifier() && !self.macros.is_defined(&token.text) {
                 self.used_undefined
                     .entry(token.text.clone())
                     .or_insert_with(|| token.use_loc());
             }
         }
-        self.output.extend(expanded);
-        Ok(())
     }
 
     // ----------------------------------------------
@@ -440,12 +457,9 @@ impl<'a> Engine<'a> {
             "define" => self.handle_define(line),
             "undef" => self.handle_undef(line),
             "macro" => self.handle_block_macro(line),
-            "vuprog" => self.handle_vuprog(line),
-            "endvuprog" => self.handle_endvuprog(line),
-            "pragma" => {
-                self.handle_pragma(line);
-                Ok(())
-            }
+            "vuprog" if !self.options.c_syntax => self.handle_vuprog(line),
+            "endvuprog" if !self.options.c_syntax => self.handle_endvuprog(line),
+            "pragma" => self.handle_pragma(line),
             "error" => Err(self.error(
                 directive,
                 PreprocessMessage::ErrorDirective {
@@ -816,10 +830,24 @@ impl<'a> Engine<'a> {
         Ok(())
     }
 
-    fn handle_pragma(&mut self, line: &[Token]) {
+    fn handle_pragma(&mut self, line: &[Token]) -> Fallible<()> {
         if line.len() == 3 && line[2].text == "once" {
             self.sources.mark_include_once(line[0].file);
-            return;
+            return Ok(());
+        }
+        if self.options.c_syntax {
+            // The frontend reads the pragma: it goes out as a line of its
+            // own, `#pragma` as written and the arguments expanded.
+            let mut directive = line[..2].to_vec();
+            directive[0].starts_line = true;
+            let arguments = self.expand_tokens(line[2..].to_vec(), "a #pragma")?;
+            self.record_undefined_names(&arguments);
+            self.output.extend(directive);
+            self.output.extend(arguments.into_iter().map(|mut token| {
+                token.starts_line = false;
+                token
+            }));
+            return Ok(());
         }
         let text = rest_of_line(line, 2);
         self.warn(
@@ -827,6 +855,7 @@ impl<'a> Engine<'a> {
             PreprocessMessage::UnknownPragma { text },
             Vec::new(),
         );
+        Ok(())
     }
 
     fn handle_if(&mut self, line: &[Token]) -> Fallible<()> {

@@ -1,0 +1,4 @@
+input.vusl(1): error: 'pos' needs 3 lanes, more than a qword has from lane z
+   1 | struct Block { layout(lane = z) vec3 pos; };
+     |                                      ^^^
+oxide-vusl: 1 error; no output written

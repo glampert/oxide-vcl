@@ -1,0 +1,13 @@
+[package]
+name = "vusl"
+description = "VUSL, a GLSL-like shading language for PS2 VU1 microprograms, compiled to VCL"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+vcl.workspace = true
+
+[lints]
+workspace = true

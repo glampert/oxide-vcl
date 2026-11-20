@@ -1,0 +1,12 @@
+// #pragma unroll(2) on a range read at run time: IAND splits the count
+// into pairs and the rest; the loop over pairs addresses the second
+// element one stride on, and the pointer steps two.
+struct Item { vec4 value; };
+struct Batch { layout(lane = w) int16 count; vec4 scale; Item items[count]; };
+
+void main(layout(xtop, vif_base = 0, vif_offset = 400) inout Batch batch)
+{
+    #pragma unroll(2)
+    for (inout Item item : batch.items)
+        item.value = item.value * batch.scale;
+}

@@ -1,0 +1,17 @@
+// Whether any vertex is outside the guard band, over a batch: FCAND and
+// IOR into a bool each vertex (doom3-bfg-ps2's world_strips.vcl keeps
+// iAnyOut the same way, with IAND and IOR of the ADC bit).
+struct Frame { vec3 guard; float pad; };
+struct Vertex { vec4 clip; };
+struct Batch { layout(lane = w) int16 count; Vertex vertices[count]; int16 anyOut; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(xtop, vif_base = 8, vif_offset = 400) inout Batch batch)
+{
+    bool outside = false;
+    for (Vertex v : batch.vertices)
+        outside = outside || any(clipw(v.clip.xyz * frame.guard, v.clip.w));
+    batch.anyOut = 0;
+    if (outside)
+        batch.anyOut = 1;
+}

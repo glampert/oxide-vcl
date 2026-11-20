@@ -1356,6 +1356,7 @@ impl Expansion {
             tags: Vec::new(),
             conditional: branch.source_id.is_some(),
             call: false,
+            external: false,
         });
         let last_part = part_id + 1 == expanded.plan.parts.len();
         self.result.blocks.push(Block {

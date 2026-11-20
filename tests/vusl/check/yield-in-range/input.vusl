@@ -1,0 +1,12 @@
+// A yield inside a range-for: its elements are in the batch it stops on.
+struct Item { vec4 value; };
+struct Batch { layout(lane = w) int16 count; Item items[count]; };
+
+void main(layout(xtop, vif_base = 0, vif_offset = 400) inout Batch batch)
+{
+    for (inout Item item : batch.items)
+    {
+        item.value = item.value * 2.0;
+        yield;
+    }
+}

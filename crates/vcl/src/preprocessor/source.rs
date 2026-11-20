@@ -1,7 +1,7 @@
 //! Source files: loading them through a [`SourceLoader`], finding the file an
 //! `#include` names, and remembering `#pragma once`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
 use super::lexer::Loc;
@@ -37,6 +37,34 @@ impl SourceLoader for FileSystem {
             .unwrap_or_else(|_| normalize(path))
             .to_string_lossy()
             .into_owned()
+    }
+}
+
+/// Files held in memory, by path: for tests, and for callers that have the
+/// text already. Paths are compared after [`normalize`].
+#[derive(Clone, Debug, Default)]
+pub struct MemoryFiles {
+    files: HashMap<PathBuf, String>,
+}
+
+impl MemoryFiles {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds the file at `path`, replacing any it had.
+    pub fn insert(&mut self, path: impl AsRef<Path>, text: impl Into<String>) {
+        self.files.insert(normalize(path.as_ref()), text.into());
+    }
+}
+
+impl SourceLoader for MemoryFiles {
+    fn is_file(&self, path: &Path) -> bool {
+        self.files.contains_key(&normalize(path))
+    }
+
+    fn read(&self, path: &Path) -> Option<String> {
+        self.files.get(&normalize(path)).cloned()
     }
 }
 

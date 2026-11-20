@@ -1,0 +1,4 @@
+input.vusl(8): error: only a ref<T> variable can be read through: write r[1].x for (r + 1).x
+   8 |     block.out0 = (cursor + 1).value;
+     |                          ^
+oxide-vusl: 1 error; no output written

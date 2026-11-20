@@ -1,0 +1,10 @@
+// A length read at run time splits into groups only by a power of two.
+struct Item { vec4 value; };
+struct Batch { layout(lane = w) int16 count; Item items[count]; };
+
+void main(layout(xtop, vif_base = 0, vif_offset = 400) inout Batch batch)
+{
+    #pragma unroll(3)
+    for (inout Item item : batch.items)
+        item.value = item.value * 2.0;
+}

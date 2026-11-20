@@ -1,0 +1,40 @@
+oxide-vusl {version} (VUSL), built {date}
+Compiles VUSL, a GLSL-like language for PlayStation 2 VU1 microprograms, to
+VCL, which oxide-vcl schedules into vector unit assembly for dvp-as.
+
+usage: oxide-vusl [options] <inputfile>
+
+Reads <inputfile>, or standard input when it is -, and writes the output to
+standard output unless -o is given. A value follows its option as the next
+argument or glued to it: -o out.vsm or -oout.vsm.
+
+output:
+  -o <file>            write the assembly listing to <file>
+  --emit-vcl=<file>    also write the generated VCL to <file>
+  --stop-at-vcl        write the generated VCL instead of the listing
+  --preprocess-only    write the preprocessed program and stop
+  --check              check the program and stop: types, lanes, layouts
+                       and main's parameters, without generating code
+  --reflect=<file>     also write the reflection as JSON: the program's
+                       parameters, placements, sizes and struct layouts
+  --header=<file>      also write the reflection as a C++ header, with the
+                       structs checked against the VU layout
+
+input:
+  -I <dir>             look for included files in <dir>; may be repeated
+  -D <name>[=<value>]  define a macro before the program (the value is 1
+                       when absent); may be repeated. __VUSL__ is always
+                       defined, as 1
+
+code:
+  --mode=<mode>        how the generated VCL is compiled: oxide (the
+                       default, with oxide-vcl's fixes and optimizations)
+                       or vcl (vcl 1.4beta7's code generation)
+
+diagnostics:
+  --warnings-as-errors fail the run on any warning
+  --color=<when>       color diagnostics: auto (the default: when standard
+                       error is a terminal), always or never
+
+  -h, --help           print this help
+  -v, --version        print the version

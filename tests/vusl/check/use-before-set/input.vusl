@@ -1,0 +1,7 @@
+struct Block { vec4 a; };
+void main(layout(address = 0) inout Block block)
+{
+    vec3 t;
+    t.x = 1.0;
+    block.a.xyz = t;
+}

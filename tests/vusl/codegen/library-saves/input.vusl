@@ -1,0 +1,11 @@
+// A library entry that also works in registers below its bank: VI09 and
+// VF15, saved to its `saves` memory on entry (ISW, SQ), behind a barrier,
+// and put back before --return (ILW, LQ), bound to where they came from.
+#pragma library(mathlib, address = 400, vf = 16, vi = 10, saved_vf = 1, saved_vi = 1, save = saves)
+struct Saves { qword q[2]; };
+layout(address = 1000) inout Saves saves;
+export int16 twice(int16 value);
+export int16 twice(int16 value)
+{
+    return value + value;
+}

@@ -1,0 +1,5 @@
+input.vusl(9): error: 'cursor' would point outside the memory it was first set from
+   9 |     cursor = ref<Item>(block.second);
+     |     ^^^^^^
+     = help: a ref stays within one parameter member or array: use another ref for other memory
+oxide-vusl: 1 error; no output written

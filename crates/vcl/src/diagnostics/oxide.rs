@@ -2,7 +2,10 @@
 //! is about (for the caret underline) and, where there is one, a suggested
 //! fix. None of this is vcl 1.4beta7's text.
 
-use super::{CliMessage, CompileMessage, DriverMessage, Message, ParseMessage, PreprocessMessage};
+use super::{
+    CliMessage, CompileMessage, DriverMessage, FrontendMessage, Message, ParseMessage,
+    PreprocessMessage,
+};
 use crate::allocator::allocation::AllocationError;
 
 /// A message in oxide wording.
@@ -60,6 +63,16 @@ pub fn wording(message: &Message) -> Wording {
         Message::Parse(message) => parse(message),
         Message::Compile(message) => compile(message),
         Message::Preprocess(message) => preprocess(message),
+        Message::Frontend(message) => frontend(message),
+    }
+}
+
+/// A frontend's message, worded by the frontend.
+fn frontend(message: &FrontendMessage) -> Wording {
+    Wording {
+        text: message.text.clone(),
+        subject: message.subject.clone(),
+        help: message.help.clone(),
     }
 }
 
@@ -801,6 +814,14 @@ fn compile(message: &CompileMessage) -> Wording {
         UnknownSynthetic => Wording::new("unknown synthetic instruction"),
         ContWithEndMode => Wording::new("--cont after this block already ended")
             .help("--cont ends a block; it can't follow an exit or a branch"),
+        CallWithoutJalr => Wording::new("a --call block must be followed by a JALR")
+            .help("write the call after --endcall: jalr vi15, address"),
+        CallRegisterNotPhysical { name } => Wording::new(format!(
+            "--call declares physical registers, not '{name}'"
+        ))
+        .help("name the register the callee reads or writes, such as vi11 or vf24.xyz"),
+        ReturnRegister => Wording::new("--return needs the integer register to return through")
+            .help("write --return vi15"),
         FieldLettersInName {
             token,
             name,

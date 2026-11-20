@@ -171,6 +171,19 @@ fn status_operand(
 /// Expand the four virtual status classes as the original does and apply the
 /// MR32 input-mask rotation. Parser indices remain available
 /// for mapping effective operands back to source expressions and registers.
+/// The latency of an operand the descriptor has no spec for: a JALR's
+/// operands past its own two are a `--call` block's (oxide mode), which the
+/// callee writes after the jump, as late as JALR's own latency.
+fn declared_latency(instruction: &Instruction, direction: Direction) -> i16 {
+    if instruction.metadata.index == crate::isa::instruction::id::JALR
+        && direction == Direction::Write
+    {
+        2
+    } else {
+        0
+    }
+}
+
 pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
     let mut operands = Vec::new();
     for (index, source) in instruction.operands.iter().enumerate() {
@@ -332,7 +345,10 @@ pub fn expand(instruction: &Instruction) -> ExpandedInstruction {
                     mask,
                     register: source.register.clone(),
                     implicit: source.implicit,
-                    latency: spec.map_or(0, |spec| i16::from(spec.latency)),
+                    latency: spec.map_or_else(
+                        || declared_latency(instruction, source.direction),
+                        |spec| i16::from(spec.latency),
+                    ),
                     blocking: spec.is_some_and(|spec| spec.uses_mask),
                 });
             }

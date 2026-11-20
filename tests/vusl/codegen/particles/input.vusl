@@ -1,0 +1,4 @@
+// The particles port (tests/vusl/check/particles), as generated: its loop
+// is 16 upper and 16 lower instructions where quake2-ps2's hand-written
+// particles.vcl has 19 and 17.
+#include "../../check/particles/input.vusl"

@@ -1,0 +1,4 @@
+input.vusl(4): error: Block has no member 'b'
+   4 |     block.b = block.a;
+     |           ^
+oxide-vusl: 1 error; no output written

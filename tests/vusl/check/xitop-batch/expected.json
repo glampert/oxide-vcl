@@ -1,0 +1,148 @@
+{
+  "vusl": 1,
+  "program": {
+    "name": "xitop_batch",
+    "source": "input.vusl",
+    "symbols": {
+      "start": "xitop_batch_CodeStart",
+      "end": "xitop_batch_CodeEnd"
+    },
+    "instructions": null
+  },
+  "uses": ["xtop", "xitop", "xgkick"],
+  "parameters": [
+    {
+      "name": "count",
+      "qualifier": "in",
+      "type": "int16",
+      "placement": {
+        "xitop": true
+      }
+    },
+    {
+      "name": "batch",
+      "qualifier": "inout",
+      "type": "Batch",
+      "placement": {
+        "xtop": true,
+        "vif_base": 100,
+        "vif_offset": 400
+      },
+      "qwords": {
+        "fixed": 3,
+        "per": [
+          {
+            "length": "xitop",
+            "qwords": 1
+          }
+        ]
+      },
+      "reads": ["vertices.pos", "scale", "tag"],
+      "writes": ["window.items.value", "window.tag"],
+      "kicks": ["window"]
+    }
+  ],
+  "types": [
+    {
+      "name": "Vertex",
+      "file": "input.vusl",
+      "layout": "a8ca1a14",
+      "qwords": {
+        "fixed": 1
+      },
+      "members": [
+        {
+          "name": "pos",
+          "type": "vec4",
+          "qword": 0,
+          "lane": "x"
+        }
+      ]
+    },
+    {
+      "name": "Item",
+      "file": "input.vusl",
+      "layout": "67443ed2",
+      "qwords": {
+        "fixed": 1
+      },
+      "members": [
+        {
+          "name": "value",
+          "type": "vec4",
+          "qword": 0,
+          "lane": "x"
+        }
+      ]
+    },
+    {
+      "name": "Window",
+      "file": "input.vusl",
+      "layout": "21552ae7",
+      "qwords": {
+        "fixed": 1
+      },
+      "open": {
+        "member": "items",
+        "stride": 1
+      },
+      "members": [
+        {
+          "name": "tag",
+          "type": "qword",
+          "qword": 0
+        },
+        {
+          "name": "items",
+          "type": "Item",
+          "qword": 1,
+          "length": "open",
+          "stride": 1
+        }
+      ]
+    },
+    {
+      "name": "Batch",
+      "file": "input.vusl",
+      "layout": "be603802",
+      "qwords": {
+        "fixed": 3,
+        "per": [
+          {
+            "length": "xitop",
+            "qwords": 1
+          }
+        ]
+      },
+      "open": {
+        "member": "window.items",
+        "stride": 1
+      },
+      "members": [
+        {
+          "name": "scale",
+          "type": "vec4",
+          "qword": 0,
+          "lane": "x"
+        },
+        {
+          "name": "vertices",
+          "type": "Vertex",
+          "qword": 1,
+          "length": "xitop",
+          "stride": 1
+        },
+        {
+          "name": "tag",
+          "type": "qword",
+          "qword": "1 + xitop"
+        },
+        {
+          "name": "window",
+          "type": "Window",
+          "qword": "2 + xitop"
+        }
+      ]
+    }
+  ]
+}

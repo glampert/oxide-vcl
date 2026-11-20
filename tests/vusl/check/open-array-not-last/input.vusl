@@ -1,0 +1,2 @@
+struct Block { vec4 items[]; float after; };
+void main() {}

@@ -25,6 +25,7 @@ pub mod analysis;
 pub mod compiler;
 pub mod debug;
 pub mod diagnostics;
+pub mod driver;
 pub mod emit;
 pub mod isa;
 pub mod loops;

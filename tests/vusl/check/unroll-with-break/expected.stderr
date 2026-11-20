@@ -1,0 +1,5 @@
+input.vusl(8): error: an unrolled loop cannot break or continue
+   8 |     for (inout Item item : block.items)
+     |     ^
+     = help: its body is repeated: drop the break or continue, or the #pragma unroll
+oxide-vusl: 1 error; no output written

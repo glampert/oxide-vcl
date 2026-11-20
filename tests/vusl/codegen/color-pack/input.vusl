@@ -1,0 +1,12 @@
+// A colour clamped to its range and converted to integers: MAX, MINI and
+// FTOI0 (doom3-bfg-ps2's world programs clamp vertex colours the same way).
+struct Frame { vec4 low; vec4 high; };
+struct In { vec4 color; };
+struct Out { uvec4 rgba; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 2) in In vertex,
+          layout(address = 3) out Out result)
+{
+    result.rgba = uvec4(ftoi0(clamp(vertex.color, frame.low, frame.high)));
+}

@@ -1,0 +1,13 @@
+// A quotient stored to a lane: ADDQ into that lane, then SQ (quake2-ps2's
+// particles.vcl: addq.y fQ, vf00, q; sq.y). A constant stored to a lane is
+// LOI and ADDI there.
+struct Out { float s; float q; float t; float k; };
+
+struct In { vec4 v; };
+
+void main(layout(address = 0) in In input,
+          layout(address = 1) out Out result)
+{
+    result.q = 1.0 / input.v.w;
+    result.k = 0.75;
+}

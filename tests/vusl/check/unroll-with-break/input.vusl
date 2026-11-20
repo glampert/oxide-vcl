@@ -1,0 +1,14 @@
+// An unrolled body is repeated: a break has nowhere to go.
+struct Item { vec4 value; };
+struct Block { Item items[8]; };
+
+void main(layout(address = 0) inout Block block)
+{
+    #pragma unroll(2)
+    for (inout Item item : block.items)
+    {
+        if (item.value.x < 0.0)
+            break;
+        item.value = item.value * 2.0;
+    }
+}

@@ -85,38 +85,7 @@ impl Arguments {
     }
 }
 
-/// When diagnostics carry ANSI colors (`--color=`), as with clang and gcc.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum Color {
-    /// On when standard error is a terminal, unless `NO_COLOR` is set or
-    /// `TERM` is `dumb`.
-    #[default]
-    Auto,
-    Always,
-    Never,
-}
-
-impl Color {
-    pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "auto" => Some(Self::Auto),
-            "always" => Some(Self::Always),
-            "never" => Some(Self::Never),
-            _ => None,
-        }
-    }
-
-    /// Whether to color: for `Auto`, whether standard error is a terminal
-    /// and the environment allows colors (no `NO_COLOR`, `TERM` not
-    /// `dumb`).
-    pub fn enabled(self, terminal: bool, environment_allows: bool) -> bool {
-        match self {
-            Self::Auto => terminal && environment_allows,
-            Self::Always => true,
-            Self::Never => false,
-        }
-    }
-}
+pub use vcl::driver::Color;
 
 /// A command line the driver rejects, with the notices printed before it.
 #[derive(Clone, Debug, Eq, PartialEq)]

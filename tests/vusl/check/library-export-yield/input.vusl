@@ -1,0 +1,3 @@
+// A library entry returns to its caller: it cannot yield.
+#pragma library(mathlib, address = 400)
+export void scale(int16 count) { yield; }

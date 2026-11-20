@@ -1,0 +1,5 @@
+input.vusl(2): error: 'first' and 'second' overlap in data memory
+   2 | void main(layout(address = 0) uniform Constants first, layout(address = 1) uniform Constants second) {}
+     |                                                                                              ^^^^^^
+     = help: move one, or declare the overlap with layout(alias = ...)
+oxide-vusl: 1 error; no output written

@@ -1,0 +1,5 @@
+input.vusl(10): error: yield in a range-for
+   10 |         yield;
+      |         ^^^^^
+      = help: the elements are in the batch the program stops on; yield between range-fors
+oxide-vusl: 1 error; no output written

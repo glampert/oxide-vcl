@@ -1,0 +1,33 @@
+// A batch whose length the host sends with VIF ITOP: its arrays and the
+// offsets after them are counted by main's layout(xitop) parameter, and
+// refs write a packet of as many items as the program finds.
+#pragma program(xitop_batch)
+
+struct Vertex { vec4 pos; };
+struct Item { vec4 value; };
+struct Window { qword tag; Item items[]; };
+
+struct Batch {
+    vec4   scale;
+    Vertex vertices[count];
+    qword  tag;
+    Window window;
+};
+
+void main(layout(xitop) int16 count,
+          layout(xtop, vif_base = 100, vif_offset = 400) inout Batch batch)
+{
+    ref<Item> cursor = ref<Item>(batch.window.items);
+    ref<Item> start = cursor;
+    for (Vertex v : batch.vertices)
+    {
+        if (v.pos.w > 0.0)
+        {
+            cursor.value = v.pos * batch.scale;
+            cursor += 1;
+        }
+    }
+    batch.window.tag = batch.tag;
+    batch.window.tag.x = (cursor - start) | 0x8000;
+    xgkick(batch.window);
+}

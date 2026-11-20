@@ -1,0 +1,5 @@
+input.vusl(4): error: multiplying int16 values: the VU has no instruction for it
+   4 |     block.product = block.a * block.b;
+     |                             ^
+     = help: VU1 has no integer multiply: add the value to itself, or keep a running sum
+oxide-vusl: 1 error; no output written

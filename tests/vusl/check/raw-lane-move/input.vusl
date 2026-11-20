@@ -1,0 +1,6 @@
+struct Block { vec4 v; ivec4 bits; };
+void main(layout(address = 0) inout Block block)
+{
+    ivec2 swapped = ftoi0(block.v.yx);
+    block.bits.xy = swapped;
+}

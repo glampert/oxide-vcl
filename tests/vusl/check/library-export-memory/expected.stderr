@@ -1,0 +1,5 @@
+input.vusl(4): error: 'block' cannot be passed to a library: it is memory, which a ref passes
+   4 | export void scale(in Block block) { }
+     |                   ^
+     = help: pass int16, ref<T>, float, vectors and raw integer types; memory goes by ref
+oxide-vusl: 1 error; no output written

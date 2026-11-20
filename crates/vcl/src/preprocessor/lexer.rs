@@ -8,7 +8,9 @@
 //! - `;`, `//` and `/* */` start comments. A comment is dropped: between two
 //!   tokens on a line it counts as one space, and before the first token of a
 //!   line it turns into spaces, so the token keeps its column. A `/* */`
-//!   comment that spans lines does not end the line it is in.
+//!   comment that spans lines does not end the line it is in. In C syntax
+//!   ([`Syntax::C`], for VUSL) `;` is punctuation and only `//` and `/* */`
+//!   are comments.
 //! - Strings (`"..."`) and character literals (`'.'`) are kept as written:
 //!   a backslash is an ordinary character, so `"a\"` is a whole string. A
 //!   character literal holds at most one character.
@@ -32,6 +34,17 @@
 
 use std::fmt;
 use std::rc::Rc;
+
+/// Which language the text is in, which decides what a comment is.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Syntax {
+    /// VCL: `;`, `//` and `/* */` start comments.
+    #[default]
+    Vcl,
+    /// C, as VUSL is written: `;` is punctuation; `//` and `/* */` are
+    /// comments.
+    C,
+}
 
 /// What a token is.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -326,7 +339,17 @@ pub struct Lexed {
 /// `first_line`, the line of the file the text starts on. A `\` that ends a
 /// line joins it to the next.
 pub fn tokenize(text: &str, file: usize, first_line: usize) -> Result<Lexed, LexError> {
-    let mut lexer = Lexer::new(text, first_line);
+    tokenize_with(text, file, first_line, Syntax::Vcl)
+}
+
+/// [`tokenize`] for text in `syntax`.
+pub fn tokenize_with(
+    text: &str,
+    file: usize,
+    first_line: usize,
+    syntax: Syntax,
+) -> Result<Lexed, LexError> {
+    let mut lexer = Lexer::new(text, first_line, syntax);
     lexer.file = file;
     let mut tokens = Vec::new();
     while let Some(token) = lexer.next_token()? {
@@ -341,10 +364,15 @@ pub fn tokenize(text: &str, file: usize, first_line: usize) -> Result<Lexed, Lex
 /// The token `text` is, if it is exactly one valid token with nothing
 /// around it: the result of a `##` paste.
 pub fn lex_single_token(text: &str) -> Option<Token> {
+    lex_single_token_with(text, Syntax::Vcl)
+}
+
+/// [`lex_single_token`] for text in `syntax`.
+pub fn lex_single_token_with(text: &str, syntax: Syntax) -> Option<Token> {
     if text.is_empty() {
         return None;
     }
-    let mut lexer = Lexer::new(text, 1);
+    let mut lexer = Lexer::new(text, 1, syntax);
     let token = lexer.next_token().ok()??;
     let alone = token.leading.is_empty()
         && lexer.position == text.len()
@@ -363,10 +391,12 @@ struct Lexer<'a> {
     tokens: usize,
     file: usize,
     warnings: Vec<LexWarning>,
+    /// `;` starts a comment (VCL), rather than being punctuation (C).
+    semicolon_comments: bool,
 }
 
 impl<'a> Lexer<'a> {
-    fn new(text: &'a str, first_line: usize) -> Self {
+    fn new(text: &'a str, first_line: usize, syntax: Syntax) -> Self {
         Self {
             text,
             bytes: text.as_bytes(),
@@ -376,6 +406,7 @@ impl<'a> Lexer<'a> {
             tokens: 0,
             file: 0,
             warnings: Vec::new(),
+            semicolon_comments: syntax == Syntax::Vcl,
         }
     }
 
@@ -405,7 +436,8 @@ impl<'a> Lexer<'a> {
             let c = self.peek(0);
             if c <= b' ' {
                 self.advance();
-            } else if c == b';' || (c == b'/' && self.peek(1) == b'/') {
+            } else if (c == b';' && self.semicolon_comments) || (c == b'/' && self.peek(1) == b'/')
+            {
                 while self.position < self.bytes.len() && self.peek(0) != b'\n' {
                     self.advance();
                 }
@@ -440,7 +472,10 @@ impl<'a> Lexer<'a> {
         if self.position >= self.bytes.len() {
             return Ok(None);
         }
-        let gap = read_gap(&self.text[gap_start..self.position]);
+        let gap = read_gap(
+            &self.text[gap_start..self.position],
+            self.semicolon_comments,
+        );
         let start = self.position;
         let line = self.line;
         let column = start - self.line_start + 1;
@@ -611,7 +646,7 @@ struct GapLayout {
     leading: String,
 }
 
-fn read_gap(gap: &str) -> GapLayout {
+fn read_gap(gap: &str, semicolon_comments: bool) -> GapLayout {
     // A newline only ends the line outside a comment: a `/* */` comment that
     // spans lines does not split the line it is in. Line comments stop at
     // their newline.
@@ -624,7 +659,7 @@ fn read_gap(gap: &str) -> GapLayout {
             i = gap[i + 2..]
                 .find("*/")
                 .map_or(bytes.len(), |end| i + 2 + end + 2);
-        } else if gap[i..].starts_with("//") || bytes[i] == b';' {
+        } else if gap[i..].starts_with("//") || (bytes[i] == b';' && semicolon_comments) {
             i = gap[i..].find('\n').map_or(bytes.len(), |end| i + end);
         } else {
             if bytes[i] == b'\n' {
@@ -828,6 +863,21 @@ mod tests {
         assert_eq!(tokens[3].text, "`");
         assert!(tokens[0].is_identifier());
         assert!(tokens[1].is(Punct::Other));
+    }
+
+    #[test]
+    fn c_syntax_has_no_semicolon_comments() {
+        let tokens = tokenize_with("a = b; // c;\n/* ; */ d;", 0, 1, Syntax::C)
+            .unwrap()
+            .tokens;
+        let texts: Vec<&str> = tokens.iter().map(|token| token.text.as_str()).collect();
+        assert_eq!(texts, ["a", "=", "b", ";", "d", ";"]);
+        assert!(tokens[3].is(Punct::Semicolon));
+        assert!(tokens[4].starts_line);
+        assert_eq!(tokens[4].leading, "        ");
+        assert!(lex_single_token_with(";", Syntax::C).is_some_and(|t| t.is(Punct::Semicolon)));
+        // In VCL a `;` starts a comment, so it pastes into no token.
+        assert!(lex_single_token(";").is_none());
     }
 
     #[test]

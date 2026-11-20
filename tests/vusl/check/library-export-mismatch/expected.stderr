@@ -1,0 +1,8 @@
+input.vusl(4): error: 'scale' is defined with another signature than its prototype
+   4 | export void scale(float count) { }
+     |             ^^^^^
+     = help: an export's definition repeats its prototype's types, qualifiers and names
+input.vusl(3): note: 'scale' is first declared here
+   3 | export void scale(int16 count);
+     |             ^^^^^
+oxide-vusl: 1 error; no output written

@@ -1,0 +1,10 @@
+float pick(float x)
+{
+    if (x < 0.0) return 0.0;
+    return x;
+}
+struct Block { float a; };
+void main(layout(address = 0) inout Block block)
+{
+    block.a = pick(block.a);
+}

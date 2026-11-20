@@ -1,0 +1,16 @@
+// Moving lanes: a rotation is MR32 (one per lane step), other moves one
+// broadcast ADD per lane; components already in place MOVE together.
+struct In { vec4 a; };
+struct Out { vec4 rotated; vec4 swapped; };
+
+void main(layout(address = 0) in In data,
+          layout(address = 1) out Out result)
+{
+    vec4 rotated;
+    rotated.xyz = data.a.yzw;
+    rotated.w = data.a.x;
+    result.rotated = rotated;
+    vec4 swapped = data.a;
+    swapped.xy = data.a.yx;
+    result.swapped = swapped;
+}

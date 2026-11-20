@@ -1,0 +1,5 @@
+struct Block { vec4 a; };
+void main(layout(address = 0) inout Block block)
+{
+    block.b = block.a;
+}

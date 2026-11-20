@@ -1,0 +1,14 @@
+// A call of a library's export: the arguments moved into the library's
+// registers (VI11, then VF16 on), the entry's address, a --call block that
+// declares everything the call may change, and the JALR; the result moved
+// back out. kept is live across the call, so vcl keeps it out of the bank.
+#pragma library(mathlib, address = 400, vf = 16, vi = 11)
+export float lengthOf(vec4 v, int16 count);
+struct Block { vec4 a; vec4 b; int16 n; int16 pad0; int16 pad1; int16 pad2; float f; float g; float h; float k; };
+void main(layout(address = 0) inout Block block)
+{
+    vec4 kept = block.b + block.a;
+    float s = lengthOf(block.a, block.n);
+    block.f = s;
+    block.g = kept.y;
+}

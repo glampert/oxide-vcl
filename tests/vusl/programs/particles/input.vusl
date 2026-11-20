@@ -1,0 +1,3 @@
+// quake2-ps2's particle program (tests/vusl/check/particles), against the
+// hand-written particles.vcl.
+#include "../../check/particles/input.vusl"

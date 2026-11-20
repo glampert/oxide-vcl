@@ -1,0 +1,5 @@
+input.vusl(4): error: 'block' and 'scratch' overlap in data memory
+   4 | layout(address = 4) inout Scratch scratch;
+     |                                   ^^^^^^^
+     = help: move one, or declare the overlap with layout(alias = ...)
+oxide-vusl: 1 error; no output written

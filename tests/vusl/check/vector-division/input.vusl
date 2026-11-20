@@ -1,0 +1,5 @@
+struct Block { vec4 a; vec4 b; };
+void main(layout(address = 0) inout Block block)
+{
+    block.a = block.a / block.b;
+}

@@ -1,0 +1,11 @@
+// A dot product is MUL and two ADDs into the first lane; normalize is a
+// dot, RSQRT and MULQ.
+struct Light { vec3 direction; float pad; vec3 normal; };
+struct Out { vec3 unit; float facing; };
+
+void main(layout(address = 0) in Light light,
+          layout(address = 2) out Out result)
+{
+    result.unit = normalize(light.direction);
+    result.facing = dot(light.direction, light.normal);
+}

@@ -1,0 +1,7 @@
+// floatBitsToUint reads a float's bits; an int16 has none in VF lanes.
+struct Block { int16 count; int16 pad0; int16 pad1; int16 pad2; uint32 bits; };
+
+void main(layout(address = 0) inout Block block)
+{
+    block.bits = floatBitsToUint(block.count);
+}

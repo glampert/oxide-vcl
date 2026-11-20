@@ -21,7 +21,7 @@ built-in one.
 | `mod.rs` | `preprocess(name, text, options, loader)`, `PreprocessOptions`, the result types |
 | `lexer.rs` | Tokens, kept as written with the whitespace before each |
 | `expression.rs` | Integer constant expressions (`#if`, `.aif`, `--fold-constants`) |
-| `source.rs` | The file table, include search, `#pragma once`, `SourceLoader` |
+| `source.rs` | The file table, include search, `#pragma once`, `SourceLoader` and `MemoryFiles` |
 | `macros.rs` | The macro table and the built-ins |
 | `engine.rs` | Lines, files, C directives, conditionals and the diagnostics' notes |
 | `expander.rs` | Macro expansion |
@@ -119,6 +119,25 @@ defines the macro. The driver hands these to `Reporter::set_line_origins`, so
 a parse or compile error names that file and line and quotes the line from
 there (`driver_output.rs`,
 `compile_errors_in_preprocessed_code_name_the_line_it_came_from`).
+
+## C syntax (VUSL)
+
+`PreprocessOptions::c_syntax` runs the same preprocessor over VUSL programs
+(`crates/vusl`, [VUSL.md](VUSL.md)), which are C-like. Standard
+mode changes in four ways:
+
+- `;` is punctuation (`Punct::Semicolon`); only `//` and `/* */` are
+  comments (`lexer::Syntax::C`).
+- A `#pragma` other than `#pragma once` goes to the output as a line of its
+  own, written as it was with macros in its arguments expanded, for the
+  frontend to read. Its line origin is the pragma's line.
+- A name followed by `{` is ordinary code, as in `struct Frame {` or
+  `else {`, unless a block macro of that name is defined.
+- `#vuprog` and `#endvuprog` are unknown directives, and their absence is not
+  warned about.
+
+The unit tests in `preprocessor/mod.rs` and `lexer.rs` cover these, over
+`MemoryFiles`, the in-memory `SourceLoader`.
 
 ## Differences from vclpp
 

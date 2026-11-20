@@ -1,0 +1,10 @@
+// The frame constants quake2-ps2's programs read: eight qwords at address 0
+// (FrameConstants in its vu1.h, GPL-2.0: see tests/corpus/README.md).
+#pragma once
+struct Frame {
+    layout(row_major) mat4 mvp;
+    vec4  gsScale;
+    vec4  gsOffset;
+    vec3  clipScale;  float warpPhase;
+    vec4  colorClamp;
+};

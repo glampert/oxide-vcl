@@ -1,0 +1,6 @@
+struct Particle { uint32 color; vec3 pos; };
+struct Block { Particle p; vec4 normal; };
+void main(layout(address = 0) inout Block block)
+{
+    block.normal.xyz = cross(block.p.pos, block.p.pos);
+}

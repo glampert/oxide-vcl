@@ -1,0 +1,5 @@
+input.vusl(2): error: main's parameter 'block' has no placement
+   2 | void main(in Block block) {}
+     |                    ^^^^^
+     = help: give it layout(address = N), or layout(xtop) for the current double buffer
+oxide-vusl: 1 error; no output written

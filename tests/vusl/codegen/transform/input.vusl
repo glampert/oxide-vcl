@@ -1,0 +1,14 @@
+// Matrix products. A row-major vec4(p, 1) * m is the hand-written
+// MULA/MADDA/MADDA/MADD chain on p's lanes, the 1 VF00's w (quake2-ps2's
+// particles.vcl, 4 upper instructions). A 3x3 product drops the w term.
+struct Frame { layout(row_major) mat4 mvp; layout(column_major) mat3 normals; };
+struct Vertex { vec3 pos; float pad; vec3 normal; };
+struct Out { vec4 clip; vec3 normal; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 8) in Vertex vertex,
+          layout(address = 12) out Out result)
+{
+    result.clip = vec4(vertex.pos, 1.0) * frame.mvp;
+    result.normal = frame.normals * vertex.normal;
+}

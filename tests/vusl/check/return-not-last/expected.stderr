@@ -1,0 +1,8 @@
+input.vusl(3): error: return before a function's end
+   3 |     if (x < 0.0) return 0.0;
+     |                  ^^^^^^
+     = help: functions are inlined: a return must be the last statement
+input.vusl(9): note: in the call to 'pick' here
+   9 |     block.a = pick(block.a);
+     |               ^^^^
+oxide-vusl: 1 error; no output written

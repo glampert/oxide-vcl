@@ -29,6 +29,124 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
   `unswitch`, each of which `--no-opt=NAME` turns off. They are described
   in [VCL_REFERENCE.md](docs/VCL_REFERENCE.md#optimizations) and
   [OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md).
+- [VUSL](#vusl), a GLSL-like language for VU1 microprograms, compiles to VCL
+  through oxide-vcl and writes a C++ header and JSON describing the program's
+  memory for the host. Its ports of the Quake 2 and Doom 3 programs in the
+  corpus draw the same packets as the hand-written VCL on every test scene,
+  in fewer cycles ([VUSL_PERFORMANCE.md](docs/VUSL_PERFORMANCE.md)).
+
+## VUSL - The Vector Unit Shading Language
+
+VUSL (Vector Unit Shading Language) is a GLSL-like language for PlayStation 2
+VU1 microprograms. `oxide-vusl` compiles a VUSL program to VCL and hands it to
+oxide-vcl in the same process (in oxide mode), which schedules, pairs and
+allocates it into a `.vsm` listing for `dvp-as`. Every construct has a fixed,
+documented lowering: an operation the VU has no instruction for is an error
+that names the explicit form, so the source shows what the code costs.
+
+Memory is described with plain structs, which `main`'s parameters bind to VU1
+data memory:
+
+```glsl
+// transform.vusl: Transforms a batch of vertices to clip space and tints them, in place.
+#pragma program(VU1Prog_Transform)
+
+struct Frame {
+    mat4 mvp;
+    vec4 tint;
+};
+
+struct Vertex {
+    vec4 position;
+    vec4 color;
+};
+
+struct Batch {
+    layout(lane = w) int16 count;   // the header qword's w
+    Vertex vertices[count];
+};
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(xtop, vif_base = 5, vif_offset = 509) inout Batch batch)
+{
+    for (inout Vertex vertex : batch.vertices)
+    {
+        vertex.position = frame.mvp * vertex.position;
+        vertex.color = vertex.color * frame.tint;
+    }
+}
+```
+
+- `frame` holds constants the host uploads to address 0; `batch` is the
+  half of the VIF1 double buffer that XTOP names.
+- The range-for walks `vertices`, whose length is the `count` member, and
+  `inout` writes each element back. It becomes a do-while over a pointer,
+  with the matrix and the tint loaded once before it; the transform is a
+  `mula`/`madd` chain.
+
+```sh
+target/release/oxide-vusl --header=transform.h -o transform.vsm transform.vusl
+```
+
+writes the listing (47 instructions) and a C++17 header with the layout of
+every struct, checked with `static_assert`s, and the program's constants. Its
+part for this program (the header also defines the VUSL value types, `vec4`,
+`mat4` and the rest, once for every generated header):
+
+```cpp
+// transform.h: Generated C++ header from transform.vusl.
+namespace vusl::VU1Prog_Transform
+{
+
+struct alignas(16) Frame
+{
+    mat4 mvp;  // qwords 0-3
+    vec4 tint; // qword 4
+};
+
+struct alignas(16) Vertex
+{
+    vec4 position; // qword 0
+    vec4 color;    // qword 1
+};
+
+struct alignas(16) Batch
+{
+    uint32 _pad0[3];  // unused
+    int16_lane count; // qword 0, w
+};
+
+// Qwords: offsets from the struct's start, and sizes.
+constexpr std::uint32_t kBatchVertices = 1; // Batch::vertices
+constexpr std::uint32_t kBatchVerticesStride = 2; // qwords per element
+
+// main's parameters: qword addresses in VU1 data memory.
+constexpr std::uint32_t kFrameAddress = 0; // frame: uniform Frame
+
+// batch: inout Batch, at XTOP in the VIF1 double buffer:
+constexpr std::uint32_t kBatchVifBase = 5;
+constexpr std::uint32_t kBatchVifOffset = 509;
+constexpr std::uint32_t kBatchMaxCount = 254; // the largest count for which the double-buffer half holds it
+
+constexpr std::uint32_t kInstructions = 47; // 64-bit instructions in micro memory
+
+} // namespace vusl::VU1Prog_Transform
+```
+
+The host code can then build its batches with these types and size them with
+`kBatchMaxCount`, instead of keeping its own copy of the layout in sync.
+`--reflect=FILE` writes the same description as JSON, and `--emit-vcl=FILE`
+the generated `.vcl`.
+
+More:
+
+- [VUSL reference](docs/VUSL.md): the language, the cost of every construct,
+  pragmas, libraries, reflection and the command line
+- [The VUSL compiler](docs/VUSL_COMPILER.md): phases, lowering, optimizations
+  and tests
+- [VUSL ports against the hand-written programs](docs/VUSL_PERFORMANCE.md):
+  Quake 2's particles and textured triangles, Doom 3's world programs, and the
+  Doom 3 clipper as a shared [library](docs/VUSL.md#libraries).
 
 ## Performance against [openvcl](https://github.com/ps2dev/openvcl)
 
@@ -80,7 +198,7 @@ describes the emulated oracle and what it needs under a `local/` path.
 
 ## Layout
 
-The Cargo workspace has two crates:
+The Cargo workspace has four crates:
 
 - `crates/vcl`, the compiler library, organised by phase: `isa` (the VU
   instruction table), `parser` (source and immediate expressions), `analysis`
@@ -96,6 +214,9 @@ The Cargo workspace has two crates:
   tests share it) and file handling. Its `tests/` hold the integration tests;
   the public corpus they compile is `tests/corpus/`, and the preprocessor's
   cases are in `tests/preprocessor/`.
+- `crates/vusl` and `crates/oxide-vusl`, VUSL: a GLSL-like language for VU1
+  microprograms that compiles to VCL, and its `oxide-vusl` driver
+  ([reference](docs/VUSL.md), [compiler](docs/VUSL_COMPILER.md)).
 
 The workspace version (`Cargo.toml`) is the project's version; `oxide-vcl -h`
 prints it with the build date.
@@ -134,6 +255,13 @@ Using the compiler:
 - [Compatibility and known limitations](docs/COMPATIBILITY.md)
 - [Original defects and their fixes](docs/VCL_BUGS.md)
 - [Code generation compared with openvcl](docs/OPENVCL_COMPARISON.md)
+
+VUSL, a shading language compiled to VCL:
+
+- [VUSL reference](docs/VUSL.md): language, costs, pragmas, reflection, command line
+- [The VUSL compiler](docs/VUSL_COMPILER.md): phases, lowering, optimizations, tests
+- [VUSL ports against the hand-written programs](docs/VUSL_PERFORMANCE.md)
+- [VUSL libraries plan](docs/plans/VUSL_LIBRARIES.md): code shared by several programs
 
 How vcl 1.4beta7 works, and how the port reproduces it:
 

@@ -161,11 +161,19 @@ fn block_edges(
             }
         }
         End::Exit { .. } => {}
+        // A call of code outside the program (oxide mode's `--call`)
+        // returns to the stream after it, like a fallthrough.
+        End::Branch { external: true, .. } => {
+            if let Some(next) = next {
+                successors.push(next);
+            }
+        }
         End::Branch {
             target,
             tags,
             conditional,
             call,
+            ..
         } => {
             if let Some(target) = target {
                 let Some(&target) = labels.get(&target.to_ascii_lowercase()) else {

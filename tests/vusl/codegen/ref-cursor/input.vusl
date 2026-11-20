@@ -1,0 +1,23 @@
+// A ref as an output cursor: SQ through its register, IADDIU to move it,
+// ISUB for the count written (doom3-bfg-ps2's world_strips.vcl writes its
+// strips with sqi (iOutPtr++)).
+struct Vertex { vec4 pos; };
+struct Item { vec4 value; };
+struct Window { qword tag; Item items[]; };
+struct Batch { layout(lane = w) int16 count; Vertex vertices[count]; Window window; };
+
+void main(layout(xtop, vif_base = 0, vif_offset = 400) inout Batch batch)
+{
+    ref<Item> cursor = ref<Item>(batch.window.items);
+    ref<Item> start = cursor;
+    for (Vertex v : batch.vertices)
+    {
+        if (v.pos.w > 0.0)
+        {
+            cursor.value = v.pos;
+            cursor += 1;
+        }
+    }
+    batch.window.tag.x = (cursor - start) | 0x8000;
+    xgkick(batch.window);
+}

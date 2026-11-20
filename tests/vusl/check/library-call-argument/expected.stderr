@@ -1,0 +1,8 @@
+input.vusl(4): error: the out or inout argument for 'value' must be a variable
+   4 | export void square(out float value);
+     |                              ^^^^^
+     = help: a library returns values in registers, into whole variables: assign a member or component from one after the call
+input.vusl(5): note: in the call to 'square' here
+   5 | void main(layout(address = 0) inout Block block) { square(block.f); }
+     |                                                    ^^^^^^
+oxide-vusl: 1 error; no output written
