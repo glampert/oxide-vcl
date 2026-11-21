@@ -199,7 +199,10 @@ calls), which give vcl the register contract it cannot see across programs.
   `Stmt::Call`: the inlined setup and body, which the interpreter runs, and a `CallArg` per value,
   with its register, the expression passed in and the local it comes back into. A call that sees
   only the prototype has no body. The clip epoch advances: the library judges.
-- **Lowering a call** (`Lowering::library_call`). The setup is lowered, each argument computed
+- **Lowering a call** (`Lowering::library_call`). The setup is lowered, then a `--barrier`, so
+  the call's block holds only the argument moves and the JALR: vcl gives a value that crosses blocks
+  one register for its whole life, and counts every value the call's block mentions as live with
+  the registers the call takes. Each argument is computed
   into its physical register (`Output::vf_physical`, a name the peephole passes never take for a
   variable), then `iaddiu entry, vi00, address`, a `--call` block reading the arguments and
   writing the whole bank, VI15 and VI01, and `jalr vi15, entry`. After it the value cache forgets

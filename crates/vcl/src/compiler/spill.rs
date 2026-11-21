@@ -10,6 +10,15 @@
 //! program is then compiled again, adding spills one at a time until it fits
 //! or the area is full.
 //!
+//! In a program that calls a library (`--call`), a value is first saved
+//! across the calls only: every write is still followed by a store, but the
+//! value keeps its register and its reads, and is loaded back into the same
+//! name right after each call's JALR. A call takes the registers it declares,
+//! so what crosses one has the fewest left; saved this way, the value no
+//! longer crosses any call, and the code between calls keeps it in a
+//! register. When the same name is chosen again, saving it across calls did
+//! not make the region fit, and it is spilled everywhere.
+//!
 //! The rewrite works on the parsed statements, before lowering, so the
 //! stores and loads are scheduled and allocated like the program's own
 //! instructions. Memory dependencies order a load after the store to the same
@@ -78,6 +87,9 @@ struct Spilled {
     address: u32,
     /// The first line that names it, for the note.
     line: usize,
+    /// Saved across library calls only: loaded back after each call, not
+    /// before each read.
+    across_calls: bool,
 }
 
 /// The names spilled so far.
@@ -92,16 +104,22 @@ impl Spills {
         self.spilled
             .iter()
             .map(|spill| {
-                Diagnostic::new(
-                    Severity::Info,
-                    spill.line,
+                let message = if spill.across_calls {
+                    CompileMessage::RegisterSavedAcrossCalls {
+                        name: spill.name.clone(),
+                        vector: spill.vector,
+                        device: spill.device.clone(),
+                        address: spill.address,
+                    }
+                } else {
                     CompileMessage::RegisterSpilled {
                         name: spill.name.clone(),
                         vector: spill.vector,
                         device: spill.device.clone(),
                         address: spill.address,
-                    },
-                )
+                    }
+                };
+                Diagnostic::new(Severity::Info, spill.line, message)
             })
             .collect()
     }
@@ -120,18 +138,48 @@ impl Spills {
             failed.kind,
             CompileErrorKind::Allocation | CompileErrorKind::ExternalAllocation
         );
+        let crossing = match &failed.message {
+            Message::Compile(CompileMessage::AllocationPoolFull { crossing, .. }) => {
+                crossing.clone()
+            }
+            _ => Vec::new(),
+        };
         if !allocation || work_areas.is_empty() {
             return Err(failed);
         }
 
         let (vector, register) = match &failed.message {
-            Message::Compile(CompileMessage::AllocationPoolFull { vector, register }) => {
-                (Some(*vector), register.clone())
-            }
+            Message::Compile(CompileMessage::AllocationPoolFull {
+                vector, register, ..
+            }) => (Some(*vector), register.clone()),
             // No register at all: a spilled value still needs one.
             Message::Compile(CompileMessage::AllocationPoolEmpty { .. }) => return Err(failed),
             _ => (None, String::new()),
         };
+
+        // A value that meets a library call failed: one of the values that
+        // cross calls is saved across them. Otherwise a value is spilled
+        // everywhere; when every candidate already is, saving one across
+        // calls was not enough, and the longest saved is spilled everywhere,
+        // in the same slot.
+        let across_calls = !crossing.is_empty()
+            && choose(
+                parsed,
+                &self.spilled,
+                lines.clone(),
+                vector,
+                Some(&crossing),
+            )
+            .is_some();
+        if !across_calls && choose(parsed, &self.spilled, lines.clone(), vector, None).is_none() {
+            let saved = choose_saved(parsed, &self.spilled, lines.clone(), vector);
+            if let Some(name) = saved
+                && let Some(spill) = self.spilled.iter_mut().find(|spill| spill.name == name)
+            {
+                spill.across_calls = false;
+                return Ok(());
+            }
+        }
 
         let Some((device, address)) = self.next_slot(&work_areas) else {
             let size = work_areas.iter().map(|area| area.size).sum();
@@ -145,7 +193,8 @@ impl Spills {
             ));
         };
 
-        let Some(candidate) = choose(parsed, &self.spilled, lines, vector) else {
+        let among = across_calls.then_some(crossing.as_slice());
+        let Some(candidate) = choose(parsed, &self.spilled, lines, vector, among) else {
             return Err(failed);
         };
 
@@ -155,6 +204,7 @@ impl Spills {
             device,
             address,
             line: candidate.line,
+            across_calls,
         });
         Ok(())
     }
@@ -182,6 +232,8 @@ impl Spills {
         let mut statements = Vec::with_capacity(parsed.statements.len());
         // The `--LoopCS` hint of the block being rewritten, until its branch.
         let mut loop_hint: Option<usize> = None;
+        // After `--endcall`, until the call's JALR.
+        let mut calling = false;
 
         for statement in &parsed.statements {
             let StatementKind::Instruction(instruction) = &statement.kind else {
@@ -190,6 +242,22 @@ impl Spills {
             };
             if instruction.synthetic() == Some(Synthetic::LoopCount) {
                 loop_hint = Some(statements.len());
+            }
+            if instruction.synthetic() == Some(Synthetic::EndCall) {
+                calling = true;
+            }
+            if calling && instruction.synthetic().is_none() {
+                // The call's JALR, then the values saved across calls, back
+                // into their own names where the callee returns.
+                calling = false;
+                statements.push(statement.clone());
+                statements.extend(
+                    self.spilled
+                        .iter()
+                        .filter(|spill| spill.across_calls)
+                        .map(|spill| memory_access(spill, &spill.name, None, statement.line)),
+                );
+                continue;
             }
             if !rewritable(instruction) {
                 statements.push(statement.clone());
@@ -238,6 +306,9 @@ impl Spills {
             let Some(index) = self.spill_of(operand) else {
                 continue;
             };
+            if self.spilled[index].across_calls {
+                continue;
+            }
 
             let temporary = match loaded.iter().find(|(spill, _)| *spill == index) {
                 Some((_, temporary)) => temporary.clone(),
@@ -410,14 +481,15 @@ struct Usage {
 }
 
 /// Picks the next name to spill: of the failed family, mentioned in the
-/// failed region, and with the longest stretch of statements between its
-/// first and last mention there (the earliest on a tie), since spilling it
-/// frees a register over the most code.
+/// failed region, among `among` when given, and with the longest stretch
+/// of statements between its first and last mention there (the earliest on
+/// a tie), since spilling it frees a register over the most code.
 fn choose(
     parsed: &Program,
     spilled: &[Spilled],
     lines: Option<std::ops::RangeInclusive<usize>>,
     vector: Option<bool>,
+    among: Option<&[String]>,
 ) -> Option<Candidate> {
     let usage = usages(parsed, lines);
 
@@ -428,6 +500,7 @@ fn choose(
                 && usage.written
                 && usage.first.is_some()
                 && (vector.is_none() || usage.vector == vector)
+                && among.is_none_or(|among| among.contains(name))
                 && !spilled.iter().any(|spill| &spill.name == name)
         })
         .max_by_key(|(_, usage)| {
@@ -439,6 +512,27 @@ fn choose(
             vector: usage.vector.unwrap_or(true),
             line: usage.line,
         })
+}
+
+/// The name saved across calls that [`choose`] would pick were it not
+/// spilled at all.
+fn choose_saved(
+    parsed: &Program,
+    spilled: &[Spilled],
+    lines: Option<std::ops::RangeInclusive<usize>>,
+    vector: Option<bool>,
+) -> Option<String> {
+    let saved: Vec<Spilled> = spilled
+        .iter()
+        .filter(|spill| !spill.across_calls)
+        .cloned()
+        .collect();
+    let names: Vec<String> = spilled
+        .iter()
+        .filter(|spill| spill.across_calls)
+        .map(|spill| spill.name.clone())
+        .collect();
+    choose(parsed, &saved, lines, vector, Some(&names)).map(|candidate| candidate.name)
 }
 
 /// Every symbolic VF and VI name's usage. Names that the rewrite cannot
@@ -565,6 +659,7 @@ mod tests {
                 device: "vu1".into(),
                 address,
                 line: 1,
+                across_calls: false,
             });
         }
         assert_eq!(addresses, [500, 900, 901]);

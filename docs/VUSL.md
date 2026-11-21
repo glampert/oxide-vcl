@@ -491,8 +491,9 @@ void main(layout(address = 4) inout Block block)
 ```
 
 A call moves its arguments into their registers, calls, and moves the results out. What is live
-across it stays out of the bank, or goes to the program's work area, so values the program keeps
-in registers through a call cost registers. Afterwards the program reads memory again, but not
+across it stays out of the bank, so values the program keeps in registers through a call cost
+registers; those that do not fit are saved in the program's work area across the calls, and keep
+their registers everywhere else. Afterwards the program reads memory again, but not
 `uniform` memory.
 
 **The library's build** is a file with the header, the exports' bodies and no `main`. It writes one

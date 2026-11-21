@@ -188,12 +188,12 @@ The table costs one branch per call.
 ## Costs
 
 Measured in `docs/VUSL_PERFORMANCE.md` ("Libraries"): the two library ports and the clipper take
-34% fewer instructions than the two inlined ports, and the scenes from 29% fewer to 12% more cycles
+37% fewer instructions than the two inlined ports, and the scenes from 43% fewer to 3% more cycles
 than the hand-written programs (the inlined ports: 3% to 43% fewer).
 
-- **Register pressure** is most of it: what a loop keeps live across a call cannot use the bank,
-  and vcl keeps a value that crosses streams in one register for all of them, so some of the
-  callers' values live in the work area for the whole program.
+- **Register pressure:** what a loop keeps live across a call cannot use the bank; what does not
+  fit in the registers left is saved in the work area across the calls, and keeps its register
+  elsewhere.
 - **Each call:** the address `iaddiu`, the JALR, the entry table's branch and the JR, each with its
   delay slot, the argument and result moves, the saves and restores, and the scheduling lost at
   the call.

@@ -1074,6 +1074,12 @@ impl Lowering<'_> {
     ) -> Lowered<()> {
         self.stmts(setup)?;
         self.out.pos = Some(pos);
+        // The call's block holds only its argument moves and the JALR. vcl
+        // gives a value that crosses blocks one register for its whole life
+        // and treats every value a block mentions as live with the
+        // registers the call takes, so code before the call in the same
+        // block would keep its values out of the library's bank too.
+        self.out.line("--barrier");
         let library = self.program.library.clone().expect("a library");
         let mut declared = Vec::new();
         for arg in args {

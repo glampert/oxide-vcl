@@ -491,8 +491,16 @@ out_vi  result(vi02)
 - The JALR's address register can be symbolic. Its link register, like every
   declared register, stays as spelled.
 - A value live across the call is kept out of every register the call
-  writes, or goes to the work area (see [Work memory](#work-memory)). Values
-  that are not live across it may use those registers.
+  writes, or is saved across the call in the work area (see
+  [Work memory](#work-memory)). Values that are not live across it may use
+  those registers. A value that crosses blocks takes one register for its
+  whole life, and the values that meet a call get theirs first, so a value
+  that never meets one does not take the last register one of them could
+  use.
+- Every value the call's block mentions counts as live with the registers
+  the call takes, whatever its order there. Put the code before the call in
+  a block of its own (a `--barrier` before the argument moves) so only the
+  arguments meet the call.
 - The call ends its block and returns to the next one, after the JALR's
   delay slot. Nothing is scheduled across it, and a loop that holds one is
   not pipelined.
@@ -879,6 +887,18 @@ prog.vcl(6): note: 'ta' does not fit in the VF registers: it is kept in vu1 data
 - Values are spilled one at a time, preferring the one live over the longest
   stretch of code, until the program fits. When the area is full, the error
   says so; make it larger or allow more registers.
+- In a program with `--call`s, a value that meets a call and has no register
+  left there is first saved across the calls only: it is stored after each
+  write, keeps its register and its reads, and is loaded back after each
+  call's JALR, so the code between calls is unchanged. Each is reported as
+  a note of its own:
+
+  ```text
+  prog.vcl(9): note: 'm3' crosses a library call with too few VI registers left: it is saved in vu1 data memory at qword 900 and loaded back after each call
+  ```
+
+  When every candidate is saved or spilled and the program still does not
+  fit, a saved value is spilled everywhere.
 - Interface values (`in_vf`, `out_vi`, ...), raw code, names inside
   `.hide`/`.show` scopes, the registers of `(vi++)`/`(--vi)` addresses and
   branch link registers are never spilled.

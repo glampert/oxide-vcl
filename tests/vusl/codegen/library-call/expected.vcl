@@ -10,6 +10,7 @@
         lq.xyzw    ft_2, 0(vi00)
         add.xyzw   fkept_0, ft_1, ft_2
         ilw.x      icount_0, 2(vi00)
+--barrier
         move.xyzw  vf16, ft_2
         iaddiu     vi11, icount_0, 0
         iaddiu     ientry_2, vi00, 400

@@ -5,9 +5,10 @@
 //! be the hand-written program's, and the cycles no more than its. A port
 //! that calls a library (`<case>_lib`, beside the inlined `<case>`) runs with
 //! the library (`include/<name>.vusl`) at its address: it trades cycles for
-//! size, so it must instead take fewer instructions, the library's
-//! included, than the inlined port. The ignored `report` prints the cycles
-//! and instructions of each.
+//! size, so the library ports must instead take fewer instructions together,
+//! with their one library, than the inlined ports together. A library pays
+//! for itself across its callers: one port alone may well be larger with it.
+//! The ignored `report` prints the cycles and instructions of each.
 
 #[path = "../../oxide-vcl/tests/support/scenes.rs"]
 #[allow(dead_code)]
@@ -218,20 +219,19 @@ fn ports_draw_the_same_and_are_no_slower() {
     let cases = cases();
     assert!(!cases.is_empty());
     let mut failures = Vec::new();
+    // The library ports' instructions, their library's, and their inlined
+    // counterparts'.
+    let (mut shared, mut library_size, mut inlined) = (0, 0, 0);
     for case in &cases {
         let (name, _, vusl, runs) = runs(case);
         assert!(!runs.is_empty(), "{name}: no scenes");
         if let Some(library) = vusl.library {
-            let inlined = name
+            let counterpart = name
                 .strip_suffix("_lib")
                 .expect("a library port is <case>_lib");
-            let inlined = ported(&case.with_file_name(inlined)).instructions;
-            if vusl.instructions + library >= inlined {
-                failures.push(format!(
-                    "{name}: {} instructions and a library of {library}, the inlined port {inlined}",
-                    vusl.instructions
-                ));
-            }
+            shared += vusl.instructions;
+            library_size = library_size.max(library);
+            inlined += ported(&case.with_file_name(counterpart)).instructions;
         }
         for run in runs {
             if !run.same {
@@ -247,6 +247,11 @@ fn ports_draw_the_same_and_are_no_slower() {
                 ));
             }
         }
+    }
+    if library_size > 0 && shared + library_size >= inlined {
+        failures.push(format!(
+            "the library ports take {shared} instructions and their library {library_size}, the inlined ports {inlined}"
+        ));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

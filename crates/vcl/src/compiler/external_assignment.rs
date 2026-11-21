@@ -164,6 +164,54 @@ fn prepare_tables(
         .collect()
 }
 
+/// The registers referenced in a block that ends in a `--call` (oxide
+/// mode): the call's arguments and the values that live across it. The
+/// call declares the registers it uses, so these have the fewest left and
+/// are assigned first. A call is a JALR with registers pinned to it, which
+/// only a `--call` block declares; a plain `bal` or `jalr` does not count,
+/// so programs without a `--call` keep vcl's order.
+fn crossing_calls(
+    program: &Source,
+    region: &Region,
+    analysis: &flow::Analysis,
+    family: Family,
+) -> BTreeSet<usize> {
+    let mut crossing = BTreeSet::new();
+    if program.mode != crate::Mode::Oxide {
+        return crossing;
+    }
+    let jalr = subtype::branch::JUMP | subtype::branch::REGISTER | subtype::branch::LINK;
+    for (block_id, block) in region.blocks.iter().enumerate() {
+        let declared = block.operations.last().is_some_and(|&last| {
+            region.instructions[last].instruction.metadata.subtype == jalr
+                && region
+                    .pinned
+                    .keys()
+                    .any(|&(operation, _, _)| operation == last)
+        });
+        if !declared || !analysis.reachable.contains(&block_id) {
+            continue;
+        }
+        let live = analysis.live_in[block_id]
+            .iter()
+            .chain(&analysis.live_out[block_id])
+            .map(|access| access.register);
+        let referenced = block.operations.iter().flat_map(|&id| {
+            let effects = &region.instructions[id].effects;
+            effects
+                .reads
+                .iter()
+                .chain(&effects.writes)
+                .map(|access| access.register)
+        });
+        crossing.extend(
+            live.chain(referenced)
+                .filter(|&register| program.registers.named(register).family == family),
+        );
+    }
+    crossing
+}
+
 pub(super) fn assign(
     program: &Source,
     region: &Region,
@@ -209,13 +257,15 @@ pub(super) fn assign(
             .enumerate()
             .map(|(id, &mask)| id != 0 && mask != 0)
             .collect();
-        let assignments = external_allocation::assign(
+        let crossing = crossing_calls(program, region, analysis, family);
+        let assignments = external_allocation::assign_ordered(
             if family == Family::Vector { 4 } else { 1 },
             &available,
             &tables,
             &initial,
+            &crossing,
         )
-        .map_err(|failure| external_failure(program, family, failure))?;
+        .map_err(|failure| external_failure(program, region, family, failure, &crossing))?;
         for (register, base) in assignments {
             if !initial.contains_key(&register) {
                 result.forced.insert(register, base);
@@ -230,8 +280,10 @@ pub(super) fn assign(
 /// area can take a spill; vcl mode keeps the port's internal description.
 fn external_failure(
     program: &Source,
+    region: &Region,
     family: Family,
     failure: external_allocation::ExternalAllocationError,
+    crossing: &BTreeSet<usize>,
 ) -> CompileError {
     let external_allocation::ExternalAllocationError::NoFit { register } = failure else {
         return internal(0, failure);
@@ -240,11 +292,32 @@ fn external_failure(
         return internal(0, failure);
     }
 
+    // Source names, the ones the program spells, as a local failure
+    // reports them.
+    let source = |register: usize| {
+        program
+            .registers
+            .named(
+                region
+                    .web_sources
+                    .get(&register)
+                    .copied()
+                    .unwrap_or(register),
+            )
+            .name
+            .clone()
+    };
+    let crossing = if crossing.contains(&register) {
+        crossing.iter().map(|&register| source(register)).collect()
+    } else {
+        Vec::new()
+    };
     let mut result = error(
         0,
         CompileMessage::AllocationPoolFull {
             vector: family == Family::Vector,
-            register: program.registers.named(register).name.clone(),
+            register: source(register),
+            crossing,
         },
     );
     result.kind = CompileErrorKind::ExternalAllocation;

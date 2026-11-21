@@ -184,6 +184,56 @@ fn values_spill_when_a_call_leaves_too_few_registers() {
 }
 
 #[test]
+fn values_crossing_a_call_are_saved_only_across_it() {
+    // Three integers cross the call, which leaves only VI13 and VI14: one is
+    // stored where it is written and loaded back after the call, and its
+    // other reads keep its register.
+    let source = tight_caller(".vu_work_area vu1, 900, 4\n")
+        .replace(
+            "iaddiu  mm, n, 7\n",
+            "iaddiu  mm, n, 7\n\
+             iaddiu  m3, n, 9\n",
+        )
+        .replace(
+            "iadd    k, k, mm\n",
+            "iadd    k, k, mm\n\
+             iadd    k, k, m3\n",
+        );
+    let compiled = compile(&source, "CALLER").unwrap_or_else(|errors| panic!("{errors:?}"));
+    let saved: Vec<_> = compiled
+        .warnings
+        .iter()
+        .filter_map(|diagnostic| match &diagnostic.message {
+            Message::Compile(CompileMessage::RegisterSavedAcrossCalls {
+                name, address, ..
+            }) => Some((name.clone(), *address)),
+            Message::Compile(CompileMessage::RegisterSpilled { name, .. }) => {
+                panic!("'{name}' is spilled everywhere")
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(saved.len(), 1, "{saved:?}");
+    assert_eq!(saved[0].1, 900);
+    let caller = compiled.assembly;
+    let accesses: Vec<_> = caller
+        .lines()
+        .filter(|line| line.contains("900(VI00)"))
+        .collect();
+    assert_eq!(accesses.len(), 2, "{caller}");
+    assert!(accesses[0].contains("isw.x"), "{caller}");
+    assert!(accesses[1].contains("ilw.x"), "{caller}");
+    let program = micro_memory(&caller, &listing(ENTRY, "ENTRY"));
+    let a = [0.5, 3.0, -2.0, 1.0];
+    let state = run(&program, |state| {
+        state.set_vector(1, a);
+        state.vi[1] = 11;
+    });
+    let n = 11;
+    assert_eq!(state.vi[2], (n + 3) + (n + 5 + 10) + (n + 7) + (n + 9));
+}
+
+#[test]
 fn calls_on_two_paths_join() {
     let source = format!(
         ".syntax new\n\

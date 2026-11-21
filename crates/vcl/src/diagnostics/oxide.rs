@@ -884,11 +884,23 @@ fn compile(message: &CompileMessage) -> Wording {
                  .init_{lower} {lower}01-{lower}{last}"
             ))
         }
-        AllocationPoolFull { vector, register } => {
+        AllocationPoolFull {
+            vector,
+            register,
+            crossing,
+        } => {
             let family = family(*vector);
             let lower = family.to_ascii_lowercase();
+            let call = if crossing.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    ", with the {} values that cross library calls kept out of the registers a call takes",
+                    crossing.len()
+                )
+            };
             Wording::new(format!(
-                "out of {family} registers for '{register}': every allowed {family} register is in use"
+                "out of {family} registers for '{register}': every allowed {family} register is in use{call}"
             ))
             .subject(register.clone())
             .help(format!(
@@ -905,6 +917,17 @@ fn compile(message: &CompileMessage) -> Wording {
         } => Wording::new(format!(
             "'{name}' does not fit in the {} registers: it is kept in {device} data memory at \
              qword {address}, the work area",
+            family(*vector)
+        ))
+        .subject(name.clone()),
+        RegisterSavedAcrossCalls {
+            name,
+            vector,
+            device,
+            address,
+        } => Wording::new(format!(
+            "'{name}' crosses a library call with too few {} registers left: it is saved in \
+             {device} data memory at qword {address} and loaded back after each call",
             family(*vector)
         ))
         .subject(name.clone()),

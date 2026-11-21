@@ -221,6 +221,22 @@ pub fn assign(
     tables: &[Table],
     initial: &BTreeMap<usize, usize>,
 ) -> Result<BTreeMap<usize, usize>, ExternalAllocationError> {
+    assign_ordered(components, available, tables, initial, &BTreeSet::new())
+}
+
+/// [`assign`], with the registers in `first` assigned before every other,
+/// each group in discovery order. Oxide mode puts the values that cross a
+/// library call there: a call takes the registers it declares, so those
+/// values have fewer to choose from, and first-free order would otherwise
+/// let a value that never meets a call take the last register one of them
+/// could use.
+pub fn assign_ordered(
+    components: u8,
+    available: &[bool],
+    tables: &[Table],
+    initial: &BTreeMap<usize, usize>,
+    first: &BTreeSet<usize>,
+) -> Result<BTreeMap<usize, usize>, ExternalAllocationError> {
     if components == 0 || components > 7 {
         return Err(ExternalAllocationError::InvalidComponentCount(components));
     }
@@ -275,46 +291,52 @@ pub fn assign(
     }
 
     let mut assigned = initial.clone();
-    for table in tables {
-        for target in &table.references {
-            if !target.masks.is_external() || assigned.contains_key(&target.register) {
-                continue;
-            }
-            // Any bit blocks the entire candidate; the external chooser does
-            // not apply the local allocator's component packing score.
-            let mut excluded: Vec<_> = available
-                .iter()
-                .map(|&enabled| if enabled { 0 } else { full })
-                .collect();
-            for stream in tables {
-                let Some(target_view) = stream
-                    .references
-                    .iter()
-                    .find(|view| view.register == target.register)
-                else {
-                    continue;
-                };
-                // Original flow requires every matching target reference to
-                // be external. A local view alone cannot supply this contract.
-                if !target_view.masks.is_external() {
-                    return Err(ExternalAllocationError::InvalidMasks);
-                }
-                for other in &stream.references {
-                    if other.register == target.register {
-                        continue;
-                    }
-                    if let Some(&physical) = assigned.get(&other.register) {
-                        excluded[physical] |= conflict(stream.mode, target_view, other);
-                    }
-                }
-            }
-            let physical = excluded.iter().position(|&mask| mask == 0).ok_or(
-                ExternalAllocationError::NoFit {
-                    register: target.register,
-                },
-            )?;
-            assigned.insert(target.register, physical);
+    let order = [true, false].into_iter().flat_map(|constrained| {
+        tables
+            .iter()
+            .flat_map(|table| &table.references)
+            .filter(move |target| first.contains(&target.register) == constrained)
+    });
+    for target in order {
+        if !target.masks.is_external() || assigned.contains_key(&target.register) {
+            continue;
         }
+        // Any bit blocks the entire candidate; the external chooser does
+        // not apply the local allocator's component packing score.
+        let mut excluded: Vec<_> = available
+            .iter()
+            .map(|&enabled| if enabled { 0 } else { full })
+            .collect();
+        for stream in tables {
+            let Some(target_view) = stream
+                .references
+                .iter()
+                .find(|view| view.register == target.register)
+            else {
+                continue;
+            };
+            // Original flow requires every matching target reference to
+            // be external. A local view alone cannot supply this contract.
+            if !target_view.masks.is_external() {
+                return Err(ExternalAllocationError::InvalidMasks);
+            }
+            for other in &stream.references {
+                if other.register == target.register {
+                    continue;
+                }
+                if let Some(&physical) = assigned.get(&other.register) {
+                    excluded[physical] |= conflict(stream.mode, target_view, other);
+                }
+            }
+        }
+        let physical =
+            excluded
+                .iter()
+                .position(|&mask| mask == 0)
+                .ok_or(ExternalAllocationError::NoFit {
+                    register: target.register,
+                })?;
+        assigned.insert(target.register, physical);
     }
     Ok(assigned)
 }
@@ -477,6 +499,26 @@ mod tests {
         .unwrap();
         assert_eq!(result[&10], 1);
         assert!(!result.contains_key(&20));
+    }
+
+    #[test]
+    fn values_assigned_first_keep_the_registers_a_pin_leaves() {
+        // VI01 and VI02: 20 meets 30, pinned to VI02, in the second table, so
+        // only VI01 suits it. First-free order gives VI01 to 10 and leaves 20
+        // none; assigned first, 20 takes VI01 and 10 the other.
+        let tables = [
+            uta(vec![view(10, 1, 1, true), view(20, 1, 1, true)]),
+            uta(vec![view(20, 1, 1, true), view(30, 1, 1, true)]),
+        ];
+        let available = [false, true, true];
+        let pinned = BTreeMap::from([(30, 2)]);
+        assert_eq!(
+            assign(1, &available, &tables, &pinned),
+            Err(ExternalAllocationError::NoFit { register: 20 })
+        );
+        let result =
+            assign_ordered(1, &available, &tables, &pinned, &BTreeSet::from([20])).unwrap();
+        assert_eq!((result[&20], result[&10]), (1, 2));
     }
 
     #[test]

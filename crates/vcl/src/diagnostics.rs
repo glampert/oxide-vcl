@@ -866,12 +866,23 @@ pub enum CompileMessage {
     AllocationPoolFull {
         vector: bool,
         register: String,
+        /// When the value crosses a library call (oxide mode): the values that
+        /// cross calls, which a work area saves across them first.
+        crossing: Vec<String>,
     },
     /// A work area in vcl mode, which vcl 1.4beta7 rejects.
     WorkAreaNeedsOxideMode,
     // Spilling to a work area (oxide mode only; vcl has no counterpart).
     /// A value did not fit in the registers and lives in the work area.
     RegisterSpilled {
+        name: String,
+        vector: bool,
+        device: String,
+        address: u32,
+    },
+    /// A value crossing a library call did not fit in the registers left to
+    /// it, and is saved in the work area across each call.
+    RegisterSavedAcrossCalls {
         name: String,
         vector: bool,
         device: String,

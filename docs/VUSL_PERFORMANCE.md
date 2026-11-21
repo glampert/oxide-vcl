@@ -85,37 +85,55 @@ entry and puts back. The inlined ports stay as they are, for reference.
 
 | Program | Instructions | With the library | Inlined port |
 |---|---:|---:|---:|
-| world_strips_lib | 276 | 750 | 765 |
-| world_lm_lib | 753 | 1227 | 1520 |
-| Both | 1029 | 1503 | 2285 |
+| world_strips_lib | 331 | 805 | 765 |
+| world_lm_lib | 634 | 1108 | 1520 |
+| Both | 965 | 1439 | 2285 |
 
-The two programs and the library together take 34% fewer instructions than the two inlined ports;
-each further program that clips adds its own code and not a clipper.
+The two programs and the library together take 37% fewer instructions than the two inlined ports;
+each further program that clips adds its own code and not a clipper. world_strips_lib alone is
+larger with the library than inlined: its transform loop is pipelined three iterations deep.
 
 | Program | Scene | Cycles | Hand-written | Change | Inlined port |
 |---|---|---:|---:|---:|---:|
-| world_strips_lib | wall | 2762 | 3896 | −29.1% | 2223 |
-| | floor | 47649 | 47371 | +0.6% | 43799 |
-| | side | 18576 | 19314 | −3.8% | 16479 |
-| world_lm_lib | wall | 2190 | 2259 | −3.1% | 2182 |
-| | wall lit | 3879 | 3476 | +11.6% | 3291 |
-| | floor | 47901 | 46153 | +3.8% | 44250 |
-| | floor lit | 95558 | 91197 | +4.8% | 87354 |
-| | side | 18732 | 18224 | +2.8% | 16834 |
-| | side lit | 37604 | 35403 | +6.2% | 32618 |
+| world_strips_lib | wall | 2227 | 3896 | −42.8% | 2223 |
+| | floor | 47230 | 47371 | −0.3% | 43799 |
+| | side | 18061 | 19314 | −6.5% | 16479 |
+| world_lm_lib | wall | 2099 | 2259 | −7.1% | 2182 |
+| | wall lit | 3136 | 3476 | −9.8% | 3291 |
+| | floor | 47667 | 46153 | +3.3% | 44250 |
+| | floor lit | 94333 | 91197 | +3.4% | 87354 |
+| | side | 18434 | 18224 | +1.2% | 16834 |
+| | side lit | 35931 | 35403 | +1.5% | 32618 |
 
-The library ports trade cycles for size, so the programs suite holds them to their size, not to
-the hand-written program's cycles. The cycles go to:
+The library ports trade cycles for size, so the programs suite holds them, together, to their
+size, not to the hand-written program's cycles. The cycles go to:
 
-- **Registers across the call.** A call may change VI10–VI15 and VI01. The list path's loop keeps
-  its walk state, the XTOP register among it, live across the call, in what VI registers remain;
-  vcl keeps a value that crosses streams in one register for all of them, so some of those values
-  live in the work area for the whole program, and the scenes that never clip pay for them too.
 - **Each call:** the argument and result moves, the JALR and the entry table's branch, the
   library's saves and restores of VI06–VI09 and VF16–VF23, the JR, and the scheduling that cannot
   cross the call.
+- **Values saved across the calls.** A call may change VI10–VI15 and VI01, so what crosses it must
+  fit in VI02–VI09. The list path keeps its walk state there, and the values that do not fit are
+  stored when written and loaded back after each call (world_lm_lib saves the XTOP base, the
+  walk's counters and its window state; world_strips_lib the XTOP base and two constants). The
+  strip path, which calls nothing, keeps them all in registers.
 - **Specialization:** the clipper's pass is an argument, where world_lm's inlined list pass folds
   it.
+
+Three things keep the values that cross a call from costing the rest of the program:
+
+- **The call's block holds only the call.** vcl gives a value that crosses blocks one register for
+  its whole life, and treats every value its block mentions as live with the registers the call
+  takes. oxide-vusl puts a `--barrier` before the argument moves, so the code before the call no
+  longer counts.
+- **The values that meet a call are assigned registers first.** In vcl's first-free order a value
+  that never met a call could take the last register one that does could use.
+- **What still does not fit is saved across the calls, not spilled.** A spilled value is loaded
+  before every read, so a spilled XTOP base would be reloaded for every index entry of the strip
+  path.
+
+doom3-bfg-ps2's copies of the two programs, over its cooked mars_city1 (`vu_cost.py`, the strip
+path): world_lm 63.6 cycles a triangle for the base pass and 90.2 with the lightmap pass (its
+hand-written VCL 64.2 and 92.4), world_strips 60.2 (57.1), with the same packets.
 
 ## Raw bits
 

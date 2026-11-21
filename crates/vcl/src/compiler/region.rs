@@ -1695,6 +1695,7 @@ fn allocation_pool_error(
         CompileMessage::AllocationPoolEmpty { vector }
     } else {
         CompileMessage::AllocationPoolFull {
+            crossing: Vec::new(),
             vector,
             register: program
                 .registers

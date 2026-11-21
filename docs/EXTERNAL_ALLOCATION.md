@@ -215,6 +215,14 @@ policy. External failure is reported before local scheduling retries; a local
 schedule cannot change the earlier exclusion decision. No spill or generated move
 is inserted on exhaustion.
 
+In oxide mode, a region with a library call (`--call`) assigns first the
+values referenced in a block that ends in the call's JALR, in discovery order,
+then the rest (`assign_ordered`). The call's declared registers are pinned
+there, so those values have the fewest left. A program without `--call`
+keeps vcl's order. When one of those values finds no register, the failure
+names the values that cross calls, and the work-area spill saves one of
+them across the calls ([VCL_REFERENCE.md](VCL_REFERENCE.md#work-memory)).
+
 ### Differences and limitations
 
 - The port keeps logical web IDs while fixing their physical bases; vcl rewrites
