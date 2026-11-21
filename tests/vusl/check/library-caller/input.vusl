@@ -1,0 +1,12 @@
+// A program that calls a library: its header lists main's parameters and
+// the library's micro address, not the library's memory, whose names (here
+// `frame`) may be main's parameters' too.
+#pragma library(mathlib, address = 400)
+struct Frame { vec4 scale; };
+layout(address = 0) uniform Frame frame;
+export float scaled(float value);
+struct Block { vec4 scale; float out0; float pad0; float pad1; float pad2; };
+void main(layout(address = 0) uniform Frame frame, layout(address = 2) inout Block block)
+{
+    block.out0 = scaled(frame.scale.x);
+}

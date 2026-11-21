@@ -9,11 +9,10 @@
 | 2. Libraries in VUSL | Done |
 | 3. The doom3 clipper as a library | Done |
 | 4. Docs | Done |
-| 5. The library in doom3-bfg-ps2 | Not started |
+| 5. The library in doom3-bfg-ps2 | Done |
 
-Milestones 1–4 are complete in this repository. What remains is milestone 5, in the game
-repository: uploading the clipper once into the resident region, and the last check under
-Verification.
+Milestones 1–4 are in this repository and milestone 5 in the game repository, whose program
+manager uploads the clipper once at 1536 for the world programs that call it.
 
 ## Context
 

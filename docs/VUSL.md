@@ -547,7 +547,8 @@ C++17, with `<cstddef>`, `<cstdint>`, and `<tamtypes.h>` when `_EE` is defined.
 - **One struct per VUSL struct,** with explicit `_pad` members for the lanes the packing skips, and
   `static_assert`s on its size and every member's offset. A struct with arrays of run-time length
   is declared up to the first of them; constants give the offsets and strides of the rest
-  (`kBatchParticles`, `kBatchParticlesStride`) and functions the offsets after them
+  (`kBatchParticles`, `kBatchParticlesStride`), of a member at a fixed offset after them
+  (`kBatchState` for a `layout(offset = N)` member), and functions the offsets after them
   (`BatchPacket(count)`) and the size (`BatchQwords(count)`).
 - **Shared types.** A struct from an included file goes in `vusl::layout_<hash>`, behind an include
   guard on the hash of its layout, so the headers of two programs that include the same file can be
@@ -556,6 +557,12 @@ C++17, with `<cstddef>`, `<cstdint>`, and `<tamtypes.h>` when `_EE` is defined.
   and offset (`kBatchVifBase`, `kBatchVifOffset`), its size with the open arrays `main` writes
   (`BatchUsedQwords(count)`), its limit (`kBatchMaxCount`, checked by a `static_assert`), and
   `kInstructions`.
+- **Libraries.** A program that calls a library leaves the library's memory to the library's own
+  header, whose names may be `main`'s parameters' too, and gives the library's micro address
+  (`kClipperMicroAddress`). A library's own header gives its memory, its micro address
+  (`kMicroAddress`) and each export's entry (`kClipTriangleEntry`), in 64-bit instructions. The
+  JSON marks the library's memory among a caller's `parameters` with `"library": true`, and names
+  the library, its address and, in its own build, its exports' entries under `library`.
 - **`VUSL_DECLARE_PROGRAM(name)`** is expanded at the end when the includer defines it, for example
   to declare the program's start and end symbols.
 

@@ -213,8 +213,11 @@ calls), which give vcl the register contract it cannot see across programs.
   loaded back and bound as outputs with the results. A ref parameter's `Within` is any memory
   (`Base::Param(usize::MAX)`), whose stores alias everything but `uniform` memory. Labels take the
   entry's name as a prefix, since entries share one listing.
-- **The library's listing** (`compile_library`) is the entry table, `b <entry>_CodeStart` and a NOP
-  pair per export, then each entry's listing.
+- **The library's listing** (`compile_library`) is the entry table, `b <entry>_Entry` and a NOP
+  pair per export, then each entry's listing, with the local label `<entry>_Entry` right after its
+  global `<entry>_CodeStart`. The table branches to the local label because dvp-as leaves a branch
+  to a global symbol as a relocation, `R_MIPS_DVP_11_PCREL`, which ld rejects ("unsupported
+  relocation").
 
 ## The peephole passes
 

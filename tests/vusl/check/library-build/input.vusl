@@ -1,0 +1,17 @@
+// A library's own build: its header lists the library's memory, its micro
+// address and each export's entry.
+#pragma library(mathlib, address = 400)
+struct Frame { vec4 scale; };
+layout(address = 0) uniform Frame frame;
+export float scaled(float value);
+export float offset(float value);
+
+export float scaled(float value)
+{
+    return value * frame.scale.x;
+}
+
+export float offset(float value)
+{
+    return value + frame.scale.y;
+}

@@ -1004,6 +1004,23 @@ fn a_library_listing_is_one_vu_section() {
     for export in ["twiceSum", "store", "bump"] {
         let start = format!("mathlib_{export}_CodeStart:");
         assert!(library.assembly.contains(&start), "{}", library.assembly);
+        // The entry table branches to a local label right after it: ld
+        // cannot relocate dvp-as's branch to a global symbol.
+        let local = format!("mathlib_{export}_Entry");
+        assert!(
+            library.assembly.contains(&format!("{start}\n{local}:\n")),
+            "{}",
+            library.assembly
+        );
+        assert!(
+            library
+                .assembly
+                .lines()
+                .any(|line| line.contains(" b ") && line.trim_end().ends_with(&local)),
+            "{}",
+            library.assembly
+        );
+        assert!(!library.assembly.contains(&format!(".global\t{local}")));
     }
 }
 

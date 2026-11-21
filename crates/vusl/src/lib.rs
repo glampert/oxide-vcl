@@ -73,10 +73,16 @@ pub struct Vcl {
 impl Checked {
     /// The program's reflection; `instructions` once the code exists.
     pub fn reflection(&self, instructions: Option<usize>) -> reflect::Reflection {
+        let exports: Vec<String> = self
+            .entries
+            .iter()
+            .filter_map(|entry| entry.entry.as_ref().map(|entry| entry.export.clone()))
+            .collect();
         reflect::reflect(
             &self.program,
             &self.source,
             &self.struct_files,
+            &exports,
             instructions,
         )
     }
@@ -215,17 +221,26 @@ fn compile_library(
     let mut compiled = vcl::Compiled::default();
     for entry in &checked.entries {
         let (vcl, entry_compiled) = compile_program(checked, entry, options)?;
-        let jump = format!("{:<14}{}_CodeStart", "b", entry.name);
+        // The table branches to a local label at the export's start: a
+        // branch to a global symbol leaves dvp-as a relocation that ld
+        // cannot apply ("unsupported relocation").
+        let local = format!("{}_Entry", entry.name);
+        let jump = format!("{:<14}{local}", "b");
         table.push_str(&format!("{}\n", vcl::emit::pair("NOP", &jump)));
         table.push_str(&format!("{}\n", vcl::emit::pair("NOP", "NOP")));
         text.push_str(&vcl.text);
         origins.extend(vcl.origins);
         // The table opened the listing's one VU section: dvp-as rejects
         // a `.vu` inside it.
+        let start = format!("{}_CodeStart:", entry.name);
         for line in entry_compiled.assembly.lines() {
             if line.trim() != ".vu" {
                 code.push_str(line);
                 code.push('\n');
+            }
+            if line.trim() == start {
+                code.push_str(&local);
+                code.push_str(":\n");
             }
         }
         compiled.instruction_pairs += entry_compiled.instruction_pairs;

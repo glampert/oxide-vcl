@@ -20,6 +20,26 @@ pub struct Reflection {
     pub uses: Vec<&'static str>,
     pub structs: Vec<StructInfo>,
     pub params: Vec<ParamInfo>,
+    /// The library the program calls, or that this build is.
+    pub library: Option<LibraryInfo>,
+}
+
+/// `#pragma library`: the library's name and micro address, and for the
+/// library's own build its exports, in entry-table order.
+#[derive(Clone, Debug)]
+pub struct LibraryInfo {
+    pub name: String,
+    /// In 64-bit instructions, as MPG and MSCAL take addresses.
+    pub address: u16,
+    /// Empty in a program that calls the library.
+    pub exports: Vec<String>,
+}
+
+impl LibraryInfo {
+    /// The micro address of export `index`.
+    pub fn entry_address(&self, index: usize) -> u16 {
+        self.address + 2 * index as u16
+    }
 }
 
 /// A struct and where it was declared.
@@ -43,6 +63,8 @@ pub struct ParamInfo {
     pub struct_id: Option<usize>,
     pub placement: ParamPlacement,
     pub spill: bool,
+    /// Memory the library binds at file scope, in a program that calls it.
+    pub library: bool,
     /// Its qwords: the struct's fixed part and dependent lengths, plus the
     /// open arrays the program writes, by the lengths it writes them with.
     pub size: Extent,
@@ -196,10 +218,12 @@ fn walk<'a>(stmts: &'a [Stmt], visit: &mut dyn FnMut(&'a Stmt)) {
 
 /// Computes the reflection of `program`. `struct_files` gives the file
 /// each struct was declared in; those other than `source` are shared.
+/// `exports` are a library build's exports, in entry-table order.
 pub fn reflect(
     program: &Program,
     source: &str,
     struct_files: &[String],
+    exports: &[String],
     instructions: Option<usize>,
 ) -> Reflection {
     let structs = &program.structs;
@@ -384,6 +408,7 @@ pub fn reflect(
             struct_id,
             placement: param.placement,
             spill: param.spill,
+            library: param.library && exports.is_empty(),
             size,
             reads,
             writes,
@@ -398,5 +423,10 @@ pub fn reflect(
         uses,
         structs: infos,
         params,
+        library: program.library.as_ref().map(|library| LibraryInfo {
+            name: library.name.clone(),
+            address: library.address,
+            exports: exports.to_vec(),
+        }),
     }
 }

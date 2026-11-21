@@ -1,0 +1,67 @@
+{
+  "vusl": 1,
+  "program": {
+    "name": "input",
+    "source": "input.vusl",
+    "symbols": {
+      "start": "input_CodeStart",
+      "end": "input_CodeEnd"
+    },
+    "instructions": null
+  },
+  "uses": ["xtop", "xgkick"],
+  "parameters": [
+    {
+      "name": "batch",
+      "qualifier": "inout",
+      "type": "Batch",
+      "placement": {
+        "xtop": true,
+        "vif_base": 8,
+        "vif_offset": 200
+      },
+      "qwords": {
+        "fixed": 101
+      },
+      "reads": ["count", "items"],
+      "writes": ["items"],
+      "kicks": ["tail"],
+      "limit": {
+        "length": "count",
+        "max": 99,
+        "capacity": 100
+      }
+    }
+  ],
+  "types": [
+    {
+      "name": "Batch",
+      "file": "input.vusl",
+      "layout": "55c49f65",
+      "qwords": {
+        "fixed": 101
+      },
+      "members": [
+        {
+          "name": "count",
+          "type": "int16",
+          "qword": 0,
+          "lane": "w"
+        },
+        {
+          "name": "items",
+          "type": "vec4",
+          "qword": 1,
+          "lane": "x",
+          "length": "count",
+          "stride": 1
+        },
+        {
+          "name": "tail",
+          "type": "qword",
+          "qword": 100
+        }
+      ]
+    }
+  ]
+}

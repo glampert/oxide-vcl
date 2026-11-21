@@ -1,0 +1,13 @@
+// A member at a fixed offset after an array of run-time length: the C++
+// struct ends before the array, and constants give both offsets.
+struct Batch {
+    layout(lane = w) int16 count;
+    vec4  items[count];
+    layout(offset = 100) qword tail;
+};
+void main(layout(xtop, vif_base = 8, vif_offset = 200) inout Batch batch)
+{
+    for (inout vec4 item : batch.items)
+        item = item + item;
+    xgkick(batch.tail);
+}

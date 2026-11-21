@@ -186,6 +186,8 @@ fn write_struct(
     let mut asserts = Vec::new();
     let mut at = 0u32;
     let mut pad = 0;
+    // How many members, from the first, the C++ struct holds.
+    let mut declared = 0;
     for member in &def.members {
         if !member.offset.is_fixed()
             || matches!(
@@ -265,6 +267,7 @@ fn write_struct(
             ty => format!("{} {};", value_type(ty, infos, in_program), member.name),
         };
         fields.push((field, note));
+        declared += 1;
         asserts.push((member.name.clone(), start));
         at = start + member_bytes(&member.ty, structs);
         if ends_definition(&member.ty, structs) {
@@ -303,7 +306,7 @@ fn write_struct(
     }
     // Offsets and sizes that C++ members cannot give.
     let mut constants = Vec::new();
-    for member in &def.members {
+    for (index, member) in def.members.iter().enumerate() {
         let dynamic_length = matches!(
             member.ty,
             Type::Array(_, Length::Member(_) | Length::Xitop | Length::Open)
@@ -315,7 +318,9 @@ fn write_struct(
                 "constexpr std::uint32_t {label}({parameters}) {{ return {body}; }} // {name}::{}",
                 member.name
             ));
-        } else if dynamic_length {
+        } else if dynamic_length || index >= declared {
+            // An array of run-time length, or a member at a fixed offset
+            // after one (`layout(offset = N)`).
             constants.push(format!(
                 "constexpr std::uint32_t k{label} = {}; // {name}::{}",
                 member.offset.fixed, member.name
@@ -500,12 +505,49 @@ pub fn write(reflection: &Reflection) -> String {
         out.push('\n');
         write_struct(&mut out, &reflection.structs, &structs, id, true);
     }
-    let _ = writeln!(
-        out,
-        "\n// main's parameters: qword addresses in VU1 data memory."
-    );
-    for param in &reflection.params {
+    let own_library = reflection
+        .library
+        .as_ref()
+        .filter(|library| !library.exports.is_empty());
+    let heading = if own_library.is_some() {
+        "The library's memory"
+    } else {
+        "main's parameters"
+    };
+    let _ = writeln!(out, "\n// {heading}: qword addresses in VU1 data memory.");
+    // The memory of a library the program calls is the library header's to
+    // give: its names may be main's parameters' too.
+    for param in reflection.params.iter().filter(|param| !param.library) {
         write_param(&mut out, param, &structs);
+    }
+    if let Some(library) = &reflection.library {
+        if library.exports.is_empty() {
+            let _ = writeln!(
+                out,
+                "\n// The {0} library main calls, resident in micro memory at this address\n\
+                 // (64-bit instructions); its own header gives its memory.\n\
+                 constexpr std::uint32_t k{1}MicroAddress = {2};",
+                library.name,
+                capitalized(&library.name),
+                library.address
+            );
+        } else {
+            let _ = writeln!(
+                out,
+                "\n// Where the library is uploaded in micro memory, and each export's entry\n\
+                 // (64-bit instructions): a caller's JALR target.\n\
+                 constexpr std::uint32_t kMicroAddress = {};",
+                library.address
+            );
+            for (index, export) in library.exports.iter().enumerate() {
+                let _ = writeln!(
+                    out,
+                    "constexpr std::uint32_t k{}Entry = {};",
+                    capitalized(export),
+                    library.entry_address(index)
+                );
+            }
+        }
     }
     if let Some(instructions) = reflection.instructions {
         let _ = writeln!(

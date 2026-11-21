@@ -187,6 +187,9 @@ pub fn write(reflection: &Reflection) -> String {
             if param.spill {
                 entries.push(("spill", Json::Bool(true)));
             }
+            if param.library {
+                entries.push(("library", Json::Bool(true)));
+            }
             if let Some(id) = param.struct_id {
                 entries.push(("qwords", qwords(&param.size, &structs, id)));
                 entries.push(("reads", strings(&param.reads)));
@@ -305,6 +308,31 @@ pub fn write(reflection: &Reflection) -> String {
         ("parameters", Json::Array(parameters)),
         ("types", Json::Array(types)),
     ]);
+    let root = match (&reflection.library, root) {
+        (Some(library), Json::Object(mut entries)) => {
+            let mut info = vec![
+                ("name", string(&library.name)),
+                ("address", Json::Int(i64::from(library.address))),
+            ];
+            if !library.exports.is_empty() {
+                let exports = library
+                    .exports
+                    .iter()
+                    .enumerate()
+                    .map(|(index, export)| {
+                        object(vec![
+                            ("name", string(export)),
+                            ("entry", Json::Int(i64::from(library.entry_address(index)))),
+                        ])
+                    })
+                    .collect();
+                info.push(("exports", Json::Array(exports)));
+            }
+            entries.insert(2, ("library".to_string(), object(info)));
+            Json::Object(entries)
+        }
+        (_, root) => root,
+    };
     let mut out = String::new();
     write_value(&mut out, &root, 0);
     out.push('\n');
