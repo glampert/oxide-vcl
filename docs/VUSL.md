@@ -609,6 +609,10 @@ a note names each value kept in the work area.
 
 ## A complete program
 
+`samples/` holds two small programs with the EE code that runs them, built against the PS2 SDK:
+`hello_triangle` draws one triangle, and `rotating_cube` transforms a cube, tests depth and judges
+its corners against the guard band.
+
 `tests/vusl/check/particles/input.vusl` is quake2's particle program in VUSL, with the same
 memory layout as the hand-written `particles.vcl`. Its loop transforms each particle, judges it
 against the guard band, and writes a five-qword sprite. `tests/vusl/programs` holds the VUSL

@@ -26,6 +26,8 @@ untracked notes are in `CLAUDE.local.md` when present.
   for users, `docs/VUSL_COMPILER.md` the implementer's view,
   `docs/VUSL_PERFORMANCE.md` the ports against their originals, and
   `docs/plans/VUSL_LIBRARIES.md` the libraries plan.
+- `samples`: VUSL samples, each a program, an EE C++ program and a Makefile
+  for the PS2 SDK. CI compiles only their VUSL (`crates/oxide-vusl/tests/samples.rs`).
 - `tests/vusl`: VUSL test data: `check` (errors, warnings and reflection),
   `codegen` (one generated-VCL case per idiom), `programs` (ports of corpus
   programs, run on their scenes) and `include`.

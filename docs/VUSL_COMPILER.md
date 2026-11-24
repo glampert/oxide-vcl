@@ -282,6 +282,7 @@ driver prints.
 | `crates/vusl/tests/programs.rs` | quake2-ps2's and doom3-bfg-ps2's programs in `tests/vusl/programs` on their scenes: packets identical to the hand-written program's, no more cycles, and memory and kicks the interpreter's. A program that calls a library runs with it at the library's address, and the interpreter with its source included; instead of the cycle bound, the library's callers take fewer instructions together, the library's included, than their hand-written programs. Its ignored `report` test prints `docs/VUSL_PERFORMANCE.md`'s table, and `profile` the cycles by label |
 | `crates/vusl/tests/reference.rs` | Every complete program in `docs/VUSL.md` checks and compiles, with its header blocks as include files |
 | `crates/oxide-vusl/tests/driver.rs` | The command line: options, outputs written all or none, exit statuses, diagnostics |
+| `crates/oxide-vusl/tests/samples.rs` | Each sample's program in `samples/` compiles with `--warnings-as-errors` into a listing and a header, as its Makefile does. The samples' C++ needs the PS2 SDK and is not built here |
 
 The semantics and programs suites use `crates/oxide-vcl/tests/support/vu_model.rs` and
 `scenes.rs` by path, as the oxide-vcl tests do. The timed configuration matters: VCL's schedules

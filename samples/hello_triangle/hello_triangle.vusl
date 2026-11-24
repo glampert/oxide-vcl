@@ -1,0 +1,60 @@
+// hello_triangle.vusl: the smallest useful VU1 program. The host sends one
+// batch of vertices, each a colour and a position in [-1, 1]; the program
+// maps them to the GS window, converts them to the GS's fixed-point formats
+// and sends them to the GS with one XGKICK.
+
+#pragma program(HelloTriangle)
+
+// Where [-1, 1] lands on the GS window: written by the host at address 0.
+struct Screen
+{
+    vec4 scale;  // xy: half the screen's size in pixels, y negative (the GS's y grows down)
+    vec4 offset; // xy: the window position of the screen's centre
+};
+
+// A vertex as the host sends it.
+struct Vertex
+{
+    vec4 color; // RGBA, 0 to 255 (alpha 128 is opaque)
+    vec4 pos;   // xy in [-1, 1]
+};
+
+// A vertex as the GS takes it, in PACKED mode with RGBAQ then XYZ2.
+struct GsVertex
+{
+    ivec4 rgba; // RGBAQ: one byte of colour per lane
+    ivec3 xyz;  // XYZ2: x and y in 12.4 fixed point, z
+    int16 adc;  // XYZ2's w: bit 15 set means "do not draw"
+};
+
+// What the program sends to the GS: the host's GIF tag, then the vertices.
+struct Packet
+{
+    qword    tag;
+    GsVertex vertices[];
+};
+
+// The batch, at address 2: the vertex count, the GIF tag, the vertices, and
+// room after them for the packet the program builds.
+struct Batch
+{
+    layout(lane = w) int16 count;
+    qword  tag;
+    Vertex vertices[count];
+    Packet packet;
+};
+
+void main(layout(address = 0) uniform Screen screen,
+          layout(address = 2) inout Batch batch)
+{
+    batch.packet.tag = batch.tag;
+
+    for (Vertex v : batch.vertices, out GsVertex g : batch.packet.vertices)
+    {
+        g.rgba = ftoi0(v.color);
+        g.xyz  = ftoi4(screen.offset.xyz + v.pos.xyz * screen.scale.xyz);
+        g.adc  = 0;
+    }
+
+    xgkick(batch.packet);
+}

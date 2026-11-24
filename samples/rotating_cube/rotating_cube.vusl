@@ -1,0 +1,98 @@
+// rotating_cube.vusl: transforms a batch of coloured triangles by the host's
+// model-view-projection matrix, projects them to the GS window with depth,
+// and judges each corner against the guard band with CLIPW. A triangle with
+// a corner outside goes to the GS with ADC set, so the GS skips it instead of
+// drawing it with coordinates that wrapped around the window.
+
+#pragma program(RotatingCube)
+
+// The frame constants: written by the host at address 0 every frame.
+struct Frame
+{
+    layout(row_major) mat4 mvp; // math3d's local-to-screen matrix: a row vector times it
+    vec4 scale;                 // clip space to the GS window: x, y and depth
+    vec4 offset;                // the window position of the screen's centre, and the depth's
+    vec4 guard;                 // xyz: what scales x, y and z so the guard band is -w to w
+};
+
+// A corner as the host sends it.
+struct Vertex
+{
+    vec4 color; // RGBA, 0 to 255 (alpha 128 is opaque)
+    vec3 pos;   // model space
+};
+
+struct Triangle
+{
+    Vertex a, b, c;
+};
+
+// A corner as the GS takes it, in PACKED mode with RGBAQ then XYZ2.
+struct GsVertex
+{
+    ivec4 rgba; // RGBAQ
+    ivec3 xyz;  // XYZ2: x and y in 12.4 fixed point, depth
+    int16 adc;  // XYZ2's w: bit 15 set means "do not draw"
+};
+
+struct GsTriangle
+{
+    GsVertex a, b, c;
+};
+
+// What the program sends to the GS: the host's GIF tag, then the triangles.
+struct Packet
+{
+    qword      tag;
+    GsTriangle triangles[];
+};
+
+// One half of the VIF double buffer: the triangle count, the GIF tag, the
+// triangles, and room after them for the packet.
+struct Batch
+{
+    layout(lane = w) int16 count;
+    qword    tag;
+    Triangle triangles[count];
+    Packet   packet;
+};
+
+// Projects a corner from clip space into the GS window.
+void project(in Frame frame, vec4 clip, vec4 color, out GsVertex g)
+{
+    float q = 1.0 / clip.w;
+
+    g.rgba = ftoi0(color);
+    g.xyz  = ftoi4(frame.offset.xyz + clip.xyz * q * frame.scale.xyz);
+}
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(xtop, vif_base = 8, vif_offset = 496) inout Batch batch)
+{
+    batch.packet.tag = batch.tag;
+
+    for (Triangle t : batch.triangles, out GsTriangle g : batch.packet.triangles)
+    {
+        vec4 a = vec4(t.a.pos, 1.0) * frame.mvp;
+        vec4 b = vec4(t.b.pos, 1.0) * frame.mvp;
+        vec4 c = vec4(t.c.pos, 1.0) * frame.mvp;
+
+        // Each corner against the guard band: outside when a scaled x, y or z
+        // is beyond -w to w.
+        clipflags ja = clipw(a.xyz * frame.guard.xyz, a.w);
+        clipflags jb = clipw(b.xyz * frame.guard.xyz, b.w);
+        clipflags jc = clipw(c.xyz * frame.guard.xyz, c.w);
+
+        project(frame, a, t.a.color, g.a);
+        project(frame, b, t.b.color, g.b);
+        project(frame, c, t.c.color, g.c);
+
+        // Bit 15 set when any corner is outside: the GS skips the triangle.
+        int16 outside = adc(ja, jb, jc);
+        g.a.adc       = outside;
+        g.b.adc       = outside;
+        g.c.adc       = outside;
+    }
+
+    xgkick(batch.packet);
+}

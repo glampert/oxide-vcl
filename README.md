@@ -140,6 +140,8 @@ the generated `.vcl`.
 
 More:
 
+- [Samples](samples/README.md): a triangle and a rotating cube, each a VUSL
+  program with the small EE program that runs it on a PS2 or in an emulator
 - [VUSL reference](docs/VUSL.md): the language, the cost of every construct,
   pragmas, libraries, reflection and the command line
 - [The VUSL compiler](docs/VUSL_COMPILER.md): phases, lowering, optimizations
@@ -217,6 +219,9 @@ The Cargo workspace has four crates:
 - `crates/vusl` and `crates/oxide-vusl`, VUSL: a GLSL-like language for VU1
   microprograms that compiles to VCL, and its `oxide-vusl` driver
   ([reference](docs/VUSL.md), [compiler](docs/VUSL_COMPILER.md)).
+
+`samples/` holds VUSL samples with the EE programs that run them
+([README](samples/README.md)).
 
 The workspace version (`Cargo.toml`) is the project's version; `oxide-vcl -h`
 prints it with the build date.
