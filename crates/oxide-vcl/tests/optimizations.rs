@@ -658,6 +658,104 @@ fn unswitch_finds_the_usual_path_wherever_it_sits_in_the_source() {
     assert_eq!(branch_rows(&optimized, "ibeq"), 4, "{optimized}");
 }
 
+#[test]
+fn unswitch_shares_what_an_early_out_skips_when_it_all_leads_to_an_inner_loop() {
+    // SPLIT skips straight to the advance. What it skips is a setup, the
+    // inner loop and code after it, all on the way into the loop or out of
+    // it: a special case, so the setup's own branch (SMALL) is there once,
+    // not in both copies.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi base(vi01)\n\
+                  in_vi count(vi02)\n\
+                  in_vi mode(vi03)\n\
+                  in_vf scale(vf02)\n\
+                  --endenter\n\
+                  loop:\n\
+                  lq value,0(base)\n\
+                  ibeq mode,vi00,plain_first\n\
+                  mul value,value,scale\n\
+                  plain_first:\n\
+                  sq value,0(base)\n\
+                  ilw.w split,0(base)\n\
+                  ibeq split,vi00,advance\n\
+                  iaddiu parts,vi00,3\n\
+                  ilw.w small,1(base)\n\
+                  ibeq small,vi00,setup_done\n\
+                  iaddiu parts,vi00,1\n\
+                  setup_done:\n\
+                  part_loop:\n\
+                  add value,value,scale\n\
+                  isubiu parts,parts,1\n\
+                  ibne parts,vi00,part_loop\n\
+                  sq value,0(base)\n\
+                  advance:\n\
+                  iaddiu base,base,1\n\
+                  isubiu count,count,1\n\
+                  ibne count,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let (plain, optimized, _, _) = unswitched_same_results(source);
+    assert!(optimized.contains("loop__u1:"), "{optimized}");
+    assert_eq!(optimized.matches("part_loop:").count(), 1, "{optimized}");
+    assert_eq!(
+        optimized.matches("setup_done").count(),
+        plain.matches("setup_done").count()
+    );
+    assert!(!optimized.contains("setup_done__u"), "{optimized}");
+}
+
+#[test]
+fn unswitch_copies_what_an_early_out_skips_when_some_of_it_leads_to_no_inner_loop() {
+    // CULL skips the usual output and, beside it, a special case with an
+    // inner loop. The usual output reaches no loop, so what CULL skips is
+    // not a special case as a whole: the usual output is copied, and its
+    // MODE test resolves in each copy.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi base(vi01)\n\
+                  in_vi count(vi02)\n\
+                  in_vi mode(vi03)\n\
+                  in_vf scale(vf02)\n\
+                  --endenter\n\
+                  loop:\n\
+                  lq value,0(base)\n\
+                  ilw.x cull,2(base)\n\
+                  ibne cull,vi00,advance\n\
+                  ilw.w split,0(base)\n\
+                  ibne split,vi00,special\n\
+                  ibeq mode,vi00,plain_out\n\
+                  mul value,value,scale\n\
+                  plain_out:\n\
+                  sq value,0(base)\n\
+                  b advance\n\
+                  special:\n\
+                  iaddiu parts,vi00,3\n\
+                  part_loop:\n\
+                  add value,value,scale\n\
+                  isubiu parts,parts,1\n\
+                  ibne parts,vi00,part_loop\n\
+                  sq value,0(base)\n\
+                  advance:\n\
+                  iaddiu base,base,1\n\
+                  isubiu count,count,1\n\
+                  ibne count,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let (_, optimized, _, _) = unswitched_same_results(source);
+    assert!(optimized.contains("loop__u1:"), "{optimized}");
+    assert_eq!(optimized.matches("part_loop:").count(), 1, "{optimized}");
+    // MODE is tested only by the dispatches, at the header and after the
+    // special case: the usual output's test resolved in both copies.
+    let mode_tests = rows(&optimized)
+        .iter()
+        .filter(|row| row.contains("ibeq VI03") || row.contains("ibne VI03"))
+        .count();
+    assert_eq!(mode_tests, 2, "{optimized}");
+}
+
 /// A loop that tests three modes, none of which it changes: MODE (VI03)
 /// twice an iteration, FORM (VI04) and SHADE (VI05) once each.
 const THREE_MODE_LOOP: &str = ".init_vf_all\n\

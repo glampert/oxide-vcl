@@ -14,7 +14,9 @@
 //! - Its *usual path* is every block except inner loops and the *special
 //!   cases*: the blocks a branch reaches, before the code its two arms
 //!   share, when they lead to an inner loop the other arm does not (a
-//!   clipping pass, say). Special cases stay as one shared copy. An inner
+//!   clipping pass, say), and the blocks an early out skips when each of
+//!   them is on the way into an inner loop or back out of one (a slow path
+//!   of clipping passes). Special cases stay as one shared copy. An inner
 //!   loop is the blocks on a cycle that avoids the header, so where a block
 //!   sits in the source does not decide what it is.
 //! - The condition is the most frequent conditional branch on the usual
@@ -466,9 +468,9 @@ fn inner_loops(blocks: &[LoopBlock]) -> Vec<bool> {
 
 /// The special cases: for each conditional branch outside an inner loop
 /// with code on both arms, the blocks an arm reaches before the code both
-/// arms share, when that arm leads to an inner loop the other does not. A
-/// branch that skips straight to the shared code (an early out, or a skip
-/// past a loop) marks nothing.
+/// arms share, when that arm leads to an inner loop the other does not.
+/// For a branch that skips straight to the shared code (an early out), the
+/// blocks it skips when [`around_inner_loops`] holds for them.
 fn special_cases(blocks: &[LoopBlock], inner: &[bool]) -> Vec<bool> {
     let count = blocks.len();
     // Post-dominators, with the loop's exits and the branches back to the
@@ -536,7 +538,19 @@ fn special_cases(blocks: &[LoopBlock], inner: &[bool]) -> Vec<bool> {
             continue;
         }
         let arms = [reach(fall, id), reach(jump, id)];
-        if arms.iter().any(|arm| !arm.contains(&true)) {
+        let empty = [!arms[0].contains(&true), !arms[1].contains(&true)];
+        if empty[0] && empty[1] {
+            continue;
+        }
+        if empty[0] || empty[1] {
+            // An early out: the arm with code is a special case when all of
+            // it is on the way into an inner loop or back out of one.
+            let arm = &arms[usize::from(empty[0])];
+            if around_inner_loops(blocks, inner, arm) {
+                for (flag, &reached) in cold.iter_mut().zip(arm) {
+                    *flag |= reached;
+                }
+            }
             continue;
         }
         for (arm, other) in [(0, 1), (1, 0)] {
@@ -549,6 +563,40 @@ fn special_cases(blocks: &[LoopBlock], inner: &[bool]) -> Vec<bool> {
         }
     }
     cold
+}
+
+/// Whether `arm` (the blocks an early out skips) holds an inner loop, and
+/// each of its other blocks reaches one or is reached from one, within the
+/// arm. An arm that also holds code reaching neither, such as the usual
+/// output a backface cull skips beside its clipping path, is not.
+fn around_inner_loops(blocks: &[LoopBlock], inner: &[bool], arm: &[bool]) -> bool {
+    let count = blocks.len();
+    let within = |id: usize| arm[id];
+    // Forward closure from `starts`, inside the arm.
+    let closure = |starts: Vec<usize>| -> Vec<bool> {
+        let mut seen = vec![false; count];
+        let mut work = starts;
+        while let Some(id) = work.pop() {
+            for next in blocks[id].successors() {
+                if let Next::Block(to) = next
+                    && within(to)
+                    && !seen[to]
+                {
+                    seen[to] = true;
+                    work.push(to);
+                }
+            }
+        }
+        seen
+    };
+    let loops: Vec<usize> = (0..count).filter(|&id| arm[id] && inner[id]).collect();
+    if loops.is_empty() {
+        return false;
+    }
+    let after = closure(loops.clone());
+    (0..count)
+        .filter(|&id| arm[id] && !inner[id])
+        .all(|id| after[id] || closure(vec![id]).iter().zip(inner).any(|(&r, &i)| r && i))
 }
 
 /// The rewrite of one loop.

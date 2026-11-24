@@ -187,9 +187,9 @@ The table costs one branch per call.
 
 ## Costs
 
-Measured in `docs/VUSL_PERFORMANCE.md` ("Libraries"): the two library ports and the clipper take
-37% fewer instructions than the two inlined ports, and the scenes from 43% fewer to 3% more cycles
-than the hand-written programs (the inlined ports: 3% to 43% fewer).
+Measured in `docs/VUSL_PERFORMANCE.md`, on doom3-bfg-ps2's own programs, which call the library:
+the two programs and the clipper take 1,490 instructions, the two hand-written programs 1,714, and
+the scenes from 44% fewer to 4% more cycles than the hand-written programs.
 
 - **Register pressure:** what a loop keeps live across a call cannot use the bank; what does not
   fit in the registers left is saved in the work area across the calls, and keeps its register
@@ -210,8 +210,8 @@ than the hand-written programs (the inlined ports: 3% to 43% fewer).
   1008–1023, which doom3's memory map leaves free.
 - **Entry addresses** are numbers: the header gives the library's address, and the entry table
   fixes each entry's offset.
-- **The ports:** the inlined ports stay as they are, for reference; the library versions are new
-  copies (`world_strips_lib`, `world_lm_lib`) beside them.
+- **The ports:** the programs suite holds doom3-bfg-ps2's programs as that project writes them,
+  calling the library (`tests/vusl/programs`); the inlined ports it held before are gone.
 
 ## Milestones
 

@@ -4491,6 +4491,7 @@ impl Elaborator<'_, '_> {
             setup,
             args,
             body,
+            inlined: !function.prototype,
             pos,
         });
         Ok(value)

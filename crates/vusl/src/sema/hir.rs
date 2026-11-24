@@ -367,13 +367,16 @@ pub enum Stmt {
     /// A call of a library's export, at micro address `entry`: `setup` sets
     /// the parameters' locals, `args` passes them, and `body` is the
     /// export inlined, which is what the call means (the interpreter runs
-    /// it; code generation calls the library instead).
+    /// it; code generation calls the library instead). `inlined` is false
+    /// when the program sees only the export's prototype: `body` is then
+    /// empty, and the interpreter cannot run the call.
     Call {
         export: String,
         entry: u16,
         setup: Vec<Stmt>,
         args: Vec<CallArg>,
         body: Vec<Stmt>,
+        inlined: bool,
         pos: Pos,
     },
 }

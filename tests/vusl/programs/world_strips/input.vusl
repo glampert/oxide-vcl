@@ -1,24 +1,42 @@
-// doom3-bfg-ps2's world_strips.vcl (commit adc427d), in VUSL: one cooked
-// world batch in plain strips. Phase 1 transforms every vertex in place;
-// phase 2 sends the strips as they are when every vertex stayed inside the
-// guard band, and otherwise walks them as triangles, clipping those that
-// left it. Derived from that GPL-3.0-or-later program: see
-// tests/corpus/README.md and tests/corpus/licenses.
-#pragma program(world_strips)
-#include "../include/doom3.vush"
+/* ================================================================================================
+ * File: world_strips.vusl
+ * Brief: One cooked world batch in plain strips (D3WD, layout WA without the index stream: the
+ *        cook's "strips" topology, src/tools/assets/world.h), the other half of gate R1's
+ *        topology comparison with world_lm.vusl. Phase 1 transforms every vertex in place;
+ *        phase 2 sends the strips as they are when every vertex stayed inside the guard band,
+ *        and otherwise walks them as triangles, clipping those that left it through the
+ *        clipper library (clipper.vush). It draws the base pass only, with the colour of a
+ *        material pass's block where the page's goes (as world_lm.vusl).
+ *
+ * This source code is released under the GNU GPL-3.0-or-later license.
+ * ================================================================================================ */
 
-// A cooked strip vertex: s16 position with the ADC flag in w (0x8000 on
-// the first two of each strip), s16 UVs, RGBA bytes, and a free qword.
-struct Vertex {
-    ivec3 pos;  int16 flags;
+#pragma program(world_strips)
+#include "world.vush"
+#include "clipper.vush"
+
+// A cooked strip vertex: s16 position with the ADC flag in w (0x8000 on the first two of each
+// strip), s16 UVs, RGBA bytes, and a free qword.
+struct Vertex
+{
+    ivec3 pos;
+    int16 flags;
     ivec4 uv;
     ivec4 rgba;
     qword free;
 };
 
-struct Batch {
-    vec3  posOffset;  int16 indexQwords;
-    float posScale;   float uvScale;   vec2 uvOffset;
+// A batch at XTOP: its dequantisation, then the vertices (their count from XITOP), and the
+// batch state DisplayList::DrawBatch writes at the end of the half: the lightmap page's A+D
+// packet (unused here) or a material pass's colour (word 3 of the second qword negative), the
+// material's A+D packet, kicked first, then the drawing tags.
+struct Batch
+{
+    vec3  posOffset;
+    int16 indexQwords;
+    float posScale;
+    float uvScale;
+    vec2  uvOffset;
     Vertex vertices[count];
     layout(offset = 295) qword lightmap[2];
     qword state[7];
@@ -26,117 +44,162 @@ struct Batch {
     qword listTag;
 };
 
-// A corner of a triangle wholly inside the guard band: its phase 1 qwords,
-// the flags cleared so ADC stays clear and the triangle draws.
+// A corner of a triangle wholly inside the guard band: its phase 1 qwords, the flags cleared
+// so ADC stays clear and the triangle draws.
 void sendCorner(out WindowVertex to, ref<Projected> vertex)
 {
     ref<Sent> sent = ref<Sent>(vertex);
-    to.st = sent.stq;
-    to.rgbaq = sent.rgba;
+    to.st          = sent.stq;
+    to.rgbaq       = sent.rgba;
+
     ref<WindowCorner> corner = ref<WindowCorner>(to);
-    corner.xyz = vertex.xyz;
-    corner.adc = 0;
+    corner.xyz               = vertex.xyz;
+    corner.adc               = 0;
 }
 
-// A strip vertex sent again at the head of a fresh window with ADC set: a
-// new packet restarts the GS vertex queue, so the two vertices the next
-// triangle closes over go again, drawing nothing.
+// A strip vertex sent again at the head of a fresh window with ADC set: a new packet restarts
+// the GS vertex queue, so the two vertices the next triangle closes over go again, drawing
+// nothing.
 void reenter(out WindowVertex to, ref<Projected> vertex)
 {
     ref<Sent> sent = ref<Sent>(vertex);
-    to.st = sent.stq;
-    to.rgbaq = sent.rgba;
+    to.st          = sent.stq;
+    to.rgbaq       = sent.rgba;
+
     ref<WindowCorner> corner = ref<WindowCorner>(to);
-    corner.xyz = vertex.xyz;
-    corner.adc = 0x8000;
+    corner.xyz               = vertex.xyz;
+    corner.adc               = 0x8000;
 }
 
 void main(layout(address = 0) inout Frame frame,
           layout(xitop) int16 count,
           layout(xtop, vif_base = 40, vif_offset = 306) inout Batch batch,
           layout(address = 652) inout Windows windows,
-          layout(address = 954, spill) inout Scratch scratch,
-          layout(address = 957) inout ClipBuffers clip)
+          layout(address = 954, spill) inout Scratch scratch)
 {
     // The material's registers go first: every window waits behind them.
     xgkick(batch.state);
-    vec3 posOffset = batch.posOffset;
-    float posScale = batch.posScale;
-    float uvScale = batch.uvScale;
+
+    // A material pass: every vertex takes the pass's colour.
+    if (batch.lightmap[1].w < 0)
+    {
+        qword color = batch.lightmap[0];
+
+        for (inout Vertex v : batch.vertices)
+        {
+            ref<Sent> sent = ref<Sent>(v);
+            sent.rgba      = color;
+        }
+    }
+
+    vec3 posOffset                 = batch.posOffset;
+    float posScale                 = batch.posScale;
+    float uvScale                  = batch.uvScale;
     layout(lane = x) vec2 uvOffset = batch.uvOffset;
-    int16 anyOut = 0;
+    int16 anyOut                   = 0;
 
     // Phase 1: transform, judge and project every vertex in place.
     for (inout Vertex v : batch.vertices)
     {
-        int16 adc = v.flags & 0x8000;
-        vec3 pos = itof0(v.pos) * posScale + posOffset;
-        vec2 uv = itof0(v.uv.xy) * uvScale + uvOffset;
+        int16 adc    = v.flags & 0x8000;
+        vec3 pos     = itof0(v.pos) * posScale + posOffset;
+        vec2 uv      = itof0(v.uv.xy) * uvScale + uvOffset;
         vec4 clipPos = vec4(pos, 1.0) * frame.mvp;
+
+        // 1e-20 in w: a w of any real size absorbs it, but one that cancels to exactly 0 (a
+        // vertex in the eye's plane, as on grid-aligned cameras) keeps Q = 1 / w finite. With
+        // Q at the largest float the clipper's rebuilt w (1 / Q) flushes to 0 and takes the
+        // corner's UV (S x Q x w) with it.
+        clipPos.w = clipPos.w + 1.0e-20;
+
         clipflags judged = clipw(clipPos.xyz * frame.clipScale, clipPos.w);
-        float q = 1.0 / clipPos.w;
-        vec3 projected = frame.gsOffset + clipPos.xyz * q * frame.gsScale;
-        int16 outside = (clipped(judged) + 0x3fff) & 0x4000;
-        anyOut = anyOut | outside;
+        float q          = 1.0 / clipPos.w;
+        vec3 projected   = frame.gsOffset + clipPos.xyz * q * frame.gsScale;
+        int16 outside    = (clipped(judged) + 0x3fff) & 0x4000;
+        anyOut           = anyOut | outside;
+
         ref<Projected> p = ref<Projected>(v);
-        p.clip = clipPos;
-        p.xyz = ftoi4(projected);
-        p.flags = adc | outside;
-        p.stq.xyz = vec3(uv * q, q);
+        p.clip           = clipPos;
+        p.xyz            = ftoi4(projected);
+        p.flags          = adc | outside;
+        p.stq.xyz        = vec3(uv * q, q);
     }
 
     if (anyOut == 0)
     {
-        // Phase 2, strip path: every vertex inside the guard band.
+        // Phase 2, strip path: every vertex inside the guard band. Each window takes a run of
+        // as many vertices as it has room for, or all that are left: a window is only ever
+        // closed full, so the run needs no test per vertex and its loop stays one block.
         ref<WindowVertex> cursor = openWindow(frame, windows, batch.stripTag);
-        int16 room = kWindowVertices;
-        for (Vertex v : batch.vertices)
+        ref<Projected> here      = ref<Projected>(batch.vertices);
+        int16 room               = kWindowVertices;
+        int16 left               = count;
+
+        while (true)
         {
-            ref<Projected> here = ref<Projected>(v);
-            if (room == 0)
+            int16 run = left;
+
+            if (room < left)
             {
-                // A full window: kick it and start the next with the two
-                // previous vertices again, so a strip across the kick keeps
-                // its pending pair.
-                closeWindow(frame, windows, room);
-                cursor = openWindow(frame, windows, batch.stripTag);
-                reenter(cursor[0], here - 2);
-                reenter(cursor[1], here - 1);
-                cursor += 2;
-                room = kWindowVertices - 2;
+                run = room;
             }
-            ref<Sent> sent = ref<Sent>(here);
-            cursor.st = sent.stq;
-            cursor.rgbaq = sent.rgba;
-            cursor.xyz = sent.xyz;
-            cursor += 1;
-            room -= 1;
+
+            left -= run;
+            room -= run;
+
+            for (int16 i = 0; i < run; ++i)
+            {
+                ref<Sent> sent = ref<Sent>(here);
+                cursor.st      = sent.stq;
+                cursor.rgbaq   = sent.rgba;
+                cursor.xyz     = sent.xyz;
+                cursor += 1;
+                here += 1;
+            }
+
+            if (left == 0)
+            {
+                break;
+            }
+
+            // A full window with vertices left: kick it and start the next with the two
+            // previous vertices again, so a strip across the kick keeps its pending pair.
+            closeWindow(frame, windows, room);
+            cursor = openWindow(frame, windows, batch.stripTag);
+            reenter(cursor[0], here - 2);
+            reenter(cursor[1], here - 1);
+            cursor += 2;
+            room = kWindowVertices - 2;
         }
+
         closeWindow(frame, windows, room);
     }
     else
     {
-        // Phase 2, list path: the same sequence as triangles, those wholly
-        // inside sent as they are and the rest through the clipper.
+        // Phase 2, list path: the same sequence as triangles, those wholly inside sent as they
+        // are and the rest through the clipper.
         ref<WindowVertex> cursor = openWindow(frame, windows, batch.listTag);
-        int16 room = kWindowVertices;
-        ref<Projected> prev1 = ref<Projected>(batch.vertices);
-        ref<Projected> prev2 = prev1;
+        int16 room               = kWindowVertices;
+        ref<Projected> prev1     = ref<Projected>(batch.vertices);
+        ref<Projected> prev2     = prev1;
+
         for (Vertex v : batch.vertices)
         {
-            // Room for the most a clipped triangle fans cursor to: five planes
-            // leave at most eight corners, six triangles.
+            // Room for the most a clipped triangle fans out to: five planes leave at most eight
+            // corners, six triangles.
             if (room < 18)
             {
                 closeWindow(frame, windows, room);
                 cursor = openWindow(frame, windows, batch.listTag);
-                room = kWindowVertices;
+                room   = kWindowVertices;
             }
+
             ref<Projected> a = prev2;
             ref<Projected> b = prev1;
             ref<Projected> c = ref<Projected>(v);
-            prev2 = prev1;
-            prev1 = c;
+            prev2            = prev1;
+            prev1            = c;
+
             // An opening vertex closes no triangle.
             if ((c.flags & 0x8000) == 0)
             {
@@ -149,12 +212,16 @@ void main(layout(address = 0) inout Frame frame,
                     room -= 3;
                 }
                 else
-                    clipTriangle(frame, clip, cursor, room, a, b, c, 0.0);
+                {
+                    ClipTriangle(cursor, room, a, b, c, 0.0);
+                }
             }
         }
+
         closeWindow(frame, windows, room);
-        // A list batch may kick no window: the null tag waits for the
-        // state packet, which must leave the half before the program ends.
+
+        // A list batch may kick no window: the null tag waits for the state packet, which must
+        // leave the half before the program ends.
         xgkick(frame.nullTag);
     }
 }

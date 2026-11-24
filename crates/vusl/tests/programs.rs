@@ -1,14 +1,15 @@
-//! Ports of hand-written corpus programs to VUSL: `tests/vusl/programs/<case>/`
-//! holds `input.vusl` and `hand-written`, the name of the corpus case it
-//! ports. Both are compiled in oxide mode and run in the VU model, timed,
-//! on every scene `scenes.rs` has for the corpus case: the GIF packets must
-//! be the hand-written program's, and the cycles no more than its. A port
-//! that calls a library (`<case>_lib`, beside the inlined `<case>`) runs with
-//! the library (`include/<name>.vusl`) at its address: it trades cycles for
-//! size, so the library ports must instead take fewer instructions together,
-//! with their one library, than the inlined ports together. A library pays
-//! for itself across its callers: one port alone may well be larger with it.
-//! The ignored `report` prints the cycles and instructions of each.
+//! The VUSL programs of quake2-ps2 and doom3-bfg-ps2, each against the
+//! hand-written corpus program it replaced: `tests/vusl/programs/<case>/`
+//! holds `input.vusl`, a copy of the project's source, and `hand-written`,
+//! the name of the corpus case; `include` holds the files they include
+//! (`tests/vusl/programs/README.md` gives the commits). Both are compiled in oxide mode and
+//! run in the VU model, timed, on every scene `scenes.rs` has for the corpus
+//! case: the GIF packets must be the hand-written program's, and the cycles
+//! no more than its. A program that calls a library runs with the library
+//! (`include/<name>.vusl`) at its address: it trades cycles for size, so the
+//! library's callers must instead take fewer instructions together, with
+//! their one library, than their hand-written programs together. The ignored
+//! `report` prints the cycles and instructions of each.
 
 #[path = "../../oxide-vcl/tests/support/scenes.rs"]
 #[allow(dead_code)]
@@ -39,7 +40,8 @@ fn cases() -> Vec<PathBuf> {
 }
 
 /// A program compiled both ways: its listing, its instruction pairs, and
-/// for a port its checked program and the qwords of its work areas.
+/// for a VUSL program what the interpreter runs: the checked program, with
+/// the source of the library it calls.
 struct Built {
     program: Program,
     instructions: usize,
@@ -71,18 +73,33 @@ fn hand_written(corpus: &str) -> Built {
     }
 }
 
-/// The listing of `path`, checked and compiled, and its instructions.
-fn compile(path: &Path) -> (vusl::Checked, vcl::Compiled) {
+fn options() -> vusl::Options {
+    vusl::Options {
+        include_dirs: vec![
+            root()
+                .join("tests/vusl/programs/include")
+                .to_string_lossy()
+                .into_owned(),
+        ],
+        ..vusl::Options::default()
+    }
+}
+
+/// `text`, the source of `path`, preprocessed and checked.
+fn check(path: &Path, text: &str) -> vusl::Checked {
     let name = path.to_string_lossy().into_owned();
-    let text = std::fs::read_to_string(path).unwrap();
-    let options = vusl::Options::default();
-    let preprocessed = vusl::preprocess(&name, &text, &options, &FileSystem)
+    let preprocessed = vusl::preprocess(&name, text, &options(), &FileSystem)
         .unwrap_or_else(|failure| panic!("{name}: {:?}", failure.error));
-    let checked = match vusl::check(&name, &preprocessed) {
+    match vusl::check(&name, &preprocessed) {
         Ok(checked) => checked,
         Err(failure) => panic!("{}", failure.error),
-    };
-    let (_, compiled) = match vusl::compile(&checked, &options) {
+    }
+}
+
+/// The listing of `path`, checked and compiled, and its instructions.
+fn compile(path: &Path) -> (vusl::Checked, vcl::Compiled) {
+    let checked = check(path, &std::fs::read_to_string(path).unwrap());
+    let (_, compiled) = match vusl::compile(&checked, &options()) {
         Ok(compiled) => compiled,
         Err(failure) => match *failure {
             vusl::CompileFailure::Generate(failure) => panic!("{}", failure.error),
@@ -93,11 +110,15 @@ fn compile(path: &Path) -> (vusl::Checked, vcl::Compiled) {
 }
 
 fn ported(case: &Path) -> Built {
-    let (checked, compiled) = compile(&case.join("input.vusl"));
+    let input = case.join("input.vusl");
+    let (mut checked, compiled) = compile(&input);
     let mut assembly = compiled.assembly.clone();
     let mut library = None;
-    // A port that calls a library: the library at its address after it.
-    if let Some(lib) = &checked.program.library {
+    // A program that calls a library: the library at its address after it.
+    // The program includes only the library's header, and the interpreter
+    // runs a call as the export's definition, so it runs the program with
+    // the library's source included after it.
+    if let Some(lib) = checked.program.library.clone() {
         let path = root()
             .join("tests/vusl/programs/include")
             .join(format!("{}.vusl", lib.name));
@@ -112,6 +133,8 @@ fn ported(case: &Path) -> Built {
         let padding = format!("{:9}{:<59}NOP\n", "", "NOP").repeat(address - pairs);
         assembly = format!("{assembly}\n{padding}{}", code.assembly);
         library = Some(code.instruction_pairs);
+        let text = std::fs::read_to_string(&input).unwrap();
+        checked = check(&input, &format!("{text}\n#include \"{}.vusl\"\n", lib.name));
     }
     Built {
         program: Program::parse(&assembly).unwrap(),
@@ -154,22 +177,30 @@ fn interpreted(built: &Built, scene: &scenes::Scene, run: &vu_model::Execution) 
     if let Err(error) = vusl::interp::run(&checked.program, &mut machine, 10_000_000) {
         return Some(format!("the interpreter: {error}"));
     }
-    let ignored = work_areas(checked);
-    for (address, (model, reference)) in run.state.memory.iter().zip(&machine.memory).enumerate() {
-        if model != reference && !ignored.contains(&address) {
-            return Some(format!(
-                "qword {address}: compiled {model:x?}, interpreted {reference:x?}"
-            ));
-        }
-    }
+    // The kicks first: a program that kicks differently differs in memory
+    // too, and the kicks say where.
     let kicks: Vec<u16> = run
         .state
         .kicks
         .iter()
         .map(|(address, _)| *address)
         .collect();
-    (kicks != machine.kicks)
-        .then(|| format!("kicks: compiled {kicks:?}, interpreted {:?}", machine.kicks))
+    if kicks != machine.kicks {
+        return Some(format!(
+            "kicks: compiled {kicks:?}, interpreted {:?}",
+            machine.kicks
+        ));
+    }
+    let ignored = work_areas(checked);
+    run.state
+        .memory
+        .iter()
+        .zip(&machine.memory)
+        .enumerate()
+        .find(|(address, (model, reference))| model != reference && !ignored.contains(address))
+        .map(|(address, (model, reference))| {
+            format!("qword {address}: compiled {model:x?}, interpreted {reference:x?}")
+        })
 }
 
 /// A scene run both ways: the cycles each took, and whether the packets
@@ -219,19 +250,16 @@ fn ports_draw_the_same_and_are_no_slower() {
     let cases = cases();
     assert!(!cases.is_empty());
     let mut failures = Vec::new();
-    // The library ports' instructions, their library's, and their inlined
-    // counterparts'.
-    let (mut shared, mut library_size, mut inlined) = (0, 0, 0);
+    // The library's callers' instructions, their library's, and their
+    // hand-written programs'.
+    let (mut shared, mut library_size, mut hand_size) = (0, 0, 0);
     for case in &cases {
-        let (name, _, vusl, runs) = runs(case);
+        let (name, hand, vusl, runs) = runs(case);
         assert!(!runs.is_empty(), "{name}: no scenes");
         if let Some(library) = vusl.library {
-            let counterpart = name
-                .strip_suffix("_lib")
-                .expect("a library port is <case>_lib");
             shared += vusl.instructions;
             library_size = library_size.max(library);
-            inlined += ported(&case.with_file_name(counterpart)).instructions;
+            hand_size += hand.instructions;
         }
         for run in runs {
             if !run.same {
@@ -248,9 +276,9 @@ fn ports_draw_the_same_and_are_no_slower() {
             }
         }
     }
-    if library_size > 0 && shared + library_size >= inlined {
+    if library_size > 0 && shared + library_size >= hand_size {
         failures.push(format!(
-            "the library ports take {shared} instructions and their library {library_size}, the inlined ports {inlined}"
+            "the library's callers take {shared} instructions and their library {library_size}, their hand-written programs {hand_size}"
         ));
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
@@ -259,18 +287,15 @@ fn ports_draw_the_same_and_are_no_slower() {
 #[test]
 #[ignore = "prints the cycles of each port; run with --ignored --nocapture"]
 fn report() {
-    // The micro memory of the library ports and their one library, and of
-    // their inlined counterparts.
-    let (mut shared, mut library_size, mut inlined) = (0, 0, 0);
+    // The micro memory of the library's callers and their one library, and
+    // of their hand-written programs.
+    let (mut shared, mut library_size, mut hand_size) = (0, 0, 0);
     for case in cases() {
         let (name, hand, vusl, runs) = runs(&case);
         if let Some(size) = vusl.library {
-            let counterpart = name
-                .strip_suffix("_lib")
-                .expect("a library port is <case>_lib");
             shared += vusl.instructions;
             library_size = library_size.max(size);
-            inlined += ported(&case.with_file_name(counterpart)).instructions;
+            hand_size += hand.instructions;
         }
         let library = vusl
             .library
@@ -298,8 +323,50 @@ fn report() {
     }
     if library_size > 0 {
         println!(
-            "library ports: {} instructions with their library of {library_size}, inlined {inlined}",
+            "the library's callers: {} instructions with their library of {library_size}, hand-written {hand_size}",
             shared + library_size
         );
+    }
+}
+
+/// Where a program spends its cycles on each scene, by the label each row
+/// follows, the library's included: `VUSL_PROFILE=<case> cargo test --release
+/// -p vusl --test programs profile -- --ignored --nocapture`.
+#[test]
+#[ignore = "a report, not a check"]
+fn profile() {
+    let Ok(name) = std::env::var("VUSL_PROFILE") else {
+        return;
+    };
+    let case = root().join("tests/vusl/programs").join(&name);
+    let corpus = std::fs::read_to_string(case.join("hand-written")).unwrap();
+    let built = ported(&case);
+    let labels = built.program.labels();
+    for scene in scenes::scenes(corpus.trim()) {
+        let execution = built
+            .program
+            .run(scene.state.clone(), Config::TIMED, 2_000_000)
+            .unwrap();
+        let mut totals: std::collections::BTreeMap<String, (u64, u64)> = Default::default();
+        for (pc, &(issues, stalls)) in execution.profile.iter().enumerate() {
+            let label = labels
+                .iter()
+                .rev()
+                .find(|(at, _)| *at <= pc)
+                .map_or("(start)".to_string(), |(_, label)| label.clone());
+            let entry = totals.entry(label).or_default();
+            entry.0 += issues;
+            entry.1 += stalls;
+        }
+        let mut rows: Vec<_> = totals.into_iter().filter(|(_, (i, s))| i + s > 0).collect();
+        rows.sort_by_key(|(_, (issues, stalls))| std::cmp::Reverse(issues + stalls));
+        println!("{} {}: {} cycles", name, scene.name, execution.cycles);
+        for (label, (issues, stalls)) in rows.iter().take(12) {
+            println!(
+                "    {label:52} {:6} cycles {:5.1}% ({issues} issues, {stalls} stalls)",
+                issues + stalls,
+                100.0 * (issues + stalls) as f64 / execution.cycles as f64
+            );
+        }
     }
 }

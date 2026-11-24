@@ -503,7 +503,7 @@ callers need only the header.
 
 **The interpreter** runs a call as the export's body, so a program checked against the
 interpreter includes the library's source rather than only its header. A program that sees only
-the prototypes still compiles.
+the prototypes still compiles, and the interpreter stops at its first call with an error.
 
 Rejected: `export` or file-scope memory without `#pragma library`; a definition whose signature is
 not its prototype's; a library build that leaves an export undefined; memory, `bool`, matrices or
@@ -611,5 +611,5 @@ a note names each value kept in the work area.
 
 `tests/vusl/check/particles/input.vusl` is quake2's particle program in VUSL, with the same
 memory layout as the hand-written `particles.vcl`. Its loop transforms each particle, judges it
-against the guard band, and writes a five-qword sprite. `tests/vusl/programs` holds it and three
-larger ports with their scenes.
+against the guard band, and writes a five-qword sprite. `tests/vusl/programs` holds the VUSL
+programs quake2-ps2 and doom3-bfg-ps2 build, this one's successor among them, with their scenes.

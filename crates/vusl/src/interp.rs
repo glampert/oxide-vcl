@@ -225,8 +225,20 @@ impl Interpreter<'_, '_> {
                 }
             }
             Stmt::Barrier { .. } => {}
-            // A library call means its export inlined.
-            Stmt::Call { setup, body, .. } => {
+            // A library call means its export inlined, which a program that
+            // sees only the prototype does not have.
+            Stmt::Call {
+                export,
+                setup,
+                body,
+                inlined,
+                ..
+            } => {
+                if !inlined {
+                    return Err(format!(
+                        "a call of {export}, whose definition the program does not include"
+                    ));
+                }
                 self.stmts(setup)?;
                 self.stmts(body)?;
             }

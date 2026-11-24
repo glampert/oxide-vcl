@@ -198,7 +198,8 @@ calls), which give vcl the register contract it cannot see across programs.
 - **A call** (`Elaborator::library_call`). A call of an export from a program is
   `Stmt::Call`: the inlined setup and body, which the interpreter runs, and a `CallArg` per value,
   with its register, the expression passed in and the local it comes back into. A call that sees
-  only the prototype has no body. The clip epoch advances: the library judges.
+  only the prototype has no body, and `inlined` false: the interpreter stops there with an error
+  rather than skip the call. The clip epoch advances: the library judges.
 - **Lowering a call** (`Lowering::library_call`). The setup is lowered, then a `--barrier`, so
   the call's block holds only the argument moves and the JALR: vcl gives a value that crosses blocks
   one register for its whole life, and counts every value the call's block mentions as live with
@@ -276,7 +277,7 @@ driver prints.
 | `crates/oxide-vusl/tests/reflect.rs` | The reflection of those cases, and every header compiled together with `c++ -std=c++17 -fsyntax-only -Wall -Wextra -Werror -pedantic` when a compiler is present (`CXX` picks it) |
 | `tests/vusl/codegen/<case>/` (`crates/oxide-vusl/tests/codegen.rs`) | `expected.vcl`, the `--stop-at-vcl` output, for each idiom below. Each also compiles through vcl |
 | `crates/vusl/tests/semantics.rs` | Differential tests: inline programs compiled through oxide-vcl run in `vu_model`'s timed configuration on seeded memories of exactly representable values, and their data memory and kicks must be the interpreter's. `agree_resumed` resumes at yields with new batches; `with_library` lays a program and a library out in one micro memory |
-| `crates/vusl/tests/programs.rs` | The ports in `tests/vusl/programs` on their scenes: packets identical to the hand-written program's, no more cycles, and memory and kicks the interpreter's. A `<case>_lib` port runs with its library at the library's address, and instead of the cycle bound takes fewer instructions, its library's included, than the inlined `<case>`. Its ignored `report` test prints `docs/VUSL_PERFORMANCE.md`'s table |
+| `crates/vusl/tests/programs.rs` | quake2-ps2's and doom3-bfg-ps2's programs in `tests/vusl/programs` on their scenes: packets identical to the hand-written program's, no more cycles, and memory and kicks the interpreter's. A program that calls a library runs with it at the library's address, and the interpreter with its source included; instead of the cycle bound, the library's callers take fewer instructions together, the library's included, than their hand-written programs. Its ignored `report` test prints `docs/VUSL_PERFORMANCE.md`'s table, and `profile` the cycles by label |
 | `crates/vusl/tests/reference.rs` | Every complete program in `docs/VUSL.md` checks and compiles, with its header blocks as include files |
 | `crates/oxide-vusl/tests/driver.rs` | The command line: options, outputs written all or none, exit statuses, diagnostics |
 

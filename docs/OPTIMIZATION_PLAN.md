@@ -520,8 +520,12 @@ it is compiled:
   code both arms share, when it leads to an inner loop the other arm does
   not reach: quake2's clipping and warp code, both of which end in the
   clipped polygon's fan loop. A branch that skips straight to the shared
-  code (an early out such as the backface cull, or a skip past an inner
-  loop) marks nothing. An inner loop is the blocks on a cycle that does
+  code (an early out) marks what it skips only when every block of it is
+  on the way into an inner loop or back out of one: the VUSL port's
+  `if (slow)` around its seeding, warp, clipping passes and fan loop is a
+  special case, while the hand-written program's backface cull, which
+  skips the usual output as well as the clipping code, is not. An inner
+  loop is the blocks on a cycle that does
   not pass through the header, found from the control flow: a branch to
   an earlier label that only runs forward, such as a usual arm placed
   after a special case and branching up to it, makes none, so where the
