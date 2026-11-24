@@ -1,0 +1,21 @@
+// doom3-bfg-ps2's first clipper's plane distance: `0.0 + pos.w`, a copy
+// overwritten by its only reader, and a negated vector read through a
+// local. The folds make it `pos.w * shrink - jp.z`, kept in lane w: a MUL
+// and a SUB after the judgement scale, with the negation unread (vcl drops
+// it).
+struct Frame { vec3 clipScale; float clipShrink; };
+struct Corner { vec4 pos; };
+struct Out { layout(lane = w) float distance; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 1) in Corner corner,
+          layout(address = 2) out Out result)
+{
+    vec4 pos = corner.pos;
+    vec3 jp  = pos.xyz * frame.clipScale;
+    vec3 jn  = -jp;
+    float d  = 0.0 + pos.w;
+    d        = d * frame.clipShrink;
+    d        = d + jn.z;
+    result.distance = d;
+}

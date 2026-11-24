@@ -374,6 +374,44 @@ fn clipping_and_adc() {
 }
 
 #[test]
+fn folds_of_zero_and_negation_keep_values() {
+    // 0.0 + x and a + (-b) fold, through locals set to a negation; where a
+    // negation's operand changes before the read, or in a loop around it,
+    // the read must see the old value.
+    let source = "struct Block { vec4 a; vec4 b; vec4 c; vec4 out0; vec4 out1; vec4 out2; vec4 out3;\n\
+                  \x20   int16 flag; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   vec3 product = block.a.xyz * block.b.xyz;\n\
+                  \x20   vec3 negated = -product;\n\
+                  \x20   float d = 0.0 + block.c.w;\n\
+                  \x20   d = d * block.b.w;\n\
+                  \x20   if (block.flag != 0)\n\
+                  \x20       d = d + negated.z;\n\
+                  \x20   else\n\
+                  \x20       d = d - negated.x;\n\
+                  \x20   block.out0.w = d;\n\
+                  \x20   block.out0.xyz = block.c.xyz + 0.0;\n\
+                  \x20   vec3 moving = block.a.xyz;\n\
+                  \x20   vec3 flipped = -moving;\n\
+                  \x20   moving = block.c.xyz;\n\
+                  \x20   block.out1.xyz = block.b.xyz + flipped;\n\
+                  \x20   block.out1.w = moving.x;\n\
+                  \x20   vec3 total = block.a.xyz;\n\
+                  \x20   vec3 step = block.b.xyz;\n\
+                  \x20   vec3 back = -step;\n\
+                  \x20   vec3 start = -total;\n\
+                  \x20   for (int16 i = 0; i < 3; ++i)\n\
+                  \x20   {\n\
+                  \x20       total = total + back;\n\
+                  \x20       block.out2.xyz = total + start;\n\
+                  \x20   }\n\
+                  \x20   block.out3.xyz = negated + total;\n\
+                  }\n";
+    agree(source, 16, |_, _, _| {});
+}
+
+#[test]
 fn functions_return_and_take_clip_judgements() {
     // A judgement leaves a function as its result (a clipw itself, or a local
     // holding one) or through an out parameter, enters one as an in

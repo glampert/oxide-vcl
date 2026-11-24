@@ -16,7 +16,8 @@ crates/vusl/src/
   sema/           check.rs (declarations, layouts, main's bindings), layout.rs (VU packing),
                   elaborate.rs (main with every call inlined, typed and placed), hir.rs (the
                   checked program), types.rs, consteval.rs
-  codegen/        mod.rs (lowering), values.rs (what registers hold), peephole.rs, emit.rs
+  codegen/        mod.rs (lowering), fold.rs (algebraic folds before it), values.rs (what
+                  registers hold), peephole.rs, emit.rs
   reflect/        model.rs (the description), json.rs, cpp.rs
   interp.rs       the reference interpreter of the checked program
 crates/oxide-vusl/src/
@@ -47,7 +48,9 @@ Neither crate has external dependencies. The `vcl` crate provides the preprocess
    (`sema/hir.rs`).
 5. **Reflect** (`reflect`). The description of the parameters and types comes from the checked
    program alone, so `--check` can write it.
-6. **Lower** (`codegen`). The checked program becomes VCL text, with a source place per line.
+6. **Lower** (`codegen`). `codegen/fold.rs` first folds `0.0 + x`, `a + (-b)` and copies a local's
+   next statement overwrites (see VUSL.md, "What the compiler does for you"); the interpreter runs
+   the program as written. The checked program then becomes VCL text, with a source place per line.
 7. **Assemble** (`vusl::assemble`). `vcl::compile` on the text, in oxide mode by default, with `-u`
    set to the program's name so generated labels are unique to it. vcl's diagnostics on the
    generated code are mapped back to VUSL lines through the line origins.
@@ -176,7 +179,10 @@ products of invariants.
 - It descends into nested loops.
 - It takes a part inside an `if` only when both arms compute it, matched by `expr_key`.
 - VI values leave only loops of one block. In a loop with branches they hold VI registers that the
-  loop's own counters and pointers need, and vcl spills.
+  loop's own counters and pointers need, and vcl spills. The exception is an `int16` constant that
+  an instruction reads from a register, in a loop that calls no library: one register spares an
+  `iaddiu` at every use (world_lm's `entry & 0x7fff` masks). A constant that is a local's whole
+  value is an `iaddiu` from VI00 either way, and one held across a call would be saved around it.
 
 Lowering computes the chosen parts before the loop, and the cache finds them inside it. Each loop
 keeps at most `Settings::hoist_limit` values. `vusl::compile` generates the program with limits of
@@ -300,6 +306,8 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `perspective` | The perspective divide and viewport: `div`, `mulq`, `ftoi4`; Q's copy dropped |
 | `dot-normalize` | A dot product as `mul` and two `add`s; normalize with `rsqrt` and `mulq` |
 | `clip-adc` | The guard-band judgement (`mul`, `clipw`) and ADC (`fcand`, `iaddiu 0x7fff`) |
+| `fold-zero-negation` | The first clipper's plane distance: `0.0 + pos.w`, a copy its next statement overwrites, and `d + jn.z` with `jn = -jp`, folded to `mul.w` and `sub.w` in lane w |
+| `loop-constants` | An `int16` mask in a loop with a branch, made once before it; a constant assigned to a local stays in the loop |
 | `clip-function` | `clip-adc` with each judgement returned by a function: the same code, since a `clipflags` result names its `clipw` |
 | `bool-any` | Whether any vertex is outside, as `fcand` and `ior` into a bool |
 | `color-pack` | A colour clamped and packed: `max`, `mini`, `ftoi0` |

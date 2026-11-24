@@ -1,0 +1,28 @@
+// int16 constants in a loop with branches: the 0x7fff that both masks AND
+// with is made once before the loop (world_lm's strip pass), since an IAND
+// needs it in a register. The 48 assigned to `room` stays an IADDIU from
+// VI00 in the loop: hoisting it would only make a copy.
+struct Entry { layout(lane = w) int16 value; };
+struct Batch {
+    layout(lane = w) int16 count;
+    Entry entries[count];
+    int16 total;
+    int16 room;
+};
+
+void main(layout(xtop) inout Batch batch)
+{
+    int16 total = 0;
+    int16 room  = 0;
+    for (Entry entry : batch.entries)
+    {
+        int16 low = entry.value & 0x7fff;
+        if (low != 0)
+            total = total + low;
+        else
+            room = 48;
+        total = total + (entry.value & 0x7fff);
+    }
+    batch.total = total;
+    batch.room  = room;
+}

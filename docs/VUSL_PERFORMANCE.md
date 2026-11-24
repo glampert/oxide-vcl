@@ -52,15 +52,15 @@ scene.
 | doom3 world_strips | 369 + 433 / 695 | wall | 2190 | 3896 | −43.8% |
 | | | floor | 40536 | 47371 | −14.4% |
 | | | side | 15935 | 19314 | −17.5% |
-| doom3 world_lm | 647 + 433 / 1019 | wall | 2152 | 2259 | −4.7% |
-| | | wall lit | 3189 | 3476 | −8.3% |
+| doom3 world_lm | 644 + 433 / 1019 | wall | 2135 | 2259 | −5.5% |
+| | | wall lit | 3154 | 3476 | −9.3% |
 | | | floor | 40956 | 46153 | −11.3% |
 | | | floor lit | 80854 | 91197 | −11.3% |
 | | | side | 16291 | 18224 | −10.6% |
 | | | side lit | 31588 | 35403 | −10.8% |
 
 The doom3 programs' 433 is the clipper library, resident at 1536 and shared: the two programs and
-the library take 1,449 instructions, the two hand-written programs 1,714.
+the library take 1,446 instructions, the two hand-written programs 1,714.
 
 ## Where the differences come from
 

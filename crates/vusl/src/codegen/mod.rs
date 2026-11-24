@@ -25,6 +25,7 @@
 //!   comparisons of `int16` values branch on them or on their difference.
 
 mod emit;
+mod fold;
 mod peephole;
 mod values;
 
@@ -108,6 +109,9 @@ impl Default for Settings {
 
 /// Lowers `program` to VCL source; `source` is the file it came from.
 pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<Generated> {
+    let bits_read = bit_read_locals(program);
+    let folded = fold::run(program, &bits_read);
+    let program = &folded;
     let mut lowering = Lowering {
         settings,
         program,
@@ -123,7 +127,7 @@ pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<
         clips_in_block_from: 0,
         cache: Cache::default(),
         q_holds: None,
-        bits_read: bit_read_locals(program),
+        bits_read,
     };
     lowering.program_text(source)?;
     let (text, origins) = lowering.out.finish();
@@ -158,6 +162,48 @@ struct Lowering<'p> {
     q_holds: Option<(Vf, Lane)>,
     /// The float locals whose exact bits are read: their copies are raw.
     bits_read: Vec<bool>,
+}
+
+/// The values `stmts` assign whole to locals, at any depth.
+fn assigned_values<'s>(stmts: &'s [Stmt], out: &mut Vec<&'s Expr>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SetLocal { value, .. } => out.push(value),
+            Stmt::If {
+                then, otherwise, ..
+            } => {
+                assigned_values(then, out);
+                assigned_values(otherwise, out);
+            }
+            Stmt::Loop { kind, body, .. } => {
+                assigned_values(body, out);
+                if let LoopKind::Condition {
+                    cond_stmts, step, ..
+                } = kind
+                {
+                    assigned_values(cond_stmts, out);
+                    assigned_values(step, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Whether `stmts` call a library, at any depth.
+fn calls_library(stmts: &[Stmt]) -> bool {
+    stmts.iter().any(|stmt| match stmt {
+        Stmt::Call { .. } => true,
+        Stmt::If {
+            then, otherwise, ..
+        } => calls_library(then) || calls_library(otherwise),
+        Stmt::Loop { kind, body, .. } => {
+            calls_library(body)
+                || matches!(kind, LoopKind::Condition { cond_stmts, step, .. }
+                    if calls_library(cond_stmts) || calls_library(step))
+        }
+        _ => false,
+    })
 }
 
 fn float_text(value: f32) -> String {
@@ -482,12 +528,20 @@ impl Lowering<'_> {
         }
         // VI registers are few: their invariants are worth one only in a
         // loop of one block, which pipelines and saves the instruction an
-        // iteration.
+        // iteration, or when they are constants, which cost an IADDIU (two
+        // from 0x8000) at every use otherwise. A constant held across a
+        // library call would be saved and restored around it, and one that
+        // is a local's whole value is an IADDIU from VI00 either way.
         let one_block = stmts.iter().all(|stmts| {
             stmts
                 .iter()
                 .all(|stmt| !matches!(stmt, Stmt::If { .. } | Stmt::Loop { .. }))
         });
+        let calls = stmts.iter().any(|stmts| calls_library(stmts));
+        let mut assigned = Vec::new();
+        for stmts in stmts {
+            assigned_values(stmts, &mut assigned);
+        }
         let mut kept = 0;
         for expr in found {
             if kept >= self.settings.hoist_limit {
@@ -496,7 +550,11 @@ impl Lowering<'_> {
             let before = self.out.instructions();
             self.out.pos = Some(expr.pos);
             match expr.ty {
-                Type::Int16 | Type::Ref(_) if !one_block => {}
+                Type::Int16 | Type::Ref(_)
+                    if !one_block
+                        && (calls
+                            || !matches!(expr.kind, ExprKind::Const(Const::Int(_)))
+                            || assigned.iter().any(|&value| std::ptr::eq(value, expr))) => {}
                 Type::Int16 | Type::Ref(_) => {
                     self.vi(expr)?;
                 }

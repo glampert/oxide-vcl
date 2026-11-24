@@ -374,7 +374,9 @@ work the source asks for.
   the same base with different offsets never does.
 - **Loop-invariant hoisting.** Before a loop, the largest pure parts of its body that read nothing
   it changes are computed once: loads, constants, products of invariants. A part inside a branch
-  counts only when both arms compute it. VI values leave only loops of one block. At most 16
+  counts only when both arms compute it. VI values leave only loops of one block, except `int16`
+  constants that an instruction needs in a register (an `iand` mask, an `isub`'s first operand),
+  in a loop that calls no library. At most 16
   values are kept; when the registers run out or values spill, the program is generated again with
   fewer, and the compile with the fewest spills is kept.
 - **Pointers and exit tests** for range-fors, as described under [statements](#statements).
@@ -382,6 +384,11 @@ work the source asks for.
 - **Q and I.** After a division or root, readers take Q directly until the next one. Float literals
   go through I.
 - **Lane placement** of scalars, so they need no move.
+- **Zero and negation.** `0.0 + x` is `x`, and `a + (-b)` is `a - b` (and `a - (-b)` is `a + b`),
+  also when `-b` is a local set to a negation of locals that keep their values. A local set from a
+  read and overwritten by the next statement, its only reader (`float d = pos.w; d = d * s;`),
+  needs no copy. These change no non-zero result: only the sign of a zero may differ (`0.0 + x`
+  may be +0 where `x` is -0), and locals whose bits `floatBitsTo*` reads are left as written.
 - **Copies and addresses.** A copy whose source keeps its value until the copy's last reader is
   dropped; an address of a base plus a constant, used only to address memory, becomes those
   accesses' offsets.
