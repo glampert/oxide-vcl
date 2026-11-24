@@ -21,6 +21,8 @@ pub struct Declarations<'a> {
     pub struct_ids: HashMap<String, StructId>,
     /// File-scope constants: their value and type.
     pub consts: HashMap<String, (Const, Type)>,
+    /// File-scope vector constants: their components.
+    pub vectors: HashMap<String, Vec<f32>>,
     pub functions: HashMap<String, &'a ast::Function>,
     /// `main`, which a library's own build has none of.
     pub main: Option<&'a ast::Function>,
@@ -111,6 +113,43 @@ pub fn constant(expr: &ast::Expr, consts: &HashMap<String, (Const, Type)>) -> Op
     }
 }
 
+/// A `vecN` constant's components: `vecN(c, ...)` with N constant
+/// components, or one for all. `None` when it is not a constructor of
+/// constants.
+pub fn vector_constant(
+    expr: &ast::Expr,
+    n: u8,
+    consts: &HashMap<String, (Const, Type)>,
+) -> Result<Option<Vec<f32>>, Problem> {
+    let ExprKind::Call { callee, args } = &expr.kind else {
+        return Ok(None);
+    };
+    let name = format!("vec{n}");
+    if callee.argument.is_some() || callee.name.name != name {
+        return Ok(None);
+    }
+    let mut components = Vec::new();
+    for arg in args {
+        match constant(arg, consts) {
+            Some(Const::Int(value)) => components.push(value as f32),
+            Some(Const::Float(value)) => components.push(value),
+            _ => return Ok(None),
+        }
+    }
+    match components.len() {
+        1 => Ok(Some(vec![components[0]; usize::from(n)])),
+        count if count == usize::from(n) => Ok(Some(components)),
+        found => Err(problem(
+            VuslMessage::WrongArgumentCount {
+                name,
+                expected: format!("{n} components"),
+                found,
+            },
+            expr.pos,
+        )),
+    }
+}
+
 /// An `int16` constant's value, checked against the type's range.
 pub fn int16_range(value: i64) -> bool {
     (-32768..=65535).contains(&value)
@@ -137,6 +176,7 @@ pub fn declarations<'a>(
     let mut structs: Vec<StructDef> = Vec::new();
     let mut struct_ids: HashMap<String, StructId> = HashMap::new();
     let mut consts: HashMap<String, (Const, Type)> = HashMap::new();
+    let mut vectors: HashMap<String, Vec<f32>> = HashMap::new();
     let mut functions: HashMap<String, &'a ast::Function> = HashMap::new();
     let mut main = None;
     let mut program_name: Option<String> = None;
@@ -232,12 +272,21 @@ pub fn declarations<'a>(
                         decl.name.pos,
                     ))
                 };
+                if let Type::Vec(n) = ty {
+                    let components = vector_constant(&decl.value, n, &consts)
+                        .map_err(Box::new)?
+                        .ok_or_else(not_constant)?;
+                    vectors.insert(decl.name.name.clone(), components);
+                    continue;
+                }
                 if !matches!(ty, Type::Int16 | Type::Float | Type::Bool) {
+                    let names: Vec<String> = structs.iter().map(|def| def.name.clone()).collect();
                     return Err(Box::new(problem(
-                        VuslMessage::NotYet {
-                            what: "a constant of a vector, matrix or struct type",
+                        VuslMessage::ConstantType {
+                            name: decl.name.name.clone(),
+                            ty: ty.name(&names),
                         },
-                        decl.ty.pos,
+                        decl.name.pos,
                     )));
                 }
                 let value = constant(&decl.value, &consts).ok_or_else(not_constant)?;
@@ -276,6 +325,7 @@ pub fn declarations<'a>(
         structs,
         struct_ids,
         consts,
+        vectors,
         functions,
         main,
         program_name,

@@ -50,7 +50,10 @@ that fits the 512-qword half.
 A file holds, at file scope:
 
 - **Types:** `struct` declarations.
-- **Constants:** `const int16 kName = 45;` and `const float kHalf = 0.5;`.
+- **Constants:** `const int16 kName = 45;`, `const float kHalf = 0.5;` and vectors of constants,
+  `const vec4 kScale = vec4(1.0, 2.0, kHalf, 4.0);` or `vec4(0.5)` for all four. A vector constant
+  costs what its constructor written out would at each use. A `const` in a function may be any of
+  these too. Matrices and structs cannot be constants: build them in a variable.
 - **Functions:** C-like definitions, with `in` (the default), `out` and `inout` parameters. Every
   call is inlined, so a function costs nothing and cannot recurse, except a call of a
   [library](#libraries)'s export. A function that is never called is not checked, and there is a
@@ -76,13 +79,43 @@ but letters, digits and `_` made `_`. The listing exports `Name_CodeStart` and `
 | Type | Lives in | Notes |
 |---|---|---|
 | `float`, `vec2`, `vec3`, `vec4` | VF lanes | Every value has a **placement**, the lanes that hold its components, printed `vec2@zw` in messages |
-| `mat3`, `mat4` | 3 or 4 qwords | Columns, as in GLSL. `layout(row_major)` stores rows. `m[i]` is the i-th stored qword, a row when row-major, and `i` must be constant. A local matrix takes its initializer's storage |
+| `mat3`, `mat4` | 3 or 4 qwords | Columns, as in GLSL. `layout(row_major)` stores rows. `m[i]` is the i-th stored qword, a row when row-major, and `i` must be constant. A local matrix takes its initializer's storage. `mat4(c0, c1, c2, c3)` and `mat3(c0, c1, c2)` build one from columns; `mat3(m)` of a `mat4` is its first three stored qwords' xyz, the upper-left 3x3 in `m`'s order |
 | `int16` | VI registers | 16 bits, wrapping, with signed compares. In memory it takes a 32-bit lane: `ilw` reads the low 16 bits and `isw` stores them zero-extended. There is no `int` |
 | `bool` | VI, or a flag test | From comparisons, `any()`, `\|\|`, `&&` and `!` |
 | `int32`, `uint32`, `ivec2`–`ivec4`, `uvec2`–`uvec4` | VF lanes, as raw bits | Unpacked integers, `ftoi` results, packed colours. They are moved, stored and converted, never computed with: an FMAC operation would flush them as denormal floats |
 | `qword` | 128 opaque bits | GIF tags, A+D data. `.x` to `.w` read and write as `int16` |
 | `clipflags` | one CLIPW judgement | Made by `clipw()`, read by `any()`, `adc()` and `clipped()`. It can be copied, returned, and passed as an `in` or `out` parameter, and always names the `clipw` it came from |
 | `ref<T>` | a VI qword address | Explicit addressing into memory (see [refs](#refs)) |
+| A `struct` | memory, or one register per member | In memory as a parameter (see [memory](#memory)), or a variable (see [struct variables](#struct-variables)) |
+
+### Struct variables
+
+A variable of a struct type keeps each member in registers of its own, in the lanes the struct
+gives it in memory, so storing a member moves nothing and every path leaves it in the same lanes:
+
+```glsl
+struct Vertex { vec4 position; layout(lane = w) uint32 color; };
+
+Vertex transformed(Vertex vertex, mat4 by)
+{
+    return Vertex(by * vertex.position, vertex.color);
+}
+
+Vertex vertex = transformed(batch.source, batch.transform);
+vertex.position.w = 1.0;
+batch.target = vertex;
+```
+
+- `Vertex(...)` takes one value per member, in order. A struct member takes a struct value.
+- Reading a struct from memory loads each member; storing one stores each. Assigning a struct
+  value sets each member. A member's value that reads a member already set in that assignment is
+  computed first, so `pair = Pair(pair.second, pair.first)` swaps; one that reads memory a store
+  may overwrite is read before the first store.
+- Functions take and return struct variables. An `out` or `inout` parameter is the caller's
+  variable; an `in` parameter is too unless the body or another argument changes it, which makes a
+  copy.
+- A struct with an array member cannot be a variable, a library export cannot take or return one,
+  and a struct value is used through its members: there is no struct arithmetic or comparison.
 
 ### Lanes
 
@@ -177,7 +210,8 @@ Every parameter needs a placement, and parameters whose memory overlaps are an e
 `alias`. With `alias`, stores through either may change what the other reads.
 
 A member of a parameter passes to functions by reference, never copied: a function parameter of a
-struct type is memory, and its qualifier must allow what the function does with it. Reflection
+struct type given memory is that memory, and its qualifier must allow what the function does with
+it. Reflection
 records which members the program reads, writes and kicks, so the host learns that a member is
 output without any syntax for it.
 
@@ -246,7 +280,8 @@ The GLSL statement set: declarations, assignments with `=` and the compound oper
   statement.
 - **`xgkick(m);`** kicks the GIF packet at memory `m`, a struct or member in memory or a ref.
 - **Copies between memory.** `batch.packet.tags = batch.tags;` copies whole qwords, one `lq` and one
-  `sq` per qword.
+  `sq` per qword. The size must be fixed: an array whose length is read at run time is copied in a
+  range-for.
 
 ### Conditions
 
@@ -358,6 +393,7 @@ The most instructions each construct emits. Value reuse, hoisting and the peepho
 | A comparison in a condition | 1 or 2, then the branch |
 | A range-for | A guard, a pointer step per distinct stride, the exit branch |
 | A struct copy | 2 per qword |
+| A struct variable | Its members': each member read, set or stored as a variable of its type |
 | A function call | 0: inlined. An `in` argument that is a local the call leaves alone, or a constant, is not copied |
 | A library call | A move per argument and result, the entry address, the JALR and its delay slot, the entry table's branch and its delay slot, the library's saves and restores, its JR and its delay slot |
 | `xgkick` | 1, plus the address when it is not in a register |
@@ -419,6 +455,10 @@ Each of these is an error that says what to write instead:
 | `break` or `continue` in an unrolled loop | A loop that is not unrolled |
 | `yield` in a range-for | A `do`/`while` over a ref |
 | Using a `spill` parameter | Another parameter |
+| A call of a function with statements on the right of `&&` or `\|\|` | Call it before the condition and test its result |
+| A copy of an array whose length is read at run time | A range-for that copies each element |
+| A matrix or struct constant | A variable built from constants |
+| `qword(...)`, `bool(...)` | Copy a qword from memory or set its lanes; compare (`n != 0`) |
 
 ## Pragmas
 
@@ -436,7 +476,7 @@ applies to the loop right after it.
 | `#pragma barrier` | `--barrier` at that point: VCL moves nothing across it |
 
 A loop without a pipeline pragma gets no hint, and oxide-vcl's `loops` optimization decides
-whether to pipeline it. A loop is pipelined only when it is one block (no `if`, `break` or
+whether to pipeline it (`--no-opt=loops` turns it off, [The command line](#the-command-line)). A loop is pipelined only when it is one block (no `if`, `break` or
 `continue`) that ends in its exit branch, with no `xgkick`, XTOP, XITOP or barrier inside. Unknown
 pragmas are warnings.
 
@@ -607,9 +647,18 @@ or `-oout.vsm`).
 | `-I <dir>` | Look for included files in `<dir>`; may be repeated |
 | `-D <name>[=<value>]` | Define a macro (1 when no value is given); may be repeated |
 | `--mode=oxide` or `--mode=vcl` | How the generated VCL is compiled: oxide-vcl's oxide mode with all its optimizations (the default), or vcl 1.4beta7's code generation, for cross-checks |
+| `--opt=<names>` | Run only the named oxide-vcl optimizations, separated by commas, or `all` or `none`; may be repeated |
+| `--no-opt=<names>` | Do not run the named optimizations, whatever `--opt=` chose |
 | `--warnings-as-errors` | Fail the run on any warning |
 | `--color=auto`, `always`, `never` | Colour in diagnostics; `auto` when standard error is a terminal |
 | `-h`, `--help`; `-v`, `--version` | Help and version |
+
+The optimizations are oxide-vcl's (`docs/OPTIMIZATION_PLAN.md`): `exit` puts the E bit on the
+earliest row that can end the program, `loops` pipelines loops that have no pipeline pragma, and
+`unswitch` compiles a loop as two copies when it branches on a value it never changes. So
+`--no-opt=loops` leaves every loop without a pragma unpipelined, while a `#pragma pipeline` loop
+still is, and `--no-opt=unswitch` keeps such a loop in one copy, which is smaller. Both need oxide
+mode: `--mode=vcl` with either is a command-line error.
 
 The run writes all of its files or none. The exit status is 0 on success, 1 when the program has
 errors (or warnings under `--warnings-as-errors`), and 2 for a bad command line.

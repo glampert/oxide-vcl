@@ -1,0 +1,11 @@
+// A library call passes its arguments in registers it fixes, which a
+// struct variable has none of.
+#pragma library(mathlib, address = 400)
+struct Pair { vec4 first; vec4 second; };
+export float sum(Pair pair);
+struct Block { Pair pair; float out0; float pad0; float pad1; float pad2; };
+void main(layout(address = 0) inout Block block)
+{
+    Pair local = block.pair;
+    block.out0 = sum(local);
+}

@@ -1,0 +1,11 @@
+struct Block { vec4 a; vec4 b; vec4 c; vec4 out0; };
+float twice(float v)
+{
+    float doubled = v * 2.0;
+    return doubled;
+}
+void main(layout(address = 0) inout Block block)
+{
+    if (block.a.x > 0.0 && twice(block.b.x) > 1.0)
+        block.out0 = block.c;
+}

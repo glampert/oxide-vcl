@@ -1,0 +1,5 @@
+input.vusl(8): error: copying 'batch.items' would need a loop: its length is read at run time
+   8 |     batch.copies = batch.items;
+     |     ^
+     = help: copy its elements in a range-for: for (T item : from, out T copy : to) copy = item;
+oxide-vusl: 1 error; no output written

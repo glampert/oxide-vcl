@@ -412,6 +412,149 @@ fn folds_of_zero_and_negation_keep_values() {
 }
 
 #[test]
+fn struct_variables_keep_their_members() {
+    // Struct variables built by constructors, from memory and from function
+    // results; passed in (shared, or copied when the body writes it), out
+    // and inout; swapped, which must not read a member already overwritten,
+    // in registers and in memory.
+    let source = "struct Pair { vec4 first; vec3 second; float weight; };\n\
+                  struct Frame { Pair pair; mat4 basis; int16 count; };\n\
+                  struct Block { vec4 a; vec4 b; Pair stored; Frame frame; vec4 out0; vec4 out1;\n\
+                  \x20   vec4 out2; vec4 out3; Pair saved; Frame copied; int16 flag; };\n\
+                  Pair swapped(Pair pair)\n\
+                  {\n\
+                  \x20   return Pair(vec4(pair.second, pair.weight), pair.first.xyz, pair.first.w);\n\
+                  }\n\
+                  void scale(inout Pair pair, float by)\n\
+                  {\n\
+                  \x20   pair.first = pair.first * by;\n\
+                  \x20   pair.second.xy = pair.second.xy * by;\n\
+                  }\n\
+                  float total(Pair pair) { return pair.first.x + pair.second.y + pair.weight; }\n\
+                  float drained(Pair pair) { pair.weight = pair.weight * 2.0; return pair.weight; }\n\
+                  void fill(out Pair pair, vec4 from) { pair = Pair(from, from.yzw, from.x); }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   Pair local = Pair(block.a, block.b.xyz, block.b.w);\n\
+                  \x20   scale(local, 2.0);\n\
+                  \x20   Pair other = swapped(local);\n\
+                  \x20   block.out0 = other.first;\n\
+                  \x20   block.out1.xyz = other.second;\n\
+                  \x20   block.out1.w = total(local) + drained(local) + local.weight;\n\
+                  \x20   Pair loaded = block.stored;\n\
+                  \x20   loaded = Pair(vec4(loaded.second, loaded.weight), loaded.first.yzw, loaded.first.x);\n\
+                  \x20   block.saved = loaded;\n\
+                  \x20   block.stored = Pair(vec4(block.stored.second, block.stored.weight),\n\
+                  \x20       block.stored.first.xyz, block.stored.first.w);\n\
+                  \x20   Frame frame = block.frame;\n\
+                  \x20   if (block.flag != 0)\n\
+                  \x20       frame.pair.first = frame.basis * block.a;\n\
+                  \x20   else\n\
+                  \x20       fill(frame.pair, block.b);\n\
+                  \x20   frame.count = frame.count + 1;\n\
+                  \x20   block.copied = frame;\n\
+                  \x20   block.out2 = frame.pair.first;\n\
+                  \x20   block.out3 = swapped(Pair(block.a, block.b.xyz, 1.5)).first;\n\
+                  }\n";
+    // The flag, qword 24, follows a float's lowest exponent bit: both
+    // branches run.
+    agree(source, 16, |memory, _, _| {
+        memory[24] = [(memory[0][0] >> 23) & 1, 0, 0, 0];
+    });
+}
+
+#[test]
+fn struct_assignments_copy_and_swap() {
+    // Against values worked out here, not the interpreter's, which runs
+    // the same elaborated program: a swap reads the members as they were,
+    // in registers and in memory; a copy is not an alias; an inout
+    // parameter is the caller's variable; an in parameter the body
+    // changes is a copy.
+    let source = "struct Pair { vec4 first; vec4 second; };\n\
+                  struct Block { Pair stored; Pair saved; vec4 out0; vec4 out1; vec4 out2; };\n\
+                  Pair swapped(Pair pair) { return Pair(pair.second, pair.first); }\n\
+                  void bump(inout Pair pair) { pair.second.w = pair.second.w + 1.0; }\n\
+                  float drained(Pair pair) { pair.first.x = 0.0; return pair.first.x; }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   Pair local = block.stored;\n\
+                  \x20   local = Pair(local.second, local.first);\n\
+                  \x20   block.saved = local;\n\
+                  \x20   block.stored = swapped(block.stored);\n\
+                  \x20   Pair other = local;\n\
+                  \x20   other.first.x = 9.0;\n\
+                  \x20   bump(other);\n\
+                  \x20   block.out0 = local.first;\n\
+                  \x20   block.out1 = other.second;\n\
+                  \x20   block.out2 = vec4(drained(local), local.first.x, other.first.x, 0.0);\n\
+                  }\n";
+    let compiled = compile(source);
+    let program = vu_model::Program::parse(&compiled.assembly).unwrap();
+    let floats = |values: [f32; 4]| values.map(f32::to_bits);
+    let first = [1.0, 2.0, 3.0, 4.0];
+    let second = [5.0, 6.0, 7.0, 8.0];
+    let mut memory = vec![[0; 4]; 1024];
+    memory[0] = floats(first);
+    memory[1] = floats(second);
+    let state = vu_model::State {
+        memory,
+        ..vu_model::State::default()
+    };
+    let execution = program
+        .run(state, vu_model::Config::TIMED, 10_000)
+        .unwrap_or_else(|error| panic!("{error}\n{}", compiled.vcl));
+    let memory = &execution.state.memory;
+    let expected = [
+        (0, second),
+        (1, first),
+        (2, second),
+        (3, first),
+        (4, second),
+        (5, [1.0, 2.0, 3.0, 5.0]),
+        (6, [0.0, 5.0, 9.0, 0.0]),
+    ];
+    for (qword, values) in expected {
+        assert_eq!(
+            memory[qword],
+            floats(values),
+            "qword {qword}\n{}",
+            compiled.vcl
+        );
+    }
+}
+
+#[test]
+fn matrices_from_columns_and_vector_constants() {
+    // mat4 and mat3 from columns, mat3 from a mat4 in either order, a
+    // matrix built from its own columns, and vector constants at file
+    // scope and in a function, splats among them.
+    let source = "struct Block { vec4 a; vec4 b; vec4 c; vec4 d; mat4 columns;\n\
+                  \x20   layout(row_major) mat4 rows; vec4 out0; vec4 out1; vec4 out2; vec4 out3;\n\
+                  \x20   vec4 out4; vec4 out5; };\n\
+                  const vec4 kScale = vec4(1.0, 2.0, -3.0, 0.25);\n\
+                  const vec4 kHalf = vec4(0.5);\n\
+                  const float kOne = 1.0;\n\
+                  const vec3 kAxis = vec3(0, kOne, 4);\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   mat4 built = mat4(block.a, block.b, block.c, block.d);\n\
+                  \x20   block.out0 = built * block.d;\n\
+                  \x20   mat3 rotation = mat3(block.columns);\n\
+                  \x20   block.out1.xyz = rotation * block.a.xyz;\n\
+                  \x20   mat3 rows = mat3(block.rows);\n\
+                  \x20   block.out1.w = (block.b.xyz * rows).y;\n\
+                  \x20   mat3 small = mat3(block.a.yzw, block.b.xyz, block.c.xyz);\n\
+                  \x20   block.out2.xyz = small * block.d.xyz;\n\
+                  \x20   built = mat4(built[1], built[0], built[3], built[2]);\n\
+                  \x20   block.out3 = built * block.a;\n\
+                  \x20   const vec4 kLocal = vec4(0.0, 1.0, 0.0, 1.0);\n\
+                  \x20   block.out4 = block.b * kScale + kHalf * kLocal;\n\
+                  \x20   block.out5.xyz = mat3(built * block.columns) * kAxis;\n\
+                  }\n";
+    agree(source, 16, |_, _, _| {});
+}
+
+#[test]
 fn functions_return_and_take_clip_judgements() {
     // A judgement leaves a function as its result (a clipw itself, or a local
     // holding one) or through an out parameter, enters one as an in

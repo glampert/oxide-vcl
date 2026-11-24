@@ -1,0 +1,5 @@
+input.vusl(5): error: a Strip variable can't be kept in registers: its member 'corners' is an array
+   5 |     Strip strip = block.strip;
+     |           ^
+     = help: keep it in memory, or copy the members you need into variables
+oxide-vusl: 1 error; no output written

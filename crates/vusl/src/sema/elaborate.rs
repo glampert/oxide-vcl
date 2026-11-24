@@ -18,7 +18,7 @@ use super::check::{
 use super::consteval;
 use super::hir::*;
 use super::layout::{Extent, Term};
-use super::types::{Lane, Length, Placement, Type, builtin_type};
+use super::types::{Lane, Length, Placement, StructId, Type, builtin_type};
 use super::{Checked, Problem, problem};
 use crate::diagnostics::VuslMessage;
 use crate::syntax::Pos;
@@ -409,6 +409,63 @@ enum Symbol {
     /// An inlined function's `out` or `inout` register parameter: the
     /// caller's variable.
     Alias(Target),
+    /// A struct variable in registers.
+    Struct(StructLocal),
+    /// A vector constant: its constructor, as written at each use.
+    Vector(Expr),
+}
+
+/// A struct variable in registers: a local for each member, or a struct
+/// variable for a struct member. An inlined function's struct parameter
+/// may name the caller's.
+#[derive(Clone, Debug)]
+struct StructLocal {
+    id: StructId,
+    parts: Vec<Part>,
+}
+
+#[derive(Clone, Debug)]
+enum Part {
+    Local(LocalId),
+    Struct(StructLocal),
+}
+
+/// A struct's value, member by member: a constructor's, a struct
+/// variable's, memory's, or a function's result.
+#[derive(Clone, Debug)]
+struct StructValue {
+    id: StructId,
+    parts: Vec<PartValue>,
+}
+
+#[derive(Clone, Debug)]
+enum PartValue {
+    Value(Expr),
+    Struct(StructValue),
+}
+
+impl StructLocal {
+    /// Every member's local, in order.
+    fn locals(&self, out: &mut Vec<LocalId>) {
+        for part in &self.parts {
+            match part {
+                Part::Local(id) => out.push(*id),
+                Part::Struct(inner) => inner.locals(out),
+            }
+        }
+    }
+}
+
+impl StructValue {
+    /// Every member's value, in order.
+    fn values(self, out: &mut Vec<Expr>) {
+        for part in self.parts {
+            match part {
+                PartValue::Value(value) => out.push(value),
+                PartValue::Struct(inner) => inner.values(out),
+            }
+        }
+    }
 }
 
 /// Memory reached by a name: a place, what may be done with it, and the
@@ -451,6 +508,8 @@ enum Value {
     Mem(Memory),
     /// Some components of a vector in memory.
     MemLanes(Memory, Vec<usize>),
+    /// A struct's value in registers.
+    Struct(StructValue),
 }
 
 /// A local's state where the checker is: the placement of the value it
@@ -579,6 +638,58 @@ fn constant_expr(value: Const, pos: Pos) -> Expr {
     }
 }
 
+/// A vector constant's constructor: `vecN(c0, c1, ...)`, or `vecN(c)`
+/// when every component is the same.
+fn vector_expr(components: &[f32], pos: Pos) -> Expr {
+    let splat = components
+        .iter()
+        .all(|value| value.to_bits() == components[0].to_bits());
+    let written = if splat { &components[..1] } else { components };
+    let parts: Vec<Expr> = written
+        .iter()
+        .map(|&value| constant_expr(Const::Float(value), pos))
+        .collect();
+    Expr {
+        ty: Type::Vec(components.len() as u8),
+        placement: Some(Placement::identity(components.len())),
+        kind: ExprKind::Construct(parts),
+        pos,
+    }
+}
+
+/// Whether `value` is a constructor of constants.
+fn constant_parts(value: &Expr) -> bool {
+    matches!(&value.kind, ExprKind::Construct(parts)
+        if parts.iter().all(|part| matches!(part.kind, ExprKind::Const(Const::Float(_)))))
+}
+
+/// The first function `expr` calls, and where: what a condition's right
+/// side runs.
+fn called_function(expr: &ast::Expr, decls: &Declarations) -> Option<(String, Pos)> {
+    match &expr.kind {
+        Ast::Call { callee, args } => {
+            if callee.argument.is_none() && decls.functions.contains_key(&callee.name.name) {
+                return Some((callee.name.name.clone(), callee.name.pos));
+            }
+            args.iter().find_map(|arg| called_function(arg, decls))
+        }
+        Ast::Unary { operand, .. } | Ast::Postfix { operand, .. } => {
+            called_function(operand, decls)
+        }
+        Ast::Binary { lhs, rhs, .. }
+        | Ast::Assign {
+            target: lhs,
+            value: rhs,
+            ..
+        } => called_function(lhs, decls).or_else(|| called_function(rhs, decls)),
+        Ast::Field { base, .. } => called_function(base, decls),
+        Ast::Index { base, index } => {
+            called_function(base, decls).or_else(|| called_function(index, decls))
+        }
+        _ => None,
+    }
+}
+
 fn as_const(expr: &Expr) -> Option<Const> {
     match expr.kind {
         ExprKind::Const(value) => Some(value),
@@ -666,6 +777,9 @@ impl Elaborator<'_, '_> {
         if let Some((value, ty)) = self.decls.consts.get(&name.name) {
             return Ok(Symbol::Const(*value, ty.clone()));
         }
+        if let Some(components) = self.decls.vectors.get(&name.name) {
+            return Ok(Symbol::Vector(vector_expr(components, name.pos)));
+        }
         if self.spills.contains(&name.name) {
             return err(
                 VuslMessage::SpillUsed {
@@ -680,6 +794,265 @@ impl Elaborator<'_, '_> {
             },
             name.pos,
         )
+    }
+
+    // ----------------------------------------------
+    // Struct variables
+    // ----------------------------------------------
+
+    /// The struct variable, or the member of one, that `expr` names.
+    fn struct_part(&self, expr: &ast::Expr) -> Checked<Option<Part>> {
+        match &expr.kind {
+            Ast::Name(name) => match self.lookup(name) {
+                Ok(Symbol::Struct(local)) => Ok(Some(Part::Struct(local))),
+                _ => Ok(None),
+            },
+            Ast::Field { base, field } => match self.struct_part(base)? {
+                Some(Part::Struct(local)) => self.struct_member(&local, field).map(Some),
+                _ => Ok(None),
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn struct_member(&self, local: &StructLocal, field: &ast::Ident) -> Checked<Part> {
+        let def = &self.decls.structs[local.id];
+        match def.member(&field.name) {
+            Some((index, _)) => Ok(local.parts[index].clone()),
+            None => err(
+                VuslMessage::UnknownMember {
+                    ty: def.name.clone(),
+                    member: field.name.clone(),
+                },
+                field.pos,
+            ),
+        }
+    }
+
+    /// A struct variable of type `id`, its members named `name.member`.
+    fn new_struct_local(
+        &mut self,
+        name: &str,
+        id: StructId,
+        precise: bool,
+        pos: Pos,
+    ) -> Checked<StructLocal> {
+        let members: Vec<(String, Type, Lane)> = self.decls.structs[id]
+            .members
+            .iter()
+            .map(|member| (member.name.clone(), member.ty.clone(), member.lane))
+            .collect();
+        let mut parts = Vec::new();
+        for (member, ty, lane) in members {
+            let full = format!("{name}.{member}");
+            parts.push(match ty {
+                Type::Struct(inner) => {
+                    Part::Struct(self.new_struct_local(&full, inner, precise, pos)?)
+                }
+                // A member keeps its lanes in the struct, as in memory: every
+                // path leaves it there, and storing it moves nothing.
+                ty if self.register_type(&ty) => {
+                    let fixed = match ty {
+                        Type::Mat { .. } | Type::Qword => None,
+                        ref ty => memory_placement(ty, lane),
+                    };
+                    Part::Local(self.new_local(&full, ty, fixed, precise, pos))
+                }
+                _ => {
+                    return err(
+                        VuslMessage::StructArrayMember {
+                            ty: self.decls.structs[id].name.clone(),
+                            member,
+                        },
+                        pos,
+                    );
+                }
+            });
+        }
+        Ok(StructLocal { id, parts })
+    }
+
+    /// A struct variable's value: every member read, so each must be set.
+    fn read_struct(&self, local: &StructLocal, pos: Pos) -> Checked<StructValue> {
+        let parts = local
+            .parts
+            .iter()
+            .map(|part| match part {
+                Part::Local(id) => self.read_local(*id, pos).map(PartValue::Value),
+                Part::Struct(inner) => self.read_struct(inner, pos).map(PartValue::Struct),
+            })
+            .collect::<Checked<_>>()?;
+        Ok(StructValue {
+            id: local.id,
+            parts,
+        })
+    }
+
+    /// A struct in memory, read member by member.
+    fn load_struct(&mut self, memory: Memory, id: StructId, pos: Pos) -> Checked<StructValue> {
+        let mut parts = Vec::new();
+        for field in self.member_names(id, pos) {
+            let member = self.member(memory.clone(), id, &field)?;
+            parts.push(match member.place.ty.clone() {
+                Type::Struct(inner) => PartValue::Struct(self.load_struct(member, inner, pos)?),
+                ty if self.register_type(&ty) => PartValue::Value(self.load(member, pos)?),
+                _ => {
+                    return err(
+                        VuslMessage::StructArrayMember {
+                            ty: self.decls.structs[id].name.clone(),
+                            member: field.name,
+                        },
+                        pos,
+                    );
+                }
+            });
+        }
+        Ok(StructValue { id, parts })
+    }
+
+    fn member_names(&self, id: StructId, pos: Pos) -> Vec<ast::Ident> {
+        self.decls.structs[id]
+            .members
+            .iter()
+            .map(|member| ast::Ident {
+                name: member.name.clone(),
+                pos,
+            })
+            .collect()
+    }
+
+    /// `value` as a struct of type `id`: a struct value, or memory read.
+    fn struct_value(
+        &mut self,
+        value: Value,
+        id: StructId,
+        context: &str,
+        pos: Pos,
+    ) -> Checked<StructValue> {
+        let found = match value {
+            Value::Struct(value) if value.id == id => return Ok(value),
+            Value::Mem(memory) if memory.place.ty == Type::Struct(id) => {
+                if !memory.readable() {
+                    return err(VuslMessage::WriteOnly { name: memory.name }, pos);
+                }
+                return self.load_struct(memory, id, pos);
+            }
+            Value::Struct(value) => self.type_name(&Type::Struct(value.id)),
+            Value::Mem(memory) | Value::MemLanes(memory, _) => self.type_name(&memory.place.ty),
+            Value::Reg(value) => self.type_text(&value),
+        };
+        err(
+            VuslMessage::TypeMismatch {
+                context: context.into(),
+                expected: self.type_name(&Type::Struct(id)),
+                found,
+            },
+            pos,
+        )
+    }
+
+    /// `local = value`, member by member. A member's value that reads a
+    /// member set before it is computed into a variable of its own first,
+    /// so that `p = Pair(p.second, p.first)` swaps them.
+    fn assign_struct(
+        &mut self,
+        local: &StructLocal,
+        value: StructValue,
+        pos: Pos,
+    ) -> Checked<Vec<Stmt>> {
+        let mut targets = Vec::new();
+        local.locals(&mut targets);
+        let mut values = Vec::new();
+        value.values(&mut values);
+        let mut stmts = Vec::new();
+        for index in 0..values.len() {
+            if targets[..index]
+                .iter()
+                .any(|&id| values[index].reads_local(id))
+            {
+                let value = values[index].clone();
+                values[index] = self.computed_first(value, targets[index], pos, &mut stmts)?;
+            }
+        }
+        for (id, value) in targets.into_iter().zip(values) {
+            let target = Target::Local {
+                id,
+                column: None,
+                components: None,
+            };
+            stmts.push(self.set(target, value, pos)?);
+        }
+        Ok(stmts)
+    }
+
+    /// `value` computed into a new variable named after `like`, and read
+    /// from there.
+    fn computed_first(
+        &mut self,
+        value: Expr,
+        like: LocalId,
+        pos: Pos,
+        stmts: &mut Vec<Stmt>,
+    ) -> Checked<Expr> {
+        let name = format!("{} value", self.locals[like].name);
+        let temp = self.new_local(&name, self.locals[like].ty.clone(), None, false, pos);
+        let target = Target::Local {
+            id: temp,
+            column: None,
+            components: None,
+        };
+        stmts.push(self.set(target, value, pos)?);
+        self.read_local(temp, pos)
+    }
+
+    /// `memory = value`, member by member. A member's value that loads
+    /// memory is read before the first store, which may overwrite it.
+    fn store_struct(&mut self, memory: Memory, value: StructValue, pos: Pos) -> Checked<Vec<Stmt>> {
+        if !memory.writable() {
+            return err(VuslMessage::ReadOnly { name: memory.name }, pos);
+        }
+        let mut members = Vec::new();
+        self.member_stores(memory, value, pos, &mut members)?;
+        let mut stmts = Vec::new();
+        for (memory, value) in members.iter_mut().skip(1) {
+            if value.loads() {
+                let name = format!("{} value", memory.name);
+                let temp = self.new_local(&name, value.ty.clone(), None, false, pos);
+                let target = Target::Local {
+                    id: temp,
+                    column: None,
+                    components: None,
+                };
+                stmts.push(self.set(target, value.clone(), pos)?);
+                *value = self.read_local(temp, pos)?;
+            }
+        }
+        for (memory, value) in members {
+            let target = Target::Memory {
+                memory,
+                components: None,
+            };
+            stmts.push(self.set(target, value, pos)?);
+        }
+        Ok(stmts)
+    }
+
+    fn member_stores(
+        &mut self,
+        memory: Memory,
+        value: StructValue,
+        pos: Pos,
+        out: &mut Vec<(Memory, Expr)>,
+    ) -> Checked<()> {
+        let id = value.id;
+        for (field, part) in self.member_names(id, pos).into_iter().zip(value.parts) {
+            let member = self.member(memory.clone(), id, &field)?;
+            match part {
+                PartValue::Value(value) => out.push((member, value)),
+                PartValue::Struct(inner) => self.member_stores(member, inner, pos, out)?,
+            }
+        }
+        Ok(())
     }
 
     fn record(&mut self, memory: &Memory, write: bool) {
@@ -1334,6 +1707,14 @@ impl Elaborator<'_, '_> {
                         range.source.pos,
                     );
                 }
+                Value::Struct(value) => {
+                    return err(
+                        VuslMessage::RangeNotArray {
+                            found: self.type_name(&Type::Struct(value.id)),
+                        },
+                        range.source.pos,
+                    );
+                }
             };
             let Type::Array(element_ty, length) = memory.place.ty.clone() else {
                 return err(
@@ -1531,14 +1912,7 @@ impl Elaborator<'_, '_> {
             }
         }
         match &ty {
-            Type::Struct(_) => {
-                return err(
-                    VuslMessage::NotYet {
-                        what: "a struct variable in registers",
-                    },
-                    decl.ty.pos,
-                );
-            }
+            Type::Struct(id) => return self.struct_decl(decl, *id, fixed_lane.is_some(), out),
             Type::Void => {
                 return err(
                     VuslMessage::TypeMismatch {
@@ -1590,6 +1964,19 @@ impl Elaborator<'_, '_> {
                 };
                 let value = self.rvalue(init)?;
                 let value = self.coerce(value, &ty, "the constant")?;
+                if matches!(ty, Type::Vec(_)) && constant_parts(&value) {
+                    self.declare(&declarator.name, Symbol::Vector(value))?;
+                    continue;
+                }
+                if matches!(ty, Type::Mat { .. }) {
+                    return err(
+                        VuslMessage::ConstantType {
+                            name: declarator.name.name.clone(),
+                            ty: self.type_name(&ty),
+                        },
+                        declarator.name.pos,
+                    );
+                }
                 let Some(value) = as_const(&value) else {
                     return err(
                         VuslMessage::NotConstant {
@@ -1643,12 +2030,113 @@ impl Elaborator<'_, '_> {
         Ok(())
     }
 
+    /// A declaration of struct variables: a local per member, each set
+    /// from the initializer's member.
+    fn struct_decl(
+        &mut self,
+        decl: &ast::Decl,
+        id: StructId,
+        fixed_lane: bool,
+        out: &mut Vec<Stmt>,
+    ) -> Checked<()> {
+        let first = &decl.declarators[0].name;
+        if decl.constant {
+            return err(
+                VuslMessage::ConstantType {
+                    name: first.name.clone(),
+                    ty: self.type_name(&Type::Struct(id)),
+                },
+                first.pos,
+            );
+        }
+        if fixed_lane {
+            return err(
+                VuslMessage::UnknownLayout {
+                    name: "lane".into(),
+                    context: "a struct variable (its members take their own lanes)",
+                },
+                decl.pos,
+            );
+        }
+        for declarator in &decl.declarators {
+            if declarator.array.is_some() {
+                return err(
+                    VuslMessage::ArrayNotAllowed {
+                        name: declarator.name.name.clone(),
+                    },
+                    declarator.name.pos,
+                );
+            }
+            let name = &declarator.name;
+            let local = self.new_struct_local(&name.name, id, decl.precise, name.pos)?;
+            if let Some(init) = &declarator.init {
+                let value = self.value(init)?;
+                let value = self.struct_value(value, id, "the initializer", init.pos)?;
+                let stmts = self.assign_struct(&local, value, init.pos)?;
+                out.append(&mut self.pending);
+                out.extend(stmts);
+            }
+            // The name is visible after its initializer, as in C.
+            self.declare(name, Symbol::Struct(local))?;
+        }
+        Ok(())
+    }
+
+    /// `Name(member, ...)`: each member's value, in order.
+    fn struct_constructor(
+        &mut self,
+        id: StructId,
+        args: &[ast::Expr],
+        pos: Pos,
+    ) -> Checked<StructValue> {
+        let members: Vec<(String, Type)> = self.decls.structs[id]
+            .members
+            .iter()
+            .map(|member| (member.name.clone(), member.ty.clone()))
+            .collect();
+        if args.len() != members.len() {
+            return err(
+                VuslMessage::WrongArgumentCount {
+                    name: self.decls.structs[id].name.clone(),
+                    expected: format!("{} members", members.len()),
+                    found: args.len(),
+                },
+                pos,
+            );
+        }
+        let mut parts = Vec::new();
+        for ((member, ty), arg) in members.into_iter().zip(args) {
+            let context = format!("member '{member}'");
+            parts.push(match ty {
+                Type::Struct(inner) => {
+                    let value = self.value(arg)?;
+                    PartValue::Struct(self.struct_value(value, inner, &context, arg.pos)?)
+                }
+                ty if self.register_type(&ty) => {
+                    let value = self.rvalue(arg)?;
+                    PartValue::Value(self.coerce(value, &ty, &context)?)
+                }
+                _ => {
+                    return err(
+                        VuslMessage::StructArrayMember {
+                            ty: self.decls.structs[id].name.clone(),
+                            member,
+                        },
+                        pos,
+                    );
+                }
+            });
+        }
+        Ok(StructValue { id, parts })
+    }
+
     fn expr_stmt(&mut self, expr: &ast::Expr, out: &mut Vec<Stmt>) -> Checked<()> {
         match &expr.kind {
             Ast::Assign { op, target, value } => {
                 let stmt = self.assign(*op, target, value, expr.pos)?;
-                if let Some(stmt) = stmt {
-                    self.emit(out, stmt);
+                match stmt {
+                    Some(stmt) => self.emit(out, stmt),
+                    None => out.append(&mut self.pending),
                 }
             }
             Ast::Unary {
@@ -1720,6 +2208,24 @@ impl Elaborator<'_, '_> {
     // ----------------------------------------------
 
     fn target(&mut self, expr: &ast::Expr) -> Checked<Target> {
+        match self.struct_part(expr)? {
+            Some(Part::Local(id)) => {
+                return Ok(Target::Local {
+                    id,
+                    column: None,
+                    components: None,
+                });
+            }
+            Some(Part::Struct(_)) => {
+                return err(
+                    VuslMessage::NotAssignable {
+                        what: "a whole struct, except with =,",
+                    },
+                    expr.pos,
+                );
+            }
+            None => {}
+        }
         match &expr.kind {
             Ast::Name(name) => match self.lookup(name)? {
                 Symbol::Local(id) => Ok(Target::Local {
@@ -1732,9 +2238,10 @@ impl Elaborator<'_, '_> {
                     components: None,
                 }),
                 Symbol::Alias(target) => Ok(target),
-                Symbol::Const(..) => {
+                Symbol::Const(..) | Symbol::Vector(_) => {
                     err(VuslMessage::NotAssignable { what: "a constant" }, expr.pos)
                 }
+                Symbol::Struct(_) => unreachable!("a struct variable is a struct part"),
             },
             Ast::Field { base, field } => {
                 // A struct member in memory, or components of a vector; a
@@ -1766,7 +2273,7 @@ impl Elaborator<'_, '_> {
                         memory,
                         components: Some(components),
                     }),
-                    Value::Reg(_) => err(
+                    Value::Reg(_) | Value::Struct(_) => err(
                         VuslMessage::NotAssignable {
                             what: "a computed value",
                         },
@@ -1828,7 +2335,7 @@ impl Elaborator<'_, '_> {
                         memory,
                         components: Some(components),
                     }),
-                    Value::Reg(_) => err(
+                    Value::Reg(_) | Value::Struct(_) => err(
                         VuslMessage::NotAssignable {
                             what: "a computed value",
                         },
@@ -1855,6 +2362,14 @@ impl Elaborator<'_, '_> {
                     components: None,
                 }),
                 Symbol::Alias(target @ Target::Local { .. }) => Ok(target),
+                _ => err(VuslMessage::NotAssignable { what: "memory" }, expr.pos),
+            },
+            Ast::Field { .. } => match self.struct_part(expr)? {
+                Some(Part::Local(id)) => Ok(Target::Local {
+                    id,
+                    column: None,
+                    components: None,
+                }),
                 _ => err(VuslMessage::NotAssignable { what: "memory" }, expr.pos),
             },
             Ast::Index { base, index } => {
@@ -1974,6 +2489,16 @@ impl Elaborator<'_, '_> {
         value_expr: &ast::Expr,
         pos: Pos,
     ) -> Checked<Option<Stmt>> {
+        // A struct variable is set member by member.
+        if op == AssignOp::Assign
+            && let Some(Part::Struct(local)) = self.struct_part(target_expr)?
+        {
+            let value = self.value(value_expr)?;
+            let value = self.struct_value(value, local.id, "the assignment", value_expr.pos)?;
+            let stmts = self.assign_struct(&local, value, pos)?;
+            self.pending.extend(stmts);
+            return Ok(None);
+        }
         let target = self.target(target_expr)?;
         // Structs, arrays and qwords copy between memory places whole.
         let mut assigned = None;
@@ -1991,6 +2516,21 @@ impl Elaborator<'_, '_> {
         {
             match self.value(value_expr)? {
                 Value::Mem(from) => return self.copy(to.clone(), from, pos).map(Some),
+                Value::Struct(value) => {
+                    if to.place.ty != Type::Struct(value.id) {
+                        return err(
+                            VuslMessage::TypeMismatch {
+                                context: "the assignment".into(),
+                                expected: self.type_name(&to.place.ty),
+                                found: self.type_name(&Type::Struct(value.id)),
+                            },
+                            value_expr.pos,
+                        );
+                    }
+                    let stmts = self.store_struct(to.clone(), value, pos)?;
+                    self.pending.extend(stmts);
+                    return Ok(None);
+                }
                 other => assigned = Some(self.read_value(other, value_expr.pos)?),
             }
         }
@@ -2033,12 +2573,7 @@ impl Elaborator<'_, '_> {
                 match qwords {
                     Some(qwords) => qwords,
                     None => {
-                        return err(
-                            VuslMessage::NotYet {
-                                what: "copying memory whose size is read at run time",
-                            },
-                            pos,
-                        );
+                        return err(VuslMessage::CopyLengthAtRunTime { name: from.name }, pos);
                     }
                 }
             }
@@ -2270,6 +2805,14 @@ impl Elaborator<'_, '_> {
                 let value = self.load(memory, pos)?;
                 self.apply_swizzle(value, components, pos)
             }
+            Value::Struct(value) => err(
+                VuslMessage::TypeMismatch {
+                    context: "this expression".into(),
+                    expected: "a scalar, a vector or a matrix (a member of the struct)".into(),
+                    found: self.type_name(&Type::Struct(value.id)),
+                },
+                pos,
+            ),
         }
     }
 
@@ -2332,6 +2875,12 @@ impl Elaborator<'_, '_> {
                     Ok(Value::Reg(constant))
                 }
                 Symbol::Memory(memory) => Ok(Value::Mem(memory)),
+                Symbol::Struct(local) => Ok(Value::Struct(self.read_struct(&local, pos)?)),
+                Symbol::Vector(mut value) => {
+                    value.pos = pos;
+                    value.each_child_mut(&mut |part| part.pos = pos);
+                    Ok(Value::Reg(value))
+                }
                 Symbol::Alias(target) => match target {
                     Target::Memory {
                         memory,
@@ -2344,7 +2893,11 @@ impl Elaborator<'_, '_> {
                     target => Ok(Value::Reg(self.read_target(&target, pos)?)),
                 },
             },
-            Ast::Field { base, field } => self.field(base, field),
+            Ast::Field { base, field } => match self.struct_part(expr)? {
+                Some(Part::Local(id)) => Ok(Value::Reg(self.read_local(id, pos)?)),
+                Some(Part::Struct(local)) => Ok(Value::Struct(self.read_struct(&local, pos)?)),
+                None => self.field(base, field),
+            },
             Ast::Index { base, index } => self.index(base, index, pos),
             Ast::Unary { op, operand } => {
                 if matches!(op, UnaryOp::PreIncrement | UnaryOp::PreDecrement) {
@@ -2555,6 +3108,24 @@ impl Elaborator<'_, '_> {
                 self.swizzle_value(value, field).map(Value::Reg)
             }
             Value::Reg(value) => self.swizzle_value(value, field).map(Value::Reg),
+            Value::Struct(value) => {
+                let def = &self.decls.structs[value.id];
+                let Some((index, _)) = def.member(&field.name) else {
+                    return err(
+                        VuslMessage::UnknownMember {
+                            ty: def.name.clone(),
+                            member: field.name.clone(),
+                        },
+                        field.pos,
+                    );
+                };
+                Ok(
+                    match value.parts.into_iter().nth(index).expect("a member") {
+                        PartValue::Value(value) => Value::Reg(value),
+                        PartValue::Struct(inner) => Value::Struct(inner),
+                    },
+                )
+            }
         }
     }
 
@@ -2710,6 +3281,14 @@ impl Elaborator<'_, '_> {
                 self.index_value(value, index_const, index.pos, pos)
             }
             Value::Reg(value) => self.index_value(value, index_const, index.pos, pos),
+            Value::Struct(value) => err(
+                VuslMessage::TypeMismatch {
+                    context: "indexing".into(),
+                    expected: "an array, a vector or a matrix".into(),
+                    found: self.type_name(&Type::Struct(value.id)),
+                },
+                pos,
+            ),
         }
     }
 
@@ -2819,14 +3398,12 @@ impl Elaborator<'_, '_> {
         if matches!(op, BinaryOp::LogicAnd | BinaryOp::LogicOr) {
             let lhs = self.condition(lhs)?;
             let before = self.pending.len();
+            let right = rhs;
             let rhs = self.condition(rhs)?;
             if self.pending.len() != before {
-                return err(
-                    VuslMessage::NotYet {
-                        what: "a call with statements on the right of && or ||",
-                    },
-                    pos,
-                );
+                let (name, at) =
+                    called_function(right, self.decls).unwrap_or(("a call".into(), pos));
+                return err(VuslMessage::CallInShortCircuit { name }, at);
             }
             if let (Some(a), Some(b)) = (as_const(&lhs), as_const(&rhs))
                 && let Ok(value) = consteval::binary(op, a, b)
@@ -3569,7 +4146,7 @@ impl Elaborator<'_, '_> {
         }
         if let Some(function) = self.decls.functions.get(name).copied() {
             return match self.inline(function, args, pos)? {
-                Some(value) => Ok(Value::Reg(value)),
+                Some(value) => Ok(value),
                 None => err(
                     VuslMessage::TypeMismatch {
                         context: format!("the call to '{name}'"),
@@ -3583,13 +4160,8 @@ impl Elaborator<'_, '_> {
         if name == "xgkick" {
             return err(VuslMessage::NestedAssignment, pos);
         }
-        if self.decls.struct_ids.contains_key(name) {
-            return err(
-                VuslMessage::NotYet {
-                    what: "a struct constructor",
-                },
-                pos,
-            );
+        if let Some(&id) = self.decls.struct_ids.get(name) {
+            return self.struct_constructor(id, args, pos).map(Value::Struct);
         }
         let args: Vec<Expr> = args
             .iter()
@@ -4112,13 +4684,121 @@ impl Elaborator<'_, '_> {
                     pos,
                 })
             }
+            Type::Mat { size, .. } => self.matrix_constructor(*size, name, args, pos),
+            Type::Bool => err(
+                VuslMessage::NoConstructor {
+                    ty: "bool".into(),
+                    help: "compare instead: count != 0, or x > 0.0",
+                },
+                pos,
+            ),
+            Type::Qword => err(
+                VuslMessage::NoConstructor {
+                    ty: "qword".into(),
+                    help: "a qword is raw memory: copy one from a struct member, or set its lanes \
+                           (.x to .w) as int16",
+                },
+                pos,
+            ),
             _ => err(
-                VuslMessage::NotYet {
-                    what: "this type's constructor",
+                VuslMessage::NoConstructor {
+                    ty: self.type_name(&ty),
+                    help: "clip flags come from clipw(), refs from ref<T>(...)",
                 },
                 pos,
             ),
         }
+    }
+
+    /// `mat4(c0, c1, c2, c3)` and `mat3(c0, c1, c2)` from their columns,
+    /// or `mat3(m)`: the first three stored qwords of a `mat4`, lanes xyz,
+    /// in its order, which is its upper-left 3x3 either way.
+    fn matrix_constructor(
+        &mut self,
+        size: u8,
+        name: &str,
+        args: Vec<Expr>,
+        pos: Pos,
+    ) -> Checked<Expr> {
+        let n = usize::from(size);
+        if let [matrix] = args.as_slice()
+            && let Type::Mat {
+                size: from,
+                row_major,
+            } = matrix.ty
+        {
+            let ty = Type::Mat { size, row_major };
+            if from == size {
+                return Ok(matrix.clone());
+            }
+            if from < size {
+                return err(
+                    VuslMessage::TypeMismatch {
+                        context: format!("'{name}(...)'"),
+                        expected: format!("{n} vec{n} columns or a larger matrix"),
+                        found: self.type_name(&matrix.ty),
+                    },
+                    matrix.pos,
+                );
+            }
+            // A matrix the columns read once each, from a variable.
+            let matrix = match matrix.kind {
+                ExprKind::Local(_) | ExprKind::Load(_) => matrix.clone(),
+                _ => {
+                    let local = self.new_local("matrix", matrix.ty.clone(), None, false, pos);
+                    let target = Target::Local {
+                        id: local,
+                        column: None,
+                        components: None,
+                    };
+                    let stmt = self.set(target, matrix.clone(), pos)?;
+                    self.pending.push(stmt);
+                    self.read_local(local, pos)?
+                }
+            };
+            let mut parts = Vec::new();
+            for index in 0..n {
+                let column = self.column(matrix.clone(), index, pos)?;
+                parts.push(self.apply_swizzle(column, (0..n).collect(), pos)?);
+            }
+            return Ok(Expr {
+                kind: ExprKind::Columns(parts),
+                ty,
+                placement: None,
+                pos,
+            });
+        }
+        if args.len() != n {
+            return err(
+                VuslMessage::WrongArgumentCount {
+                    name: name.into(),
+                    expected: format!("{n} vec{n} columns"),
+                    found: args.len(),
+                },
+                pos,
+            );
+        }
+        let mut parts = Vec::new();
+        for arg in args {
+            let arg = self.to_float(arg);
+            if arg.ty != Type::Vec(size) {
+                return Err(self.mismatch(
+                    &arg,
+                    &format!("'{name}(...)'"),
+                    &format!("vec{n} columns"),
+                ));
+            }
+            parts.push(arg);
+        }
+        Ok(Expr {
+            kind: ExprKind::Columns(parts),
+            ty: Type::Mat {
+                size,
+                row_major: false,
+            },
+            placement: None,
+            pos,
+        })
     }
 
     /// Inlines a call: the parameters bound (copies for `in` values, the
@@ -4130,7 +4810,7 @@ impl Elaborator<'_, '_> {
         function: &ast::Function,
         args: &[ast::Expr],
         pos: Pos,
-    ) -> Checked<Option<Expr>> {
+    ) -> Checked<Option<Value>> {
         let name = function.name.name.clone();
         self.inline_inner(function, args, pos)
             .map_err(|mut problem| {
@@ -4149,7 +4829,7 @@ impl Elaborator<'_, '_> {
         function: &ast::Function,
         args: &[ast::Expr],
         pos: Pos,
-    ) -> Checked<Option<Expr>> {
+    ) -> Checked<Option<Value>> {
         let name = function.name.name.clone();
         if self.calls.iter().any(|(called, _)| *called == name) {
             return err(VuslMessage::Recursion { name }, pos);
@@ -4194,10 +4874,71 @@ impl Elaborator<'_, '_> {
                     param.pos,
                 );
             }
+            // A struct variable argument: the parameter names it, unless
+            // an `in` parameter's body or the call's other arguments
+            // change one of them, which takes a copy.
+            let struct_arg = match (&ty, self.struct_part(arg)?) {
+                (Type::Struct(id), Some(Part::Struct(local))) => Some((*id, local)),
+                _ => None,
+            };
+            if let Some((id, local)) = &struct_arg
+                && local.id != *id
+            {
+                return err(
+                    VuslMessage::TypeMismatch {
+                        context: format!("parameter '{}'", param.name.name),
+                        expected: self.type_name(&ty),
+                        found: self.type_name(&Type::Struct(local.id)),
+                    },
+                    arg.pos,
+                );
+            }
             let symbol = match &ty {
-                Type::Struct(_) | Type::Array(..) => {
+                Type::Struct(_) if let Some((_, local)) = struct_arg => {
+                    let shared = qualifier != Qualifier::In
+                        || (!body_writes(self.decls, &function.body.stmts, &param.name.name)
+                            && !written_by_call(&function.params, args, arg));
+                    if qualifier == Qualifier::Out {
+                        Symbol::Struct(local)
+                    } else {
+                        let value = self.read_struct(&local, arg.pos)?;
+                        if shared {
+                            Symbol::Struct(local)
+                        } else {
+                            let copy = self.new_struct_local(
+                                &param.name.name,
+                                local.id,
+                                false,
+                                param.name.pos,
+                            )?;
+                            setup.extend(self.assign_struct(&copy, value, arg.pos)?);
+                            Symbol::Struct(copy)
+                        }
+                    }
+                }
+                Type::Struct(_) | Type::Array(..) => 'bind: {
                     let value = self.value(arg)?;
-                    let Value::Mem(memory) = self.deref(value, false)? else {
+                    let value = match (self.deref(value, false)?, &ty, qualifier) {
+                        // A struct value for an `in` parameter: a copy.
+                        (Value::Struct(value), Type::Struct(id), Qualifier::In) => {
+                            let value = self.struct_value(
+                                Value::Struct(value),
+                                *id,
+                                &format!("parameter '{}'", param.name.name),
+                                arg.pos,
+                            )?;
+                            let copy = self.new_struct_local(
+                                &param.name.name,
+                                *id,
+                                false,
+                                param.name.pos,
+                            )?;
+                            setup.extend(self.assign_struct(&copy, value, arg.pos)?);
+                            break 'bind Symbol::Struct(copy);
+                        }
+                        (value, ..) => value,
+                    };
+                    let Value::Mem(memory) = value else {
                         return err(
                             VuslMessage::TypeMismatch {
                                 context: format!("parameter '{}'", param.name.name),
@@ -4317,20 +5058,51 @@ impl Elaborator<'_, '_> {
                 .entry(ident.name.clone())
                 .or_insert_with(|| (symbol.clone(), ident.pos));
         }
+        // A library call passes values in registers it fixes: a struct
+        // variable has no such register.
+        if library_call {
+            let struct_param = function
+                .params
+                .iter()
+                .zip(&bound)
+                .find(|(_, (_, symbol))| matches!(symbol, Symbol::Struct(_)));
+            if let Some((param, _)) = struct_param {
+                return err(
+                    VuslMessage::TypeMismatch {
+                        context: format!("library parameter '{}'", param.name.name),
+                        expected: "memory".into(),
+                        found: "a struct variable in registers".into(),
+                    },
+                    pos,
+                );
+            }
+            if let Type::Struct(id) = ret {
+                return err(
+                    VuslMessage::TypeMismatch {
+                        context: format!("library function '{name}'"),
+                        expected: "a result in one register".into(),
+                        found: self.type_name(&Type::Struct(id)),
+                    },
+                    function.ret.pos,
+                );
+            }
+        }
         // A call that sees only the export's prototype has no body to
         // inline: the call alone is what it does.
         if library_call && function.prototype {
             self.pending.extend(setup);
-            return self.library_call(
-                function,
-                &function.name.name,
-                bound,
-                Vec::new(),
-                Vec::new(),
-                None,
-                ret,
-                pos,
-            );
+            return self
+                .library_call(
+                    function,
+                    &function.name.name,
+                    bound,
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    ret,
+                    pos,
+                )
+                .map(|value| value.map(Value::Reg));
         }
         // The body: a value-returning function ends with `return value;`.
         let stmts = &function.body.stmts;
@@ -4361,12 +5133,21 @@ impl Elaborator<'_, '_> {
         self.calls.push((name, pos));
         // The returned value sees the body's locals: one scope holds both.
         self.scopes.push(HashMap::new());
-        let result = (|| -> Checked<(Vec<Stmt>, Option<Expr>)> {
+        let result = (|| -> Checked<(Vec<Stmt>, Option<Value>)> {
             let mut body = self.statements(stmts)?;
             let value = match returned {
-                Some((Some(value), _)) if ret != Type::Void => {
-                    let value = self.rvalue(value)?;
-                    let value = self.coerce(value, &ret, "the returned value")?;
+                Some((Some(value), return_pos)) if ret != Type::Void => {
+                    let value = match ret {
+                        Type::Struct(id) => {
+                            let value = self.value(value)?;
+                            let context = "the returned value";
+                            Value::Struct(self.struct_value(value, id, context, return_pos)?)
+                        }
+                        _ => {
+                            let value = self.rvalue(value)?;
+                            Value::Reg(self.coerce(value, &ret, "the returned value")?)
+                        }
+                    };
                     body.append(&mut self.pending);
                     Some(value)
                 }
@@ -4381,16 +5162,22 @@ impl Elaborator<'_, '_> {
         self.pending = saved_pending;
         let (body, value) = result?;
         if library_call {
-            return self.library_call(
-                function,
-                &function.name.name,
-                bound,
-                setup,
-                body,
-                value,
-                ret,
-                pos,
-            );
+            let value = value.map(|value| match value {
+                Value::Reg(value) => value,
+                _ => unreachable!("a library result is one register's"),
+            });
+            return self
+                .library_call(
+                    function,
+                    &function.name.name,
+                    bound,
+                    setup,
+                    body,
+                    value,
+                    ret,
+                    pos,
+                )
+                .map(|value| value.map(Value::Reg));
         }
         self.pending.extend(setup);
         self.pending.extend(body);

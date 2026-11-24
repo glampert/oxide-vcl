@@ -1,0 +1,5 @@
+input.vusl(2): error: constant 'kIdentity' is a mat4: constants are int16, float, bool or vectors
+   2 | const mat4 kIdentity = mat4(vec4(1.0, 0.0, 0.0, 0.0), vec4(0.0, 1.0, 0.0, 0.0),
+     |            ^^^^^^^^^
+     = help: build the value in a variable: a matrix from vector constants with mat4(...), a struct with its constructor
+oxide-vusl: 1 error; no output written

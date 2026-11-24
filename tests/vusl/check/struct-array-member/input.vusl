@@ -1,0 +1,7 @@
+struct Strip { vec4 corners[4]; };
+struct Block { Strip strip; vec4 out0; };
+void main(layout(address = 0) inout Block block)
+{
+    Strip strip = block.strip;
+    block.out0 = strip.corners[0];
+}

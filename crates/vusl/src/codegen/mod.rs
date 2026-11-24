@@ -262,7 +262,7 @@ fn bit_read_locals(program: &Program) -> Vec<bool> {
                 expr(lhs, read);
                 expr(rhs, read);
             }
-            ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
+            ExprKind::Call { args, .. } | ExprKind::Construct(args) | ExprKind::Columns(args) => {
                 for arg in args {
                     expr(arg, read);
                 }
@@ -344,35 +344,6 @@ fn bit_read_locals(program: &Program) -> Vec<bool> {
         }
         if !grew {
             return marked;
-        }
-    }
-}
-
-/// Whether `expr` reads local `id`.
-fn reads_local(expr: &Expr, id: LocalId) -> bool {
-    match &expr.kind {
-        ExprKind::Local(local) => *local == id,
-        ExprKind::Const(_) => false,
-        ExprKind::Load(place) | ExprKind::Address(place) => {
-            place.base == Base::Ref(id)
-                || place
-                    .offset
-                    .indices
-                    .iter()
-                    .any(|(index, _)| reads_local(index, id))
-        }
-        ExprKind::RefTo { address, .. } => reads_local(address, id),
-        ExprKind::Swizzle { base, .. }
-        | ExprKind::Neg(base)
-        | ExprKind::Not(base)
-        | ExprKind::Convert { operand: base, .. }
-        | ExprKind::Column { matrix: base, .. } => reads_local(base, id),
-        ExprKind::Binary { lhs, rhs, .. }
-        | ExprKind::Compare { lhs, rhs, .. }
-        | ExprKind::And(lhs, rhs)
-        | ExprKind::Or(lhs, rhs) => reads_local(lhs, id) || reads_local(rhs, id),
-        ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
-            args.iter().any(|arg| reads_local(arg, id))
         }
     }
 }
@@ -1988,9 +1959,22 @@ impl Lowering<'_> {
                 let regs = self.local_mat(id, size);
                 match column {
                     None => {
-                        let values = self.mat_into(value, Some(&regs))?;
+                        // A value that reads the matrix itself is built
+                        // apart, then moved: `m = mat4(m[1], m[0], ...)`.
+                        let dest = (!value.reads_local(id)).then_some(regs.as_slice());
+                        let mut values = self.mat_into(value, dest)?;
                         let lanes = Placement::identity(usize::from(size).min(4));
                         let mask = Self::mask(&lanes);
+                        // A column that is another column's register is
+                        // saved before the moves overwrite it.
+                        for index in 0..values.len() {
+                            if values[index] != regs[index] && regs.contains(&values[index]) {
+                                let saved = self.out.vf("column");
+                                let names = [self.name(saved), self.name(values[index])];
+                                self.out.inst("move", Some(&mask), &names);
+                                values[index] = saved;
+                            }
+                        }
                         for (reg, value) in regs.iter().zip(values) {
                             if *reg != value {
                                 let names = [self.name(*reg), self.name(value)];
@@ -2043,7 +2027,7 @@ impl Lowering<'_> {
                 // A constructor writes its result a lane at a time, so it
                 // must not read the register it writes.
                 let unsafe_direct =
-                    matches!(value.kind, ExprKind::Construct(_)) && reads_local(value, id);
+                    matches!(value.kind, ExprKind::Construct(_)) && value.reads_local(id);
                 let result = if unsafe_direct {
                     self.vf(value)?
                 } else {
@@ -3523,6 +3507,30 @@ impl Lowering<'_> {
                         let operands = [target, self.name(qword), self.out.field(weight, lane)];
                         self.out.inst(mnemonic, Some(&mask), &operands);
                     }
+                    regs.push(reg);
+                }
+                Ok(regs)
+            }
+            ExprKind::Columns(parts) => {
+                // Each stored qword in its register: a part already in
+                // those lanes is used where it is, unless a register was
+                // asked for.
+                let mut regs = Vec::new();
+                for (index, part) in parts.iter().enumerate() {
+                    let reg = dest.map(|dest| dest[index]);
+                    let value = match reg {
+                        Some(reg) if part.placement == Some(lanes) => {
+                            self.vf_into(part, Some(reg))?
+                        }
+                        Some(reg) => self.vf_toward(part, reg, lanes)?,
+                        None => self.vf(part)?,
+                    };
+                    if reg.is_none() && value.placement == lanes {
+                        regs.push(value.reg);
+                        continue;
+                    }
+                    let reg = reg.unwrap_or_else(|| self.out.vf("column"));
+                    self.write_lanes(value, reg, lanes, part.ty.is_raw())?;
                     regs.push(reg);
                 }
                 Ok(regs)

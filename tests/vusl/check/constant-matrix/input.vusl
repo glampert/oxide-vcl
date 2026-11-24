@@ -1,0 +1,7 @@
+struct Block { vec4 a; vec4 out0; };
+const mat4 kIdentity = mat4(vec4(1.0, 0.0, 0.0, 0.0), vec4(0.0, 1.0, 0.0, 0.0),
+                            vec4(0.0, 0.0, 1.0, 0.0), vec4(0.0, 0.0, 0.0, 1.0));
+void main(layout(address = 0) inout Block block)
+{
+    block.out0 = kIdentity * block.a;
+}

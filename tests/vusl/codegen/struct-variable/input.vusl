@@ -1,0 +1,21 @@
+// A struct variable is a variable per member, each in its struct lanes:
+// a function returns a vertex built from its parts, and storing it moves
+// nothing. The transformed position is computed where it is stored, and
+// the colour's load goes straight to its store.
+struct Vertex { vec4 position; layout(lane = w) uint32 color; };
+struct Batch {
+    mat4 transform;
+    Vertex source;
+    Vertex target;
+};
+
+Vertex transformed(Vertex vertex, mat4 by)
+{
+    return Vertex(by * vertex.position, vertex.color);
+}
+
+void main(layout(address = 0) inout Batch batch)
+{
+    Vertex vertex = transformed(batch.source, batch.transform);
+    batch.target = vertex;
+}

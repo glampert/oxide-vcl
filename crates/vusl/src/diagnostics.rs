@@ -30,6 +30,16 @@ pub enum VuslMessage {
     BadMode {
         value: String,
     },
+    /// `--opt=` or `--no-opt=` naming something that is not an oxide-vcl
+    /// optimization; `name` is empty for an empty list.
+    BadOptimization {
+        argument: String,
+        name: String,
+    },
+    /// `--opt=` or `--no-opt=` with `--mode=vcl`, which never optimizes.
+    OptimizationsNeedOxideMode {
+        argument: String,
+    },
     /// `-D` with something other than `NAME` or `NAME=VALUE`, or naming a
     /// built-in macro.
     BadDefine {
@@ -314,6 +324,30 @@ pub enum VuslMessage {
     RangeNotArray {
         found: String,
     },
+    /// A type with no constructor: `qword(...)`, `bool(...)`.
+    NoConstructor {
+        ty: String,
+        help: &'static str,
+    },
+    /// A function with statements called on the right of `&&` or `||`,
+    /// whose statements a false or true left side would have to skip.
+    CallInShortCircuit {
+        name: String,
+    },
+    /// A whole-memory copy of an array whose length is read at run time.
+    CopyLengthAtRunTime {
+        name: String,
+    },
+    /// A constant of a type constants cannot have.
+    ConstantType {
+        name: String,
+        ty: String,
+    },
+    /// A struct variable of a struct with an array member.
+    StructArrayMember {
+        ty: String,
+        member: String,
+    },
     /// A first range whose length is open.
     RangeOpen,
     /// Ranges of different lengths.
@@ -344,6 +378,8 @@ impl VuslMessage {
                 | MissingValue { .. }
                 | BadColor { .. }
                 | BadMode { .. }
+                | BadOptimization { .. }
+                | OptimizationsNeedOxideMode { .. }
                 | BadDefine { .. }
                 | NoInput
                 | ExtraInput { .. }
@@ -373,6 +409,22 @@ fn dynamic_help(message: &VuslMessage) -> Option<String> {
             _ => None,
         },
         BadPragma { name, expected } => Some(format!("write #pragma {name}{expected}")),
+        CallInShortCircuit { name } => Some(format!(
+            "call it before the condition and test its result: float result = {name}(...);"
+        )),
+        BadOptimization { argument, .. } => {
+            let option = argument
+                .split_once('=')
+                .map_or(argument.as_str(), |(option, _)| option);
+            let names: Vec<_> = vcl::Optimization::ALL
+                .iter()
+                .map(|optimization| optimization.name())
+                .collect();
+            Some(format!(
+                "use {option}=all, {option}=none, or a comma-separated list of: {}",
+                names.join(", ")
+            ))
+        }
         LaneMismatch { .. } => Some(
             "assign one of them to a variable declared with layout(lane = ...), which moves \
              its lanes"
@@ -404,6 +456,21 @@ fn wording(message: &VuslMessage) -> Wording {
             format!("unknown --mode value '{value}'"),
             None,
             Some("use --mode=oxide (the default) or --mode=vcl"),
+        ),
+        BadOptimization { argument, name } => {
+            let option = argument
+                .split_once('=')
+                .map_or(argument.as_str(), |(option, _)| option);
+            if name.is_empty() {
+                plain(format!("{option}= names no optimization"))
+            } else {
+                plain(format!("unknown optimization '{name}'"))
+            }
+        }
+        OptimizationsNeedOxideMode { argument } => (
+            format!("{argument} applies only in oxide mode"),
+            None,
+            Some("drop --mode=vcl, which compiles the generated VCL without optimizations"),
         ),
         BadDefine { argument } => (
             format!("can't define '{argument}'"),
@@ -659,6 +726,37 @@ fn wording(message: &VuslMessage) -> Wording {
             Some(
                 "a ref stays within one parameter member or array: use another ref for other memory",
             ),
+        ),
+        NoConstructor { ty, help } => (format!("{ty} has no constructor"), None, Some(help)),
+        CallInShortCircuit { name } => (
+            format!(
+                "'{name}' runs statements, which the right side of && or || cannot: they would \
+                 run whatever the left side is"
+            ),
+            Some(name.clone()),
+            None,
+        ),
+        CopyLengthAtRunTime { name } => (
+            format!("copying '{name}' would need a loop: its length is read at run time"),
+            None,
+            Some(
+                "copy its elements in a range-for: for (T item : from, out T copy : to) copy = item;",
+            ),
+        ),
+        ConstantType { name, ty } => (
+            format!("constant '{name}' is a {ty}: constants are int16, float, bool or vectors"),
+            Some(name.clone()),
+            Some(
+                "build the value in a variable: a matrix from vector constants with mat4(...), \
+                 a struct with its constructor",
+            ),
+        ),
+        StructArrayMember { ty, member } => (
+            format!(
+                "a {ty} variable can't be kept in registers: its member '{member}' is an array"
+            ),
+            None,
+            Some("keep it in memory, or copy the members you need into variables"),
         ),
         UnrolledLoopLeaves => (
             "an unrolled loop cannot break or continue".into(),

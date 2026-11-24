@@ -261,6 +261,25 @@ impl Optimizations {
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
+
+    /// The optimizations an `--opt=` or `--no-opt=` list names: `all`,
+    /// `none`, or optimization names separated by commas. The error is the
+    /// first name that is none of these (empty for an empty list).
+    pub fn from_list(list: &str) -> Result<Self, String> {
+        let mut optimizations = Self::NONE;
+        for name in list.split(',') {
+            match name {
+                "all" => optimizations = optimizations.union(Self::all()),
+                "none" => {}
+                _ => {
+                    let optimization =
+                        Optimization::from_name(name).ok_or_else(|| name.to_owned())?;
+                    optimizations = optimizations.with(optimization);
+                }
+            }
+        }
+        Ok(optimizations)
+    }
 }
 
 #[cfg(test)]

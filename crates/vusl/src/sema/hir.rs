@@ -530,4 +530,88 @@ pub enum ExprKind {
         address: Box<Expr>,
         within: Within,
     },
+    /// A matrix from its stored qwords, each a vector of the matrix's
+    /// size (`mat4(c0, c1, c2, c3)`, `mat3(m)`).
+    Columns(Vec<Expr>),
+}
+
+impl Expr {
+    /// Calls `visit` on each operand.
+    pub fn each_child(&self, visit: &mut dyn FnMut(&Expr)) {
+        match &self.kind {
+            ExprKind::Const(_) | ExprKind::Local(_) | ExprKind::Load(_) | ExprKind::Address(_) => {}
+            ExprKind::Swizzle { base: one, .. }
+            | ExprKind::Neg(one)
+            | ExprKind::Not(one)
+            | ExprKind::Convert { operand: one, .. }
+            | ExprKind::Column { matrix: one, .. }
+            | ExprKind::RefTo { address: one, .. } => visit(one),
+            ExprKind::Binary { lhs, rhs, .. }
+            | ExprKind::Compare { lhs, rhs, .. }
+            | ExprKind::And(lhs, rhs)
+            | ExprKind::Or(lhs, rhs) => {
+                visit(lhs);
+                visit(rhs);
+            }
+            ExprKind::Call { args: parts, .. }
+            | ExprKind::Construct(parts)
+            | ExprKind::Columns(parts) => {
+                parts.iter().for_each(visit);
+            }
+        }
+    }
+
+    /// Calls `visit` on each operand, which it may change.
+    pub fn each_child_mut(&mut self, visit: &mut dyn FnMut(&mut Expr)) {
+        match &mut self.kind {
+            ExprKind::Const(_) | ExprKind::Local(_) | ExprKind::Load(_) | ExprKind::Address(_) => {}
+            ExprKind::Swizzle { base: one, .. }
+            | ExprKind::Neg(one)
+            | ExprKind::Not(one)
+            | ExprKind::Convert { operand: one, .. }
+            | ExprKind::Column { matrix: one, .. }
+            | ExprKind::RefTo { address: one, .. } => visit(one),
+            ExprKind::Binary { lhs, rhs, .. }
+            | ExprKind::Compare { lhs, rhs, .. }
+            | ExprKind::And(lhs, rhs)
+            | ExprKind::Or(lhs, rhs) => {
+                visit(lhs);
+                visit(rhs);
+            }
+            ExprKind::Call { args: parts, .. }
+            | ExprKind::Construct(parts)
+            | ExprKind::Columns(parts) => {
+                parts.iter_mut().for_each(visit);
+            }
+        }
+    }
+
+    /// Whether the expression reads `local`, at any depth.
+    pub fn reads_local(&self, local: LocalId) -> bool {
+        match &self.kind {
+            ExprKind::Local(id) => return *id == local,
+            ExprKind::Load(place) | ExprKind::Address(place) => {
+                return place.base == Base::Ref(local)
+                    || place
+                        .offset
+                        .indices
+                        .iter()
+                        .any(|(index, _)| index.reads_local(local));
+            }
+            _ => {}
+        }
+        let mut found = false;
+        self.each_child(&mut |child| found |= child.reads_local(local));
+        found
+    }
+
+    /// Whether the expression reads memory, at any depth.
+    pub fn loads(&self) -> bool {
+        if matches!(self.kind, ExprKind::Load(_)) {
+            return true;
+        }
+        let mut found = false;
+        self.each_child(&mut |child| found |= child.loads());
+        found
+    }
 }

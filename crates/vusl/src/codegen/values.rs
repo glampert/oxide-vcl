@@ -468,6 +468,8 @@ fn write_key(expr: &Expr, out: &mut String) -> bool {
             let refs: Vec<&Expr> = call_args.iter().collect();
             args(out, &refs)
         }
+        // A matrix is several registers: it is never shared.
+        ExprKind::Columns(_) => false,
         ExprKind::Construct(parts) => {
             out.push_str(&format!("construct{:?}", expr.ty));
             let refs: Vec<&Expr> = parts.iter().collect();
@@ -523,7 +525,7 @@ pub(super) fn element_bases(expr: &Expr, out: &mut Vec<ElementId>) {
             element_bases(lhs, out);
             element_bases(rhs, out);
         }
-        ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
+        ExprKind::Call { args, .. } | ExprKind::Construct(args) | ExprKind::Columns(args) => {
             for arg in args {
                 element_bases(arg, out);
             }
@@ -572,7 +574,7 @@ pub(super) fn inputs<'e>(expr: &'e Expr, locals: &mut Vec<LocalId>, places: &mut
             inputs(lhs, locals, places);
             inputs(rhs, locals, places);
         }
-        ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
+        ExprKind::Call { args, .. } | ExprKind::Construct(args) | ExprKind::Columns(args) => {
             for arg in args {
                 inputs(arg, locals, places);
             }
@@ -715,7 +717,7 @@ impl Invariants<'_> {
                 self.expr(lhs, out);
                 self.expr(rhs, out);
             }
-            ExprKind::Call { args, .. } | ExprKind::Construct(args) => {
+            ExprKind::Call { args, .. } | ExprKind::Construct(args) | ExprKind::Columns(args) => {
                 for arg in args {
                     self.expr(arg, out);
                 }
@@ -774,6 +776,8 @@ impl Invariants<'_> {
                 ) && args.iter().all(|arg| self.invariant(arg))
             }
             ExprKind::Construct(args) => args.iter().all(|arg| self.invariant(arg)),
+            // A matrix is not kept in registers across a loop.
+            ExprKind::Columns(_) => false,
             ExprKind::Compare { .. } | ExprKind::Not(_) | ExprKind::And(..) | ExprKind::Or(..) => {
                 false
             }

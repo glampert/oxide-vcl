@@ -1,0 +1,4 @@
+input.vusl(10): error: library parameter 'pair' needs memory, not a struct variable in registers
+   10 |     block.out0 = sum(local);
+      |                  ^
+oxide-vusl: 1 error; no output written

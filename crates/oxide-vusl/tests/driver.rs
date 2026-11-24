@@ -213,6 +213,54 @@ fn programs_check_and_compile() {
 }
 
 #[test]
+fn optimizations_are_chosen_on_the_command_line() {
+    let program = |pragma: &str| {
+        format!(
+            "struct Batch {{\n\
+             \x20   layout(lane = w) int16 count;\n\
+             \x20   vec4 scale;\n\
+             \x20   vec4 items[count];\n\
+             }};\n\
+             void main(layout(address = 0) inout Batch batch)\n\
+             {{\n\
+             {pragma}\
+             \x20   for (inout vec4 item : batch.items)\n\
+             \x20       item = item * batch.scale;\n\
+             }}\n"
+        )
+    };
+    let pipelined = |name: &str, arguments: &[&str], pragma: &str| {
+        let source = program(pragma);
+        let result = run(name, arguments, &[("p.vusl", source.as_str())]);
+        assert_eq!((result.status, result.stderr.as_str()), (0, ""), "{name}");
+        result.stdout.contains("__MAIN_LOOP")
+    };
+    // oxide-vcl's loops optimization pipelines a loop without a pragma...
+    assert!(pipelined("opt-default", &["p.vusl"], ""));
+    assert!(!pipelined(
+        "opt-no-loops",
+        &["--no-opt=loops", "p.vusl"],
+        ""
+    ));
+    assert!(!pipelined("opt-none", &["--opt=none", "p.vusl"], ""));
+    // ...and a pipeline pragma asks for it whatever the options say.
+    let pragma = "    #pragma pipeline(min = 1)\n";
+    assert!(pipelined(
+        "opt-pragma",
+        &["--no-opt=loops", "p.vusl"],
+        pragma
+    ));
+
+    let result = run("opt-vcl", &["--mode=vcl", "--opt=all", "p.vusl"], &[]);
+    assert_eq!(result.status, 2);
+    assert_eq!(
+        result.stderr,
+        "oxide-vusl: error: --opt=all applies only in oxide mode\n  \
+         = help: drop --mode=vcl, which compiles the generated VCL without optimizations\n"
+    );
+}
+
+#[test]
 fn check_errors_name_the_line_in_the_included_file() {
     let files = [
         ("p.vusl", "#include \"lib.vush\"\nvoid main() {}\n"),

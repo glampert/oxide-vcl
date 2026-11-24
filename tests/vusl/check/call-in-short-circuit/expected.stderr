@@ -1,0 +1,5 @@
+input.vusl(9): error: 'twice' runs statements, which the right side of && or || cannot: they would run whatever the left side is
+   9 |     if (block.a.x > 0.0 && twice(block.b.x) > 1.0)
+     |                            ^^^^^
+     = help: call it before the condition and test its result: float result = twice(...);
+oxide-vusl: 1 error; no output written

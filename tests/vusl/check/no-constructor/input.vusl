@@ -1,0 +1,5 @@
+struct Block { vec4 a; qword tag; };
+void main(layout(address = 0) inout Block block)
+{
+    block.tag = qword(block.a);
+}

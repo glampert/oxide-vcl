@@ -66,7 +66,10 @@ table before them ([libraries](#libraries)).
 
 Inlining is by substitution: a function's parameters are symbols in a scope of their own.
 
-- A struct parameter is memory, the caller's place with the parameter's access.
+- A struct parameter given memory is memory, the caller's place with the parameter's access.
+- A struct parameter given a struct variable is that variable (`Symbol::Struct`), except an `in`
+  parameter that the body or another argument changes, which is a copy. Given a struct value (a
+  constructor, a call), an `in` parameter is a new struct variable set from it.
 - An `out` or `inout` value parameter is an alias of the caller's target.
 - An `in` parameter is:
   - a constant, when the argument is one and the body never assigns the parameter, so that
@@ -75,6 +78,15 @@ Inlining is by substitution: a function's parameters are symbols in a scope of t
     parameter, no `out` or `inout` argument of the call names the local, and it is not refreshed
     by a yield;
   - otherwise a new local, set from the argument.
+
+A struct variable is a `StructLocal`: one local per member, named `variable.member`, fixed in the
+member's lanes in memory, or a `StructLocal` for a struct member. The checked program has no
+struct values. A struct value during elaboration (`Value::Struct`, from a constructor, a variable
+or memory read, or a function's result) is one expression per member, and an assignment or store
+of one becomes one per member. A member's value that reads a member the same assignment sets
+earlier goes through a new local first, and so does one that loads memory, before a store's first
+member. Vector constants (`Symbol::Vector`) are their constructor, substituted at each use. A
+matrix from columns is `ExprKind::Columns`, whose parts codegen puts in the matrix's registers.
 
 Each local carries, as the walk goes, the placement of its value and which components are set.
 Paths that join must agree on placements, except for `layout(lane = ...)` locals, whose every
@@ -308,6 +320,8 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `clip-adc` | The guard-band judgement (`mul`, `clipw`) and ADC (`fcand`, `iaddiu 0x7fff`) |
 | `fold-zero-negation` | The first clipper's plane distance: `0.0 + pos.w`, a copy its next statement overwrites, and `d + jn.z` with `jn = -jp`, folded to `mul.w` and `sub.w` in lane w |
 | `loop-constants` | An `int16` mask in a loop with a branch, made once before it; a constant assigned to a local stays in the loop |
+| `struct-variable` | A vertex returned by a function and stored: each member computed in its own lanes and stored with no move |
+| `matrix-columns` | `mat4` from four columns, each loaded into the matrix's registers, and `mat3` of a `mat4` as three `lq.xyz` |
 | `clip-function` | `clip-adc` with each judgement returned by a function: the same code, since a `clipflags` result names its `clipw` |
 | `bool-any` | Whether any vertex is outside, as `fcand` and `ior` into a bool |
 | `color-pack` | A colour clamped and packed: `max`, `mini`, `ftoi0` |

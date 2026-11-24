@@ -1,0 +1,9 @@
+struct Batch {
+    layout(lane = w) int16 count;
+    vec4 items[count];
+    vec4 copies[count];
+};
+void main(layout(address = 0) inout Batch batch)
+{
+    batch.copies = batch.items;
+}

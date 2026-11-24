@@ -86,6 +86,14 @@ fn define(argument: &str) -> Option<(String, String)> {
     (is_identifier(name) && !reserved).then(|| (name.to_string(), value.to_string()))
 }
 
+/// The oxide-vcl optimizations `list`, the value of `argument`, names.
+fn optimizations(argument: &str, list: &str) -> Result<vcl::Optimizations, VuslMessage> {
+    vcl::Optimizations::from_list(list).map_err(|name| VuslMessage::BadOptimization {
+        argument: argument.to_string(),
+        name,
+    })
+}
+
 /// Parses the arguments after the program's name.
 pub fn parse<I, S>(arguments: I) -> Result<Arguments, CliError>
 where
@@ -109,6 +117,9 @@ where
         color,
         ..Arguments::default()
     };
+    // The first --opt= or --no-opt=, which --mode=vcl rejects wherever it
+    // comes on the line.
+    let mut optimization_argument = None;
     let mut rest = arguments.into_iter();
     while let Some(argument) = rest.next() {
         // An option's value: the rest of the argument, or the next one.
@@ -146,6 +157,16 @@ where
                         }));
                     };
                     parsed.compile.mode = mode;
+                } else if let Some(list) = argument.strip_prefix("--opt=") {
+                    let chosen = optimizations(&argument, list).map_err(fail)?;
+                    let earlier = parsed.compile.optimizations.unwrap_or_default();
+                    parsed.compile.optimizations = Some(earlier.union(chosen));
+                    optimization_argument.get_or_insert(argument);
+                } else if let Some(list) = argument.strip_prefix("--no-opt=") {
+                    let disabled = optimizations(&argument, list).map_err(fail)?;
+                    let compile = &mut parsed.compile;
+                    compile.disabled_optimizations = compile.disabled_optimizations.union(disabled);
+                    optimization_argument.get_or_insert(argument);
                 } else if let Some(path) = argument.strip_prefix("--reflect=") {
                     parsed.reflect = Some(path.to_string());
                 } else if let Some(path) = argument.strip_prefix("--header=") {
@@ -176,6 +197,11 @@ where
                 }
             }
         }
+    }
+    if let Some(argument) = optimization_argument
+        && parsed.compile.mode != vcl::Mode::Oxide
+    {
+        return Err(fail(VuslMessage::OptimizationsNeedOxideMode { argument }));
     }
     if parsed.input.is_none() && !parsed.help && !parsed.version {
         return Err(fail(VuslMessage::NoInput));
@@ -240,6 +266,62 @@ mod tests {
         assert_eq!(parse(["p.vusl"]).unwrap().compile.mode, vcl::Mode::Oxide);
         assert!(parse(["--help"]).unwrap().help);
         assert!(parse(["-v"]).unwrap().version);
+    }
+
+    #[test]
+    fn optimizations_pass_through_to_oxide_vcl() {
+        use vcl::{Optimization, Optimizations};
+        let enabled = |arguments: &[&str]| {
+            let compile = parse(arguments.iter().copied()).unwrap().compile;
+            vcl::Options {
+                mode: compile.mode,
+                optimizations: compile.optimizations,
+                disabled_optimizations: compile.disabled_optimizations,
+                ..vcl::Options::default()
+            }
+            .enabled_optimizations()
+        };
+        let all = Optimizations::all();
+        assert_eq!(enabled(&["p.vusl"]), all);
+        let without_loops = all.without(Optimizations::NONE.with(Optimization::Loops));
+        assert_eq!(enabled(&["--no-opt=loops", "p.vusl"]), without_loops);
+        // --no-opt= takes names off whatever --opt= chose, in either order.
+        let unswitch = Optimizations::NONE.with(Optimization::Unswitch);
+        assert_eq!(
+            enabled(&["--opt=unswitch,exit", "--no-opt=exit", "p.vusl"]),
+            unswitch
+        );
+        assert_eq!(
+            enabled(&["--no-opt=exit", "--opt=exit,unswitch", "p.vusl"]),
+            unswitch
+        );
+        assert_eq!(enabled(&["--opt=none", "p.vusl"]), Optimizations::NONE);
+        assert_eq!(enabled(&["--no-opt=all", "p.vusl"]), Optimizations::NONE);
+        for (argument, name) in [
+            ("--opt=fast", "fast"),
+            ("--no-opt=", ""),
+            ("--opt=all,", ""),
+        ] {
+            rejects(
+                &[argument, "p.vusl"],
+                VuslMessage::BadOptimization {
+                    argument: argument.into(),
+                    name: name.into(),
+                },
+            );
+        }
+        // vcl mode never optimizes, wherever --mode= comes.
+        for arguments in [
+            &["--mode=vcl", "--no-opt=loops", "p.vusl"][..],
+            &["--no-opt=loops", "--mode=vcl", "p.vusl"],
+        ] {
+            rejects(
+                arguments,
+                VuslMessage::OptimizationsNeedOxideMode {
+                    argument: "--no-opt=loops".into(),
+                },
+            );
+        }
     }
 
     #[test]

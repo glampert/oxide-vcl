@@ -660,6 +660,13 @@ impl Interpreter<'_, '_> {
                 operand,
             } => self.convert(*conversion, operand)?,
             ExprKind::Column { matrix, index } => Value::Vf(self.mat(matrix)?[*index].clone()),
+            ExprKind::Columns(parts) => {
+                let mut qwords = Vec::new();
+                for part in parts {
+                    qwords.push(self.vf(part)?);
+                }
+                Value::Mat(qwords)
+            }
         })
     }
 

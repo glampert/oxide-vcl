@@ -1,0 +1,5 @@
+input.vusl(4): error: qword has no constructor
+   4 |     block.tag = qword(block.a);
+     |                 ^
+     = help: a qword is raw memory: copy one from a struct member, or set its lanes (.x to .w) as int16
+oxide-vusl: 1 error; no output written

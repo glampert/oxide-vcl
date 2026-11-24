@@ -1,0 +1,19 @@
+// mat4 from four columns loads each straight into the matrix's registers,
+// and mat3(m) is the first three stored qwords' xyz: three masked loads.
+struct Frame {
+    vec4 right;
+    vec4 up;
+    vec4 forward;
+    vec4 origin;
+    mat4 model;
+};
+struct Batch { vec4 point; vec4 placed; vec3 turned; float pad; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 8) inout Batch batch)
+{
+    mat4 view = mat4(frame.right, frame.up, frame.forward, frame.origin);
+    batch.placed = view * batch.point;
+    mat3 rotation = mat3(frame.model);
+    batch.turned = rotation * batch.point.xyz;
+}

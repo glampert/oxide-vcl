@@ -144,8 +144,9 @@ impl Checked {
     }
 }
 
-/// Compiles generated VCL with `vcl`, in `options.mode`, its generated
-/// labels prefixed with the program's name.
+/// Compiles generated VCL with `vcl`, in `options.mode` and with the
+/// optimizations `options` chooses, its generated labels prefixed with the
+/// program's name.
 pub fn assemble(
     vcl: &Vcl,
     program: &str,
@@ -153,6 +154,8 @@ pub fn assemble(
 ) -> Result<vcl::Compiled, Vec<vcl::CompileError>> {
     let vcl_options = vcl::Options {
         mode: options.mode,
+        optimizations: options.optimizations,
+        disabled_optimizations: options.disabled_optimizations,
         unique: Some(program.to_string()),
         ..vcl::Options::default()
     };

@@ -188,7 +188,7 @@ impl Folder<'_> {
                     self.expr(arg);
                 }
             }
-            ExprKind::Construct(parts) => {
+            ExprKind::Construct(parts) | ExprKind::Columns(parts) => {
                 for part in parts {
                     self.expr(part);
                 }
@@ -436,7 +436,7 @@ fn merged_copy(first: &Stmt, second: &Stmt, locals: &[Local], bits_read: &[bool]
 /// How many times `expr` reads `local`.
 fn mentions(expr: &Expr, local: LocalId) -> usize {
     let mut count = usize::from(matches!(expr.kind, ExprKind::Local(id) if id == local));
-    each_child(expr, &mut |child| count += mentions(child, local));
+    expr.each_child(&mut |child| count += mentions(child, local));
     count
 }
 
@@ -449,7 +449,7 @@ fn under_swizzle(expr: &Expr, local: LocalId) -> bool {
         return true;
     }
     let mut found = false;
-    each_child(expr, &mut |child| found |= under_swizzle(child, local));
+    expr.each_child(&mut |child| found |= under_swizzle(child, local));
     found
 }
 
@@ -459,51 +459,7 @@ fn substitute(expr: &mut Expr, local: LocalId, value: &Expr) {
         *expr = value.clone();
         return;
     }
-    each_child_mut(expr, &mut |child| substitute(child, local, value));
-}
-
-fn each_child(expr: &Expr, visit: &mut dyn FnMut(&Expr)) {
-    match &expr.kind {
-        ExprKind::Const(_) | ExprKind::Local(_) | ExprKind::Load(_) | ExprKind::Address(_) => {}
-        ExprKind::Swizzle { base: one, .. }
-        | ExprKind::Neg(one)
-        | ExprKind::Not(one)
-        | ExprKind::Convert { operand: one, .. }
-        | ExprKind::Column { matrix: one, .. }
-        | ExprKind::RefTo { address: one, .. } => visit(one),
-        ExprKind::Binary { lhs, rhs, .. }
-        | ExprKind::Compare { lhs, rhs, .. }
-        | ExprKind::And(lhs, rhs)
-        | ExprKind::Or(lhs, rhs) => {
-            visit(lhs);
-            visit(rhs);
-        }
-        ExprKind::Call { args: parts, .. } | ExprKind::Construct(parts) => {
-            parts.iter().for_each(visit);
-        }
-    }
-}
-
-fn each_child_mut(expr: &mut Expr, visit: &mut dyn FnMut(&mut Expr)) {
-    match &mut expr.kind {
-        ExprKind::Const(_) | ExprKind::Local(_) | ExprKind::Load(_) | ExprKind::Address(_) => {}
-        ExprKind::Swizzle { base: one, .. }
-        | ExprKind::Neg(one)
-        | ExprKind::Not(one)
-        | ExprKind::Convert { operand: one, .. }
-        | ExprKind::Column { matrix: one, .. }
-        | ExprKind::RefTo { address: one, .. } => visit(one),
-        ExprKind::Binary { lhs, rhs, .. }
-        | ExprKind::Compare { lhs, rhs, .. }
-        | ExprKind::And(lhs, rhs)
-        | ExprKind::Or(lhs, rhs) => {
-            visit(lhs);
-            visit(rhs);
-        }
-        ExprKind::Call { args: parts, .. } | ExprKind::Construct(parts) => {
-            parts.iter_mut().for_each(visit);
-        }
-    }
+    expr.each_child_mut(&mut |child| substitute(child, local, value));
 }
 
 /// Whether `stmts` call a library, at any depth: a call may set locals

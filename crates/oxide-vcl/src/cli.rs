@@ -246,7 +246,7 @@ where
                     options,
                 ));
             }
-            match parse_optimizations(list) {
+            match vcl::Optimizations::from_list(list) {
                 Ok(chosen) if enable => {
                     let earlier = options
                         .compile
@@ -439,25 +439,6 @@ fn parse_fixes(list: &str) -> Result<vcl::Fixes, String> {
         }
     }
     Ok(fixes)
-}
-
-/// The optimizations an `--opt=` or `--no-opt=` list names: `all`, `none`, or optimization
-/// names separated by commas. The error is the first name that is none of
-/// these (empty for an empty list).
-fn parse_optimizations(list: &str) -> Result<vcl::Optimizations, String> {
-    let mut optimizations = vcl::Optimizations::NONE;
-    for name in list.split(',') {
-        match name {
-            "all" => optimizations = optimizations.union(vcl::Optimizations::all()),
-            "none" => {}
-            _ => {
-                let optimization =
-                    vcl::Optimization::from_name(name).ok_or_else(|| name.to_owned())?;
-                optimizations = optimizations.with(optimization);
-            }
-        }
-    }
-    Ok(optimizations)
 }
 
 /// i386 glibc `strtol(value, NULL, 10)`: whitespace/sign, a decimal prefix,
