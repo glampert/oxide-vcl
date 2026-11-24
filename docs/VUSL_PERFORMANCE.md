@@ -45,22 +45,22 @@ scene.
 | Program | Instructions (VUSL / hand-written) | Scene | Cycles (VUSL) | Cycles (hand-written) | Change |
 |---|---|---|---:|---:|---:|
 | quake2 particles | 113 / 114 | burst | 1020 | 1189 | −14.2% |
-| quake2 textured_triangles | 1198 / 1212 | world wall | 1801 | 2805 | −35.8% |
-| | | world floor | 16172 | 16768 | −3.6% |
-| | | model | 1223 | 1578 | −22.5% |
-| | | model near | 3630 | 3786 | −4.1% |
-| doom3 world_strips | 369 + 474 / 695 | wall | 2190 | 3896 | −43.8% |
-| | | floor | 47304 | 47371 | −0.1% |
-| | | side | 18135 | 19314 | −6.1% |
-| doom3 world_lm | 647 + 474 / 1019 | wall | 2152 | 2259 | −4.7% |
+| quake2 textured_triangles | 1147 / 1212 | world wall | 1801 | 2805 | −35.8% |
+| | | world floor | 13750 | 16768 | −18.0% |
+| | | model | 1211 | 1578 | −23.3% |
+| | | model near | 3228 | 3786 | −14.7% |
+| doom3 world_strips | 369 + 433 / 695 | wall | 2190 | 3896 | −43.8% |
+| | | floor | 40536 | 47371 | −14.4% |
+| | | side | 15935 | 19314 | −17.5% |
+| doom3 world_lm | 647 + 433 / 1019 | wall | 2152 | 2259 | −4.7% |
 | | | wall lit | 3189 | 3476 | −8.3% |
-| | | floor | 47724 | 46153 | +3.4% |
-| | | floor lit | 94390 | 91197 | +3.5% |
-| | | side | 18491 | 18224 | +1.5% |
-| | | side lit | 35988 | 35403 | +1.7% |
+| | | floor | 40956 | 46153 | −11.3% |
+| | | floor lit | 80854 | 91197 | −11.3% |
+| | | side | 16291 | 18224 | −10.6% |
+| | | side lit | 31588 | 35403 | −10.8% |
 
-The doom3 programs' 474 is the clipper library, resident at 1536 and shared: the two programs and
-the library take 1,490 instructions, the two hand-written programs 1,714.
+The doom3 programs' 433 is the clipper library, resident at 1536 and shared: the two programs and
+the library take 1,449 instructions, the two hand-written programs 1,714.
 
 ## Where the differences come from
 
@@ -71,9 +71,12 @@ the library take 1,490 instructions, the two hand-written programs 1,714.
   - The colour mode and the batch format stay in registers for the whole triangle loop. vcl
     unswitches the loop on both, so each of its four copies tests neither per triangle. The slow
     path (`if (slow)`: seeding the clipper, the warp, the clipping passes and the fan) is one copy
-    that all four share, which keeps the program near the hand-written one's size; copied four
-    times it would be 1,806 instructions.
+    that all four share, which keeps the program near the hand-written one's size.
   - The input stride is chosen once.
+  - The cull and the clipping passes test a sign as a float compare against -1/16, exactly what
+    FTOI4 of the value clamped to [-1, 1] gives (FTOI4 truncates, so it is negative only from
+    -1/16 down). The compare reads the MAC flags; the original's clamp, FTOI4 and MTIR chain is
+    longer.
   - A packed colour is stored from the register its corner was loaded into (`floatBitsToUint`),
     as the original stores it. The clipper keeps a cut's packed colour the same way.
   - The original loads its twelve light qwords again for every triangle and keeps its window
@@ -88,7 +91,8 @@ the library take 1,490 instructions, the two hand-written programs 1,714.
 - **world_lm.**
   - Its strip path and transform loop gain as world_strips' do; the scenes that clip pay for the
     library call.
-- **The clipper library.** Each call costs the argument and result moves, the JALR and the entry
+- **The clipper library.** Its passes test signs as textured_triangles' do, and a plane's
+  distance is `w` scaled less or plus the plane's coordinate, with no negated copy. Each call costs the argument and result moves, the JALR and the entry
   table's branch, the library's saves and restores of VI06–VI09 and VF16–VF23, the JR, and the
   scheduling that cannot cross the call. The clipper's pass is an argument, where an inlined
   clipper folds it. A call may change VI10–VI15 and VI01, so what crosses it must fit in VI02–VI09;

@@ -252,28 +252,79 @@ fn compile_library(
 }
 
 /// `program`'s VCL compiled, as [`compile`] describes.
+///
+/// The first attempt keeps up to [`HOIST_LIMITS`]`[0]` invariants in
+/// registers. When its result keeps values in memory or runs out of
+/// registers, the other limits are compiled at the same time, and their
+/// results are taken in order as if they had been tried one after another.
 fn compile_program(
     checked: &Checked,
     program: &sema::hir::Program,
     options: &Options,
 ) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
-    let mut failure = None;
-    let mut best: Option<(Vcl, vcl::Compiled)> = None;
-    for hoist_limit in HOIST_LIMITS {
+    let attempt = |hoist_limit| -> Result<Attempt, Box<CompileFailure>> {
         let vcl = checked
             .generate_program(program, codegen::Settings { hoist_limit })
             .map_err(|failure| Box::new(CompileFailure::Generate(failure)))?;
-        match assemble(&vcl, &program.name, options) {
+        let result = assemble(&vcl, &program.name, options);
+        Ok((vcl, result))
+    };
+    let mut choice = Choice::default();
+    if choice.consider(attempt(HOIST_LIMITS[0])?) {
+        let others: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = HOIST_LIMITS[1..]
+                .iter()
+                .map(|&hoist_limit| scope.spawn(move || attempt(hoist_limit)))
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .collect()
+        });
+        for other in others {
+            if !choice.consider(other?) {
+                break;
+            }
+        }
+    }
+    match choice.best {
+        Some(compiled) => Ok(compiled),
+        None => Err(Box::new(choice.failure.expect("at least one attempt"))),
+    }
+}
+
+/// One hoist limit's VCL and what vcl made of it.
+type Attempt = (Vcl, Result<vcl::Compiled, Vec<vcl::CompileError>>);
+
+/// The attempts considered so far: the result with the fewest values kept in
+/// memory, the first of equals, and the last failure.
+#[derive(Default)]
+struct Choice {
+    best: Option<(Vcl, vcl::Compiled)>,
+    failure: Option<CompileFailure>,
+}
+
+impl Choice {
+    /// Takes one attempt into account; false when no later one can be
+    /// chosen.
+    fn consider(&mut self, (vcl, result): Attempt) -> bool {
+        match result {
             Ok(compiled) => {
-                let fewer = best
+                let fewer = self
+                    .best
                     .as_ref()
                     .is_none_or(|(_, kept)| spills(&compiled) < spills(kept));
                 if fewer {
-                    best = Some((vcl, compiled));
+                    self.best = Some((vcl, compiled));
                 }
-                if best.as_ref().is_some_and(|(_, kept)| spills(kept) == 0) {
-                    break;
-                }
+                !self
+                    .best
+                    .as_ref()
+                    .is_some_and(|(_, kept)| spills(kept) == 0)
             }
             Err(errors) => {
                 let out_of_registers = errors.iter().any(|error| {
@@ -285,17 +336,11 @@ fn compile_program(
                         )
                     )
                 });
-                let done = !out_of_registers || best.is_some();
-                failure = Some(CompileFailure::Vcl { vcl, errors });
-                if done {
-                    break;
-                }
+                let done = !out_of_registers || self.best.is_some();
+                self.failure = Some(CompileFailure::Vcl { vcl, errors });
+                !done
             }
         }
-    }
-    match best {
-        Some(compiled) => Ok(compiled),
-        None => Err(Box::new(failure.expect("at least one attempt"))),
     }
 }
 

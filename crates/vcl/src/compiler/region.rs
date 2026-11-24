@@ -80,7 +80,6 @@ fn compile_hinted_region(
 #[derive(Clone, Copy)]
 pub(super) struct CandidateOptions {
     pub(super) strategy: Option<schedule::Strategy>,
-    pub(super) normal_loops: bool,
 }
 
 pub(super) fn compile_region_round(
@@ -92,15 +91,15 @@ pub(super) fn compile_region_round(
     output: &mut Compiled,
 ) -> Result<(), CompileError> {
     let initial = output.clone();
+    // The source passes and loop expansion depend on the region and on
+    // `normal_loops` alone, so every strategy tried below schedules the same
+    // prepared region.
+    let prepared = prepare_region(program, region, unique, normal_loops)?;
     let failure = match compile_region_candidate(
-        program,
-        region,
+        &prepared,
         unique,
         options,
-        CandidateOptions {
-            strategy: None,
-            normal_loops,
-        },
+        CandidateOptions { strategy: None },
         output,
     ) {
         Ok(()) => return Ok(()),
@@ -121,13 +120,11 @@ pub(super) fn compile_region_round(
     {
         let mut candidate = initial.clone();
         if compile_region_candidate(
-            program,
-            region,
+            &prepared,
             unique,
             options,
             CandidateOptions {
                 strategy: Some(strategy),
-                normal_loops,
             },
             &mut candidate,
         )
@@ -163,17 +160,15 @@ struct PreparedRegion {
     analysis: flow::Analysis,
 }
 
-/// Compiles one region with one set of candidate options, appending its
-/// text to `output`.
-pub(super) fn compile_region_candidate(
-    program: &Source,
-    region: &Region,
+/// Compiles a prepared region with one set of candidate options, appending
+/// its text to `output`.
+fn compile_region_candidate(
+    prepared: &PreparedRegion,
     unique: &str,
     options: &Options,
     candidate: CandidateOptions,
     output: &mut Compiled,
 ) -> Result<(), CompileError> {
-    let prepared = prepare_region(program, region, unique, candidate)?;
     let program = &prepared.program;
     let region = &prepared.region;
     let graph = &prepared.graph;
@@ -329,7 +324,7 @@ fn prepare_region(
     program: &Source,
     region: &Region,
     unique: &str,
-    candidate: CandidateOptions,
+    normal_loops: bool,
 ) -> Result<PreparedRegion, CompileError> {
     let (expanded_program, source_pruned) = prune_source_stage(program, region, unique)?;
     // Copies present before loop expansion; only these meet the original's pruning
@@ -345,7 +340,7 @@ fn prepare_region(
         .collect();
 
     let (copy_program, pruned_region, analysis) =
-        expand_and_prune(expanded_program, &source_pruned, unique, candidate)?;
+        expand_and_prune(expanded_program, &source_pruned, unique, normal_loops)?;
     build_webs(copy_program, &pruned_region, &analysis, &source_copy_lines)
 }
 
@@ -461,14 +456,10 @@ fn expand_and_prune(
     mut expanded_program: Source,
     source_pruned: &Region,
     unique: &str,
-    candidate: CandidateOptions,
+    normal_loops: bool,
 ) -> Result<(Source, Region, flow::Analysis), CompileError> {
-    let expanded_region = expand_software_loops(
-        &mut expanded_program,
-        source_pruned,
-        unique,
-        candidate.normal_loops,
-    )?;
+    let expanded_region =
+        expand_software_loops(&mut expanded_program, source_pruned, unique, normal_loops)?;
     let expanded_region = coalesce_immediates(&mut expanded_program, &expanded_region)?;
     let program = &expanded_program;
     let region = &expanded_region;

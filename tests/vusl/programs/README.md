@@ -6,8 +6,8 @@ hand-written VCL program it replaced (`hand-written`, a case in `tests/corpus`).
 
 | Case | Project (commit) | Files |
 |---|---|---|
-| `particles`, `textured_triangles` | [glampert/quake2-ps2](https://github.com/glampert/quake2-ps2) (2f60a15) | `src/ps2/renderer/vu1progs/{particles,textured_triangles}.vusl` as `input.vusl`, and `frame.vush` in `include` |
-| `world_lm`, `world_strips` | [glampert/doom3-bfg-ps2](https://github.com/glampert/doom3-bfg-ps2) (bfc701b) | `src/ps2/renderer/vu1progs/{world_lm,world_strips}.vusl` as `input.vusl`, and `clipper.vush`, `clipper.vusl`, `vu_memory.vush` and `world.vush` in `include` |
+| `particles`, `textured_triangles` | [glampert/quake2-ps2](https://github.com/glampert/quake2-ps2) (415226b) | `src/ps2/renderer/vu1progs/{particles,textured_triangles}.vusl` as `input.vusl`, and `frame.vush` in `include` |
+| `world_lm`, `world_strips` | [glampert/doom3-bfg-ps2](https://github.com/glampert/doom3-bfg-ps2) (440b77c) | `src/ps2/renderer/vu1progs/{world_lm,world_strips}.vusl` as `input.vusl`, and `clipper.vush`, `clipper.vusl`, `vu_memory.vush` and `world.vush` in `include` |
 
 The files are copied unchanged; `include` is on the include path. The two doom3 programs call the
 clipper library (`include/clipper.vusl`), which the suite places at its address after each.

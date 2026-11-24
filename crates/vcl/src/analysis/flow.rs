@@ -8,12 +8,39 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
+use std::rc::Rc;
 
 pub type RegisterId = usize;
 pub type OperationId = usize;
 pub type BlockId = usize;
 type Component = (RegisterId, u8);
-type State = BTreeMap<Component, BTreeSet<Definition>>;
+/// The definitions reaching one component, shared between states until a
+/// join adds to them: copying a state copies no sets.
+type Definitions = Rc<BTreeSet<Definition>>;
+type State = BTreeMap<Component, Definitions>;
+
+/// Adds `more` to `into`, copying `into` only when it gains a definition.
+fn add_definitions(into: &mut Definitions, more: &Definitions) {
+    if !Rc::ptr_eq(into, more) && !more.is_subset(into) {
+        Rc::make_mut(into).extend(more.iter().copied());
+    }
+}
+
+/// Joins `more` into the definitions at `entry`, sharing them when the entry
+/// is new.
+fn join_into<K: Ord>(
+    entry: std::collections::btree_map::Entry<'_, K, Definitions>,
+    more: &Definitions,
+) {
+    match entry {
+        std::collections::btree_map::Entry::Vacant(vacant) => {
+            vacant.insert(Rc::clone(more));
+        }
+        std::collections::btree_map::Entry::Occupied(mut occupied) => {
+            add_definitions(occupied.get_mut(), more);
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Access {
@@ -60,7 +87,7 @@ pub struct Timing {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct FlowState {
     defs: State,
-    pending: BTreeMap<(u32, Component), (BTreeSet<Definition>, bool)>,
+    pending: BTreeMap<(u32, Component), (Definitions, bool)>,
 }
 
 impl FlowState {
@@ -77,7 +104,7 @@ impl FlowState {
             if complete {
                 self.defs.insert(key.1, definitions);
             } else {
-                self.defs.entry(key.1).or_default().extend(definitions);
+                join_into(self.defs.entry(key.1), &definitions);
             }
         }
     }
@@ -86,10 +113,17 @@ impl FlowState {
         let mut result = FlowState::default();
         for state in states {
             for (&component, defs) in &state.defs {
-                result.defs.entry(component).or_default().extend(defs);
+                join_into(result.defs.entry(component), defs);
             }
             for (&key, (defs, _)) in &state.pending {
-                result.pending.entry(key).or_default().0.extend(defs);
+                match result.pending.entry(key) {
+                    std::collections::btree_map::Entry::Vacant(vacant) => {
+                        vacant.insert((Rc::clone(defs), false));
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut occupied) => {
+                        add_definitions(&mut occupied.get_mut().0, defs);
+                    }
+                }
             }
         }
         for (key, (_, complete)) in result.pending.iter_mut() {
@@ -232,7 +266,7 @@ fn walk(
                 .copied()
                 .filter(|&delay| delay > 0);
             for component in parts(access) {
-                let definitions = BTreeSet::from([Definition::Operation(id)]);
+                let definitions = Rc::new(BTreeSet::from([Definition::Operation(id)]));
                 match (time, delay) {
                     (Some(time), Some(delay)) => {
                         state
@@ -525,11 +559,11 @@ impl Graph {
                     initialized.contains(&component) || self.constants.contains(&component.0);
                 (
                     component,
-                    BTreeSet::from([if defined {
+                    Rc::new(BTreeSet::from([if defined {
                         Definition::Input
                     } else {
                         Definition::Uninitialized
-                    }]),
+                    }])),
                 )
             })
             .collect()
@@ -548,33 +582,40 @@ impl Graph {
             defs: seed.clone(),
             pending: BTreeMap::new(),
         };
-        loop {
-            let mut changed = false;
-            for &id in reachable {
-                let mut sources: Vec<&FlowState> = Vec::new();
-                if id == self.entry {
-                    sources.push(&entry_state);
-                }
-                for &pred in &predecessors[id] {
-                    // Only predecessors already reached by the iteration.
-                    if reachable.contains(&pred) && !outgoing[pred].defs.is_empty() {
-                        sources.push(&outgoing[pred]);
-                    }
-                }
-                let next = FlowState::join(&sources);
-                // Wait until this block has at least one initialized predecessor.
-                if next.defs.is_empty() && !seed.is_empty() {
-                    continue;
-                }
-                let out = walk(self, &self.blocks[id], next.clone(), |_, _| {});
-                if next != incoming[id] || out != outgoing[id] {
-                    incoming[id] = next;
-                    outgoing[id] = out;
-                    changed = true;
+        // A block's state depends only on its predecessors' outgoing states,
+        // so a block is walked again only when one of those changed. The
+        // joins are unions, so this reaches the same fixed point as walking
+        // every block until none changes; the lowest block goes first.
+        let mut work: BTreeSet<BlockId> = reachable.clone();
+        while let Some(id) = work.pop_first() {
+            let mut sources: Vec<&FlowState> = Vec::new();
+            if id == self.entry {
+                sources.push(&entry_state);
+            }
+            for &pred in &predecessors[id] {
+                // Only predecessors already reached by the iteration.
+                if reachable.contains(&pred) && !outgoing[pred].defs.is_empty() {
+                    sources.push(&outgoing[pred]);
                 }
             }
-            if !changed {
-                break;
+            let next = FlowState::join(&sources);
+            // Wait until this block has at least one initialized predecessor.
+            if next.defs.is_empty() && !seed.is_empty() {
+                continue;
+            }
+            if next == incoming[id] && !outgoing[id].defs.is_empty() {
+                continue;
+            }
+            let out = walk(self, &self.blocks[id], next.clone(), |_, _| {});
+            incoming[id] = next;
+            if out != outgoing[id] {
+                outgoing[id] = out;
+                work.extend(
+                    self.blocks[id]
+                        .successors
+                        .iter()
+                        .filter(|successor| reachable.contains(successor)),
+                );
             }
         }
         incoming
@@ -622,7 +663,7 @@ impl Graph {
             for (register, component) in parts(access) {
                 let definitions = defs
                     .get(&(register, component))
-                    .cloned()
+                    .map(|definitions| BTreeSet::clone(definitions))
                     .unwrap_or_default();
                 found.reads.push(Read {
                     operation,
@@ -642,7 +683,7 @@ impl Graph {
                 let Some((_, (writers, _))) = latest else {
                     continue;
                 };
-                for writer in writers {
+                for writer in writers.iter() {
                     if let Definition::Operation(writer) = writer {
                         let block = owner[writer];
                         if block != id {
@@ -667,9 +708,9 @@ impl Graph {
                     block: id,
                     register,
                     component,
-                    definitions: definitions.clone(),
+                    definitions: BTreeSet::clone(definitions),
                 });
-                for &definition in definitions {
+                for &definition in definitions.iter() {
                     match definition {
                         Definition::Operation(operation) => {
                             found.roots.insert(operation);

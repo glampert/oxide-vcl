@@ -179,8 +179,10 @@ products of invariants.
 Lowering computes the chosen parts before the loop, and the cache finds them inside it. Each loop
 keeps at most `Settings::hoist_limit` values. `vusl::compile` generates the program with limits of
 16, 6, then 0 (`HOIST_LIMITS`). It stops at the first compile with no spills, and otherwise keeps
-the one with the fewest. A vcl error other than running out of registers or work area ends the
-attempts.
+the one with the fewest, the first of equals. A vcl error other than running out of registers or
+work area ends the attempts. When the first attempt spills or runs out of registers, the other two
+compile on their own threads at once, and their results are taken in order as if tried one after
+another, so the choice is the same.
 
 ## Libraries
 
