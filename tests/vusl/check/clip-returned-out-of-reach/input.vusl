@@ -1,0 +1,16 @@
+struct Block { vec4 a; vec4 b; int16 adc; int16 later; };
+clipflags judge(vec4 v)
+{
+    clipflags judged = clipw(v.xyz, v.w);
+    return judged;
+}
+void main(layout(address = 0) inout Block block)
+{
+    clipflags first = judge(block.a);
+    clipflags second = judge(block.b);
+    clipflags third = judge(block.b);
+    clipflags fourth = judge(block.b);
+    clipflags fifth = judge(block.b);
+    block.later = adc(second, third, fifth);
+    block.adc = adc(first);
+}

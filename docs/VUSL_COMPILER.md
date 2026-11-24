@@ -88,7 +88,9 @@ ref's memory. Reassigning a ref compares only the base and path, and narrows the
 - the newest in the current block, since VCL waits for a judgement's flags only within its block;
 - none older than a branch that judges, and the epoch advances before every loop body.
 
-Breaking any of these is an error naming the reason.
+Breaking any of these is an error naming the reason. A `clipflags` local, a function's result
+and a parameter hold the judgement they were set from, so these rules and lowering
+(`codegen::judgement`) follow it through copies and calls.
 
 ### The checked program
 
@@ -298,6 +300,7 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `perspective` | The perspective divide and viewport: `div`, `mulq`, `ftoi4`; Q's copy dropped |
 | `dot-normalize` | A dot product as `mul` and two `add`s; normalize with `rsqrt` and `mulq` |
 | `clip-adc` | The guard-band judgement (`mul`, `clipw`) and ADC (`fcand`, `iaddiu 0x7fff`) |
+| `clip-function` | `clip-adc` with each judgement returned by a function: the same code, since a `clipflags` result names its `clipw` |
 | `bool-any` | Whether any vertex is outside, as `fcand` and `ior` into a bool |
 | `color-pack` | A colour clamped and packed: `max`, `mini`, `ftoi0` |
 | `q-into-lane` | Q into a lane (`addq.y`), and a constant into a lane |

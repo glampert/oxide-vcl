@@ -1,0 +1,5 @@
+input.vusl(15): error: the clipw judgement is no longer in the clip flags: four newer judgements pushed it out
+   15 |     block.adc = adc(first);
+      |                     ^
+      = help: read judgements with any(), adc() or clipped() within four of them, the newest in its clipw's block, with no branch between that judges
+oxide-vusl: 1 error; no output written

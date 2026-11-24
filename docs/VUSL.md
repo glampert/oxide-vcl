@@ -81,7 +81,7 @@ but letters, digits and `_` made `_`. The listing exports `Name_CodeStart` and `
 | `bool` | VI, or a flag test | From comparisons, `any()`, `\|\|`, `&&` and `!` |
 | `int32`, `uint32`, `ivec2`–`ivec4`, `uvec2`–`uvec4` | VF lanes, as raw bits | Unpacked integers, `ftoi` results, packed colours. They are moved, stored and converted, never computed with: an FMAC operation would flush them as denormal floats |
 | `qword` | 128 opaque bits | GIF tags, A+D data. `.x` to `.w` read and write as `int16` |
-| `clipflags` | one CLIPW judgement | Made by `clipw()`, read by `any()`, `adc()` and `clipped()` |
+| `clipflags` | one CLIPW judgement | Made by `clipw()`, read by `any()`, `adc()` and `clipped()`. It can be copied, returned, and passed as an `in` or `out` parameter, and always names the `clipw` it came from |
 | `ref<T>` | a VI qword address | Explicit addressing into memory (see [refs](#refs)) |
 
 ### Lanes
@@ -302,6 +302,10 @@ set to 0 or 1 around a branch.
 | `any(j1, j2, j3)` | `fcand` of the judgements' bits: true when any is outside |
 | `adc(j...)` | `fcand`, then `iaddiu t, vi01, 0x7fff`: an `int16` with bit 15 set when any is outside, the GS's ADC bit. Its other bits are unspecified |
 | `clipped(j...)` | `fcand`: VI01 itself, 1 when any is outside, else 0 |
+
+A function may judge a corner and return the judgement, as in
+`clipflags judge(vec4 clip) { return clipw(clip.xyz, clip.w); }`; a call is inlined, so its result is
+that `clipw`'s judgement and costs nothing more.
 
 The clip flags hold the last four judgements, so these read one to three judgements within four
 of the newest `clipw`. The newest must be in the reading block, where VCL waits for its flags; the

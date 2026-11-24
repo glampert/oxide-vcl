@@ -374,6 +374,48 @@ fn clipping_and_adc() {
 }
 
 #[test]
+fn functions_return_and_take_clip_judgements() {
+    // A judgement leaves a function as its result (a clipw itself, or a local
+    // holding one) or through an out parameter, enters one as an in
+    // parameter, and is copied; each names the clipw it came from.
+    let source = "struct Block { vec4 a; vec4 b; vec4 c; vec4 d; vec3 scale; float pad;\n\
+                  \x20   int16 adc0; int16 adc1; int16 adc2; int16 anyOut; };\n\
+                  clipflags judge(vec4 v)\n\
+                  {\n\
+                  \x20   return clipw(v.xyz, v.w);\n\
+                  }\n\
+                  clipflags judgeScaled(vec4 v, vec3 scale)\n\
+                  {\n\
+                  \x20   clipflags judged = clipw(v.xyz * scale, v.w);\n\
+                  \x20   return judged;\n\
+                  }\n\
+                  void judgeInto(vec4 v, out clipflags judged)\n\
+                  {\n\
+                  \x20   judged = clipw(v.xyz, v.w);\n\
+                  }\n\
+                  int16 outsideOf(clipflags first, clipflags second)\n\
+                  {\n\
+                  \x20   return adc(first, second);\n\
+                  }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   clipflags ja = judge(block.a);\n\
+                  \x20   clipflags jb = judgeScaled(block.b, block.scale);\n\
+                  \x20   clipflags jc;\n\
+                  \x20   judgeInto(block.c, jc);\n\
+                  \x20   clipflags jd = judge(block.d);\n\
+                  \x20   clipflags copy = jb;\n\
+                  \x20   block.adc0 = adc(ja);\n\
+                  \x20   block.adc1 = outsideOf(copy, jc);\n\
+                  \x20   block.adc2 = adc(jd);\n\
+                  \x20   block.anyOut = 0;\n\
+                  \x20   if (any(jb, jc, jd))\n\
+                  \x20       block.anyOut = 1;\n\
+                  }\n";
+    agree(source, 16, |_, _, _| {});
+}
+
+#[test]
 fn inlined_functions_with_memory_and_out_parameters() {
     let source = "struct Corner { vec4 st; ivec3 xyz; int16 adc; };\n\
                   struct Block { vec4 clip; vec4 scale; Corner corners[2]; int16 total; };\n\

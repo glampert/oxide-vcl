@@ -1,0 +1,23 @@
+// clip-adc's judgement through a function that returns it: a clipflags
+// result names the CLIPW it came from, so the code is clip-adc's.
+struct Corner { vec4 clip; };
+struct Frame { vec3 guard; float pad; };
+struct Out { int16 adc; int16 pad0; int16 pad1; int16 pad2; };
+
+clipflags judge(in Frame frame, in Corner corner)
+{
+    clipflags judged = clipw(corner.clip.xyz * frame.guard, corner.clip.w);
+    return judged;
+}
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 1) in Corner a,
+          layout(address = 2) in Corner b,
+          layout(address = 3) in Corner c,
+          layout(address = 4) out Out result)
+{
+    clipflags ja = judge(frame, a);
+    clipflags jb = judge(frame, b);
+    clipflags jc = judge(frame, c);
+    result.adc = adc(ja, jb, jc);
+}

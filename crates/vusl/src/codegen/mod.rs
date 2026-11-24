@@ -1794,17 +1794,7 @@ impl Lowering<'_> {
         let mut mask = 0;
         let mut newest = None;
         for arg in args {
-            let judgement = match &arg.kind {
-                ExprKind::Local(id) => match self.locals[*id] {
-                    LocalReg::Clip(judgement) => judgement,
-                    _ => return self.not_yet("clipflags that are not a clipw's"),
-                },
-                ExprKind::Call {
-                    builtin: Builtin::ClipW,
-                    args,
-                } => self.clipw(args)?,
-                _ => return self.not_yet("clipflags that are not a clipw's"),
-            };
+            let judgement = self.judgement(arg)?;
             if judgement < self.clips_reachable_from {
                 return Err(Box::new(problem(
                     VuslMessage::ClipOutOfReach {
@@ -1834,6 +1824,23 @@ impl Lowering<'_> {
             )));
         }
         Ok(mask)
+    }
+
+    /// The judgement a `clipflags` value names: a `clipw` here, or the one a
+    /// local holds. A function's result, an `in` parameter and a copy are
+    /// such a local, so they name the judgement they were set from.
+    fn judgement(&mut self, value: &Expr) -> Lowered<usize> {
+        match &value.kind {
+            ExprKind::Call {
+                builtin: Builtin::ClipW,
+                args,
+            } => self.clipw(args),
+            ExprKind::Local(id) => match self.locals[*id] {
+                LocalReg::Clip(judgement) => Ok(judgement),
+                _ => self.not_yet("clipflags that are not a clipw's"),
+            },
+            _ => self.not_yet("clipflags that are not a clipw's"),
+        }
     }
 
     fn clipw(&mut self, args: &[Expr]) -> Lowered<usize> {
@@ -1888,14 +1895,7 @@ impl Lowering<'_> {
         let local = &program.locals[id];
         match &local.ty {
             Type::ClipFlags => {
-                let ExprKind::Call {
-                    builtin: Builtin::ClipW,
-                    args,
-                } = &value.kind
-                else {
-                    return self.not_yet("clipflags from anything but clipw");
-                };
-                let judgement = self.clipw(args)?;
+                let judgement = self.judgement(value)?;
                 self.locals[id] = LocalReg::Clip(judgement);
                 Ok(())
             }
