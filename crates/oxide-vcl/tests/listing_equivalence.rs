@@ -8,6 +8,7 @@
 #[path = "support/corpus.rs"]
 mod corpus;
 #[path = "support/seeds.rs"]
+#[allow(dead_code)]
 mod seeds;
 #[path = "support/vu_model.rs"]
 mod vu_model;

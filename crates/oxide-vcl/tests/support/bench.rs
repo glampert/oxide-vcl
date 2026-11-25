@@ -156,3 +156,109 @@ pub fn work(row: Row, stats: &vcl::stats::Stats) -> Row {
         .value("analyses", stats.flow_analyses)
         .value("walks", stats.flow_walks)
 }
+
+/// The part of a loop a table is, from its name: a modulo-scheduled kernel,
+/// a prologue (`..._ENTRY_POINT`, `..._PROn`), an epilogue (`..._EPIn`),
+/// each a loop's tables together, or an exit (`..._EXIT_POINT`); else a
+/// table of its own, such as a loop scheduled as straight-line code.
+pub fn part(table: &crate::vu_model::Table, unique: &str) -> String {
+    let prefix = format!("EXPL_{unique}_");
+    let name = table.name.strip_prefix(&prefix).unwrap_or(&table.name);
+    if let Some((loop_name, part)) = name.rsplit_once("__") {
+        let part = match part {
+            "MAIN_LOOP" => "kernel",
+            "ENTRY_POINT" => "prologue",
+            "EXIT_POINT" => "exit",
+            part if part.starts_with("PRO") => "prologue",
+            part if part.starts_with("EPI") => "epilogue",
+            _ => return format!("table:{name}"),
+        };
+        return format!("{part}:{loop_name}");
+    }
+    if table.kernel {
+        format!("kernel:{name}")
+    } else {
+        format!("table:{name}")
+    }
+}
+
+/// A loop part's or table's totals: its name, entries (issues of its first
+/// pair: a kernel's iterations), cycles and stall cycles.
+pub type Part = (String, u64, u64, u64);
+
+/// Adds the cycles `runs` of `program` spent in each table to `parts`, by
+/// [`part`]: what a table's pairs issued and stalled, and how often its
+/// first pair issued, which for a prologue of several tables is its
+/// first's. `unique` is the generated labels' prefix (`-u`). The runs are
+/// one measurement: a program's runs at one count, or on one scene.
+pub fn add_parts(
+    parts: &mut Vec<Part>,
+    program: &crate::vu_model::Program,
+    runs: &[crate::vu_model::Execution],
+    unique: &str,
+) {
+    let tables = program.tables();
+    // These runs' parts, then added to `parts`.
+    let mut these: Vec<Part> = Vec::new();
+    for (index, table) in tables.iter().enumerate() {
+        let end = tables
+            .get(index + 1)
+            .map_or(program.pair_count(), |next| next.start);
+        let profile: Vec<(u64, u64)> = (table.start..end.max(table.start))
+            .map(|pc| {
+                runs.iter()
+                    .map(|run| run.profile[pc])
+                    .fold((0, 0), |(a, b), (c, d)| (a + c, b + d))
+            })
+            .collect();
+        let Some(&(entries, _)) = profile.first() else {
+            continue;
+        };
+        let issues: u64 = profile.iter().map(|&(issued, _)| issued).sum();
+        let stalls: u64 = profile.iter().map(|&(_, stalled)| stalled).sum();
+        let name = part(table, unique);
+        match these.iter_mut().find(|(known, ..)| *known == name) {
+            Some(entry) => {
+                // A prologue's tables run one after another, the first on
+                // every entry; a loop's epilogues are its exits, one each.
+                entry.1 = if name.starts_with("prologue:") {
+                    entry.1.max(entries)
+                } else {
+                    entry.1 + entries
+                };
+                entry.2 += issues + stalls;
+                entry.3 += stalls;
+            }
+            None => these.push((name, entries, issues + stalls, stalls)),
+        }
+    }
+    for (name, entries, cycles, stalls) in these {
+        match parts.iter_mut().find(|(known, ..)| *known == name) {
+            Some(entry) => {
+                entry.1 += entries;
+                entry.2 += cycles;
+                entry.3 += stalls;
+            }
+            None => parts.push((name, entries, cycles, stalls)),
+        }
+    }
+}
+
+/// A row per part entered, under `key`: entries, cycles, stall cycles, and
+/// cycles per entry in hundredths (`per100`: a kernel's cycles per
+/// iteration).
+pub fn part_rows(key: &[&str], parts: Vec<Part>) -> Vec<Row> {
+    parts
+        .into_iter()
+        .filter(|&(_, entries, ..)| entries > 0)
+        .map(|(name, entries, cycles, stalls)| {
+            let mut words = key.to_vec();
+            words.push(&name);
+            Row::new(&words)
+                .value("entries", entries)
+                .value("cycles", cycles)
+                .value("stalls", stalls)
+                .value("per100", cycles * 100 / entries)
+        })
+        .collect()
+}

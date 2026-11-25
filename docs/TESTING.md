@@ -358,10 +358,26 @@ against tables committed in `tests/bench`, one line per measurement:
   [Listing equivalence](#listing-equivalence). A row gives the listing's
   instruction pairs; how many runs finish, and their cycles and stall
   cycles; and the compile's work. A rejected program is `rejected=1`.
+- `crates/oxide-vcl/tests/bench.rs`, `loops` (`tests/bench/loops.txt`): the
+  same programs over a sweep of trip counts, 1 to 48, from count states
+  whose memory's low 16 bits and VI01 to VI15 hold the count; a program that
+  stops at `--cont` is resumed once, as MSCNT would, from the memory it
+  left. A `total` row gives the cycles at each count that finishes. Then
+  every table the runs entered has a row, attributed by the table comments
+  the listing carries: a loop's kernel (`kernel:`, the `_LPOPT` table), its
+  prologue (`..._ENTRY_POINT` and `..._PROn` together), its epilogues
+  (`..._EPIn`) and its exit, or a table of its own (`table:`, such as a loop
+  scheduled as straight-line code). A row gives how often the table was
+  entered (its first pair's issues, a prologue's first table's: a kernel's
+  iterations), its cycles and stall cycles, and its cycles per entry in
+  hundredths: a kernel's `per100` is its cycles per iteration, measured
+  apart from its prologue and epilogues. Programs whose counts come from
+  elsewhere, such as sprite's constant 2, run at their own count throughout.
 - `crates/vusl/tests/programs.rs`, `bench` (`tests/bench/scenes.txt`): the
   VUSL ports and their hand-written programs, compiled in oxide mode, with
-  their pairs and work, and their cycles and stall cycles on each
-  [renderer scene](#renderer-scenes). A port's work counts all its hoist
+  their pairs and work, their cycles and stall cycles on each
+  [renderer scene](#renderer-scenes), and their pipelined loops' parts over
+  all the scenes, as in `loops`. A port's work counts all its hoist
   attempts, and the clipper library has a row of its own.
 
 The compile's work is `vcl::Compiled::stats` (`crates/vcl/src/stats.rs`):
@@ -386,8 +402,8 @@ BENCH_UPDATE=1 cargo test --release -p oxide-vcl --test bench -- --ignored
 BENCH_UPDATE=1 cargo test --release -p vusl --test programs bench -- --ignored
 ```
 
-The corpus benchmark takes a minute or two on eight cores, the scenes one
-about fifteen seconds. Both are ignored by `cargo test`: a table that
+The corpus benchmark and the loop sweep take about a minute and a half each
+on eight cores, the scenes one about fifteen seconds. Both are ignored by `cargo test`: a table that
 changes is a measurement, not a failure.
 
 ## Preprocessor

@@ -637,13 +637,15 @@ phase 0:
    of `crates/vusl/tests/programs.rs` record, per program and scene, the
    model's cycles and stall cycles, the code size and the compile's work
    counts (`vcl::stats`) in tables under `tests/bench`, and print what a
-   change does to them (docs/TESTING.md, "Benchmarks").
+   change does to them (docs/TESTING.md, "Benchmarks"). The loop sweep
+   runs trip counts 1 to 48 and gives each loop's kernel, prologue,
+   epilogues and exit their own cycles: a kernel's cycles per iteration
+   apart from what entering and leaving the loop costs.
 
-Still open: the benchmarks total the seeded runs, so a loop's cycles per
-iteration and its prologue and epilogue are not measured apart; the timing
-has not been checked against the manual's worked examples (figures 3-3 to
-3-18); and the seeds do not aim trip counts at 0, 1 or the stage
-boundaries of a pipelined loop. O1 needs the
+Still open: the timing has not been checked against the manual's worked
+examples (figures 3-3 to 3-18); the sweep does not run a count of 0; and a
+program whose count is not where the count states put it (a constant, a
+field the host fills) keeps its own count in the sweep. O1 needs the
 last of these before it lands.
 
 ## 6. Phases

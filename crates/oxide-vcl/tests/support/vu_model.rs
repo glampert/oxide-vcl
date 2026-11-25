@@ -343,6 +343,18 @@ fn conversion(name: &str) -> Option<(bool, u32)> {
 pub struct Program {
     pairs: Vec<(Instruction, Instruction)>,
     labels: HashMap<String, usize>,
+    /// The tables the listing's comments name, by their first pair.
+    tables: Vec<Table>,
+}
+
+/// A table of the listing, as its comment (`; _LNOPT_w=... [name]`) names
+/// it: where it starts, and whether it is a modulo-scheduled loop kernel
+/// (`_LPOPT`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Table {
+    pub start: usize,
+    pub name: String,
+    pub kernel: bool,
 }
 
 #[derive(Debug)]
@@ -473,7 +485,20 @@ impl Program {
     pub fn parse(assembly: &str) -> Result<Self> {
         let mut pairs = Vec::new();
         let mut labels = HashMap::new();
+        let mut tables = Vec::new();
         for (line_index, line) in assembly.lines().enumerate() {
+            let comment = line.trim_start();
+            let kernel = comment.starts_with("; _LPOPT");
+            if (kernel || comment.starts_with("; _LNOPT"))
+                && let Some((_, rest)) = comment.rsplit_once('[')
+                && let Some(name) = rest.strip_suffix(']')
+            {
+                tables.push(Table {
+                    start: pairs.len(),
+                    name: name.trim().to_string(),
+                    kernel,
+                });
+            }
             let line = line.split(';').next().unwrap_or("").trim_end();
             let text = line.trim();
             if text.is_empty() || text.starts_with('.') {
@@ -512,7 +537,16 @@ impl Program {
         if pairs.is_empty() {
             return Err("no instruction pairs".into());
         }
-        Ok(Self { pairs, labels })
+        Ok(Self {
+            pairs,
+            labels,
+            tables,
+        })
+    }
+
+    /// The tables the listing's comments name, in order.
+    pub fn tables(&self) -> &[Table] {
+        &self.tables
     }
 
     /// The labels at each pair, in pair order.

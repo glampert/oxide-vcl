@@ -223,6 +223,9 @@ struct Run {
     /// The stall cycles of each.
     hand_stalls: u64,
     vusl_stalls: u64,
+    /// Where each spent its cycles: loop parts and tables.
+    hand_parts: Vec<bench::Part>,
+    vusl_parts: Vec<bench::Part>,
     same: bool,
     drawn: usize,
     expected: usize,
@@ -251,6 +254,22 @@ fn runs(case: &Path) -> (String, Built, Built, Vec<Run>) {
             vusl: b.cycles,
             hand_stalls: a.profile.iter().map(|&(_, stall)| stall).sum(),
             vusl_stalls: b.profile.iter().map(|&(_, stall)| stall).sum(),
+            hand_parts: {
+                let mut parts = Vec::new();
+                bench::add_parts(
+                    &mut parts,
+                    &hand.program,
+                    std::slice::from_ref(&a),
+                    "CORPUS",
+                );
+                parts
+            },
+            vusl_parts: {
+                let mut parts = Vec::new();
+                let unique = &vusl.checked.as_ref().expect("a port").program.name;
+                bench::add_parts(&mut parts, &vusl.program, std::slice::from_ref(&b), unique);
+                parts
+            },
             same: a.state.kicks == b.state.kicks,
             drawn: scenes::drawn_primitives(&b.state.kicks),
             expected: scene.primitives,
@@ -377,6 +396,30 @@ fn bench() {
             let row = Row::new(&["vusl", "library", "compile"]).value("pairs", pairs as u64);
             libraries.push(bench::work(row, &stats));
         }
+        // Each side's loop parts over all scenes.
+        for (side, parts_of) in [
+            (
+                "vusl",
+                (|run: &Run| &run.vusl_parts) as fn(&Run) -> &Vec<bench::Part>,
+            ),
+            ("hand", |run: &Run| &run.hand_parts),
+        ] {
+            let mut parts: Vec<bench::Part> = Vec::new();
+            for run in runs {
+                for (part, entries, cycles, stalls) in parts_of(run) {
+                    match parts.iter_mut().find(|(known, ..)| known == part) {
+                        Some(total) => {
+                            total.1 += entries;
+                            total.2 += cycles;
+                            total.3 += stalls;
+                        }
+                        None => parts.push((part.clone(), *entries, *cycles, *stalls)),
+                    }
+                }
+            }
+            parts.retain(|(part, ..)| !part.starts_with("table:"));
+            rows.extend(bench::part_rows(&[side, name], parts));
+        }
         for run in runs {
             for (side, cycles, stalls) in [
                 ("vusl", run.vusl, run.vusl_stalls),
@@ -397,8 +440,11 @@ fn bench() {
 The VUSL ports (vusl) and their hand-written programs (hand), compiled in
 oxide mode: instruction pairs and the compile's work (search nodes,
 wrangler steps and checks, flow analyses and the blocks they walk), then
-cycles and stall cycles on each scene. A port's compile counts every hoist
-attempt. Written by crates/vusl/tests/programs.rs (bench).";
+cycles and stall cycles on each scene, and over all scenes each pipelined
+loop's kernel, prologue, epilogues and exit: entries (a kernel's
+iterations), cycles, stall cycles and cycles per entry in hundredths
+(per100). A port's compile counts every hoist attempt. Written by
+crates/vusl/tests/programs.rs (bench).";
     bench::compare_or_update(&root().join("tests/bench/scenes.txt"), heading, &rows);
 }
 

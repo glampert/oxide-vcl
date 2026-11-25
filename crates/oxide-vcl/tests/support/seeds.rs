@@ -22,6 +22,16 @@ pub fn seeded_state(seed: u64) -> State {
     let count = seed
         .checked_sub(RANDOM_SEEDS)
         .map(|index| COUNTS[index as usize]);
+    state(seed, count)
+}
+
+/// A count seed's state for any `count`, from its own random values: the
+/// trip-count sweeps' (docs/TESTING.md, "Benchmarks").
+pub fn count_state(count: u16) -> State {
+    state(1000 + u64::from(count), Some(count))
+}
+
+fn state(seed: u64, count: Option<u16>) -> State {
     let mut random = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x2545_f491_4f6c_dd1d;
     let mut next = move || {
         random ^= random << 13;

@@ -1,42 +1,74 @@
 # The VUSL ports (vusl) and their hand-written programs (hand), compiled in
 # oxide mode: instruction pairs and the compile's work (search nodes,
 # wrangler steps and checks, flow analyses and the blocks they walk), then
-# cycles and stall cycles on each scene. A port's compile counts every hoist
-# attempt. Written by crates/vusl/tests/programs.rs (bench).
-hand particles burst                 cycles=1189 stalls=7
-hand particles compile               pairs=114 nodes=0 steps=137422 checks=477939 analyses=17 walks=107
-hand textured_triangles compile      pairs=1212 nodes=0 steps=82877 checks=856805 analyses=18 walks=4111
-hand textured_triangles model        cycles=1578 stalls=326
-hand textured_triangles model_near   cycles=3786 stalls=915
-hand textured_triangles world_floor  cycles=16768 stalls=4480
-hand textured_triangles world_wall   cycles=2805 stalls=574
-hand world_lm compile                pairs=1019 nodes=0 steps=137474 checks=914072 analyses=18 walks=5150
-hand world_lm floor                  cycles=46153 stalls=12174
-hand world_lm floor_lit              cycles=91197 stalls=24340
-hand world_lm side                   cycles=18224 stalls=4121
-hand world_lm side_lit               cycles=35403 stalls=8234
-hand world_lm wall                   cycles=2259 stalls=8
-hand world_lm wall_lit               cycles=3476 stalls=8
-hand world_strips compile            pairs=695 nodes=0 steps=132834 checks=446608 analyses=17 walks=3233
-hand world_strips floor              cycles=47371 stalls=13007
-hand world_strips side               cycles=19314 stalls=4858
-hand world_strips wall               cycles=3896 stalls=952
-vusl library compile                 pairs=433 nodes=0 steps=132530 checks=19662 analyses=17 walks=1297
-vusl particles burst                 cycles=1020 stalls=10
-vusl particles compile               pairs=113 nodes=0 steps=44462 checks=1795102 analyses=17 walks=107
-vusl textured_triangles compile      pairs=1144 nodes=188782 steps=591472 checks=6692415 analyses=396 walks=93159
-vusl textured_triangles model        cycles=1211 stalls=36
-vusl textured_triangles model_near   cycles=3228 stalls=544
-vusl textured_triangles world_floor  cycles=13750 stalls=3099
-vusl textured_triangles world_wall   cycles=1801 stalls=60
-vusl world_lm compile                pairs=642 nodes=0 steps=51883 checks=1119177 analyses=130 walks=11960
-vusl world_lm floor                  cycles=40892 stalls=8802
-vusl world_lm floor_lit              cycles=80726 stalls=17581
-vusl world_lm side                   cycles=16259 stalls=2598
-vusl world_lm side_lit               cycles=31524 stalls=5173
-vusl world_lm wall                   cycles=2135 stalls=20
-vusl world_lm wall_lit               cycles=3154 stalls=20
-vusl world_strips compile            pairs=368 nodes=0 steps=88861 checks=1043796 analyses=79 walks=4325
-vusl world_strips floor              cycles=40472 stalls=8932
-vusl world_strips side               cycles=15903 stalls=2728
-vusl world_strips wall               cycles=2190 stalls=21
+# cycles and stall cycles on each scene, and over all scenes each pipelined
+# loop's kernel, prologue, epilogues and exit: entries (a kernel's
+# iterations), cycles, stall cycles and cycles per entry in hundredths
+# (per100). A port's compile counts every hoist attempt. Written by
+# crates/vusl/tests/programs.rs (bench).
+hand particles burst                           cycles=1189 stalls=7
+hand particles compile                         pairs=114 nodes=0 steps=137422 checks=477939 analyses=17 walks=107
+hand particles epilogue:lParticleLoop          entries=1 cycles=24 stalls=6 per100=2400
+hand particles kernel:lParticleLoop            entries=58 cycles=1102 stalls=0 per100=1900
+hand particles prologue:lParticleLoop          entries=1 cycles=19 stalls=1 per100=1900
+hand textured_triangles compile                pairs=1212 nodes=0 steps=82877 checks=856805 analyses=18 walks=4111
+hand textured_triangles epilogue:lFanLoop__u0  entries=2 cycles=20 stalls=0 per100=1000
+hand textured_triangles epilogue:lFanLoop__u1  entries=10 cycles=70 stalls=30 per100=700
+hand textured_triangles kernel:lFanLoop__u0    entries=3 cycles=93 stalls=0 per100=3100
+hand textured_triangles kernel:lFanLoop__u1    entries=5 cycles=175 stalls=0 per100=3500
+hand textured_triangles model                  cycles=1578 stalls=326
+hand textured_triangles model_near             cycles=3786 stalls=915
+hand textured_triangles prologue:lFanLoop__u0  entries=2 cycles=60 stalls=4 per100=3000
+hand textured_triangles prologue:lFanLoop__u1  entries=10 cycles=340 stalls=0 per100=3400
+hand textured_triangles world_floor            cycles=16768 stalls=4480
+hand textured_triangles world_wall             cycles=2805 stalls=574
+hand world_lm compile                          pairs=1019 nodes=0 steps=137474 checks=914072 analyses=18 walks=5150
+hand world_lm epilogue:lFanLoop                entries=93 cycles=744 stalls=186 per100=800
+hand world_lm epilogue:lTransform              entries=6 cycles=132 stalls=0 per100=2200
+hand world_lm exit:lTransform                  entries=6 cycles=12 stalls=0 per100=200
+hand world_lm floor                            cycles=46153 stalls=12174
+hand world_lm floor_lit                        cycles=91197 stalls=24340
+hand world_lm kernel:lFanLoop                  entries=42 cycles=1176 stalls=0 per100=2800
+hand world_lm kernel:lTransform                entries=294 cycles=6174 stalls=0 per100=2100
+hand world_lm prologue:lTransform              entries=6 cycles=126 stalls=12 per100=2100
+hand world_lm side                             cycles=18224 stalls=4121
+hand world_lm side_lit                         cycles=35403 stalls=8234
+hand world_lm wall                             cycles=2259 stalls=8
+hand world_lm wall_lit                         cycles=3476 stalls=8
+hand world_strips compile                      pairs=695 nodes=0 steps=132834 checks=446608 analyses=17 walks=3233
+hand world_strips epilogue:lFanLoop            entries=31 cycles=248 stalls=62 per100=800
+hand world_strips floor                        cycles=47371 stalls=13007
+hand world_strips kernel:lFanLoop              entries=14 cycles=392 stalls=0 per100=2800
+hand world_strips side                         cycles=19314 stalls=4858
+hand world_strips wall                         cycles=3896 stalls=952
+vusl library compile                           pairs=433 nodes=0 steps=132530 checks=19662 analyses=17 walks=1297
+vusl particles burst                           cycles=1020 stalls=10
+vusl particles compile                         pairs=113 nodes=0 steps=44462 checks=1795102 analyses=17 walks=107
+vusl particles epilogue:lloop_2                entries=1 cycles=21 stalls=4 per100=2100
+vusl particles kernel:lloop_2                  entries=58 cycles=928 stalls=0 per100=1600
+vusl particles prologue:lloop_2                entries=1 cycles=32 stalls=6 per100=3200
+vusl textured_triangles compile                pairs=1144 nodes=188782 steps=591472 checks=6692415 analyses=396 walks=93159
+vusl textured_triangles epilogue:lloop_96__u0  entries=2 cycles=14 stalls=4 per100=700
+vusl textured_triangles kernel:lloop_96__u0    entries=3 cycles=90 stalls=0 per100=3000
+vusl textured_triangles model                  cycles=1211 stalls=36
+vusl textured_triangles model_near             cycles=3228 stalls=544
+vusl textured_triangles prologue:lloop_96__u0  entries=2 cycles=62 stalls=2 per100=3100
+vusl textured_triangles world_floor            cycles=13750 stalls=3099
+vusl textured_triangles world_wall             cycles=1801 stalls=60
+vusl world_lm compile                          pairs=642 nodes=0 steps=51883 checks=1119177 analyses=130 walks=11960
+vusl world_lm epilogue:lloop_7                 entries=6 cycles=174 stalls=18 per100=2900
+vusl world_lm floor                            cycles=40892 stalls=8802
+vusl world_lm floor_lit                        cycles=80726 stalls=17581
+vusl world_lm kernel:lloop_7                   entries=294 cycles=6468 stalls=0 per100=2200
+vusl world_lm prologue:lloop_7                 entries=6 cycles=264 stalls=102 per100=4400
+vusl world_lm side                             cycles=16259 stalls=2598
+vusl world_lm side_lit                         cycles=31524 stalls=5173
+vusl world_lm wall                             cycles=2135 stalls=20
+vusl world_lm wall_lit                         cycles=3154 stalls=20
+vusl world_strips compile                      pairs=368 nodes=0 steps=88861 checks=1043796 analyses=79 walks=4325
+vusl world_strips epilogue:lloop_7             entries=3 cycles=99 stalls=18 per100=3300
+vusl world_strips floor                        cycles=40472 stalls=8932
+vusl world_strips kernel:lloop_7               entries=195 cycles=3705 stalls=0 per100=1900
+vusl world_strips prologue:lloop_7             entries=3 cycles=168 stalls=45 per100=5600
+vusl world_strips side                         cycles=15903 stalls=2728
+vusl world_strips wall                         cycles=2190 stalls=21
