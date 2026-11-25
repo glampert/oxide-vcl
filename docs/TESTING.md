@@ -247,8 +247,16 @@ follows:
   waits while its unit is busy (7, 13, or the EFU throughput).
 - Q, P and the MAC, status and clip flags are not interlocked: each changes
   when its latency has passed (Q 7 or 13 cycles, P the EFU latency, flags
-  4), and a reader sees the value of its issue cycle. WAITQ and WAITP wait
-  until the change.
+  4), and a reader sees the value of its issue cycle. WAITQ waits until Q
+  lands, so its pair reads the new Q (figure 3-9); WAITP waits until the
+  EFU's Nn stage, a cycle before P lands, and the pair after it reads the
+  new P (figure 3-12).
+- An integer result is bypassed to the next pair, except to a conditional
+  branch (IBEQ, IBNE, IBLTZ, IBGTZ, IBLEZ, IBGEZ): one issued on the cycle
+  after the instruction that set its register reads the value from before
+  (§3.4.8, figure 3-15). The flag checks (FSAND, FMAND, FCAND and the
+  others) are the exception, as the manual says. JR and JALR have no such
+  restriction in the manual and read the new value.
 - ACC and I are visible to the next pair.
 - Arithmetic is `Arithmetic::Deterministic`: f32 on the VU's range (no
   infinity, NaN or denormal; overflow saturates, underflow flushes to
@@ -262,10 +270,30 @@ follows:
   data (PACKED, REGLIST or IMAGE sizes) up to the tag with EOP.
 - RNEXT steps a deterministic stand-in for the hardware's random generator.
 
-Not modeled: the stall of an XGKICK after an XGKICK, the integer branch
-hazard, and the VU's exact rounding. The model's unit tests check field
-interlocks, Q landing and WAITQ, flag timing, ILW interlocks, GIF packet
-capture and saturating arithmetic.
+Not modeled: the stall of an XGKICK after an XGKICK, and the VU's exact
+rounding. The manuals say an XGKICK issued during a PATH1 transfer stalls
+the pair after it until the transfer ends (§3.4.9, figure 3-18; EE User's
+Manual §7.1.1), but not how long a transfer takes, so the model does not
+time it.
+
+The model's unit tests check field interlocks, Q landing and WAITQ, flag
+timing, ILW interlocks, GIF packet capture and saturating arithmetic, and
+the tests named `figure_3_*` run the manual's worked examples of §3.4 with
+the stalls and values it shows:
+
+- 3-3: a result read four pairs on, no stall;
+- 3-4: FMAC hazards per field, three stall cycles each;
+- 3-7 and 3-8: Q seven cycles after DIV, the old Q before, and a second DIV
+  waiting five cycles for the unit;
+- 3-9: WAITQ's six cycles, its pair reading the quotient;
+- 3-11 and 3-12: ESADD after ESADD waiting nine cycles, WAITP until Nn,
+  the MFP before it reading the old P and the one after the sum;
+- 3-14: integer results bypassed, no stall;
+- 3-15: a loop branching on a count it decrements: with a slot between
+  them three passes, without one a pass more; a branch right after FSAND
+  reads its result;
+- 3-16 and 3-17: the status flag at the S stage, and after stalls
+  FSAND reading instruction 2's status.
 
 ## Listing equivalence
 

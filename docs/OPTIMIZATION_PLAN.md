@@ -615,12 +615,13 @@ phase 0:
    second configuration, `Config::TIMED`: pairs stall on VF fields still in
    the FMAC pipeline (latency 4), on ILW results, and on a busy FDIV or
    EFU; Q, P and the MAC, status and clip flags are not interlocked and
-   change when their latency has passed; WAITQ and WAITP wait for them.
+   change when their latency has passed; WAITQ waits for Q and WAITP until
+   the cycle before P lands. A conditional branch right after the integer
+   instruction that sets its register reads the value from before.
    Arithmetic is deterministic f32 within the VU's range, addresses wrap,
    and each XGKICK records the GIF packet it sends. It covers every
    instruction the corpus and probes use. Not modeled: the ordering of an
-   XGKICK after an XGKICK, the integer branch hazard (the compiler keeps
-   the setter one instruction away), and the VU's exact rounding.
+   XGKICK after an XGKICK, and the VU's exact rounding.
 4. **Equivalence checking.** `crates/oxide-vcl/tests/listing_equivalence.rs`
    runs two listings of one program from the same seeded states (random VF
    values, small VI values, data memory whose low bits make short counts
@@ -642,8 +643,11 @@ phase 0:
    epilogues and exit their own cycles: a kernel's cycles per iteration
    apart from what entering and leaving the loop costs.
 
-Still open: the timing has not been checked against the manual's worked
-examples (figures 3-3 to 3-18); the sweep does not run a count of 0; and a
+The model runs the manual's worked timing examples (figures 3-3 to 3-17)
+as tests (docs/TESTING.md, "The timed configuration").
+
+Still open: an XGKICK during a PATH1 transfer is not timed, since the
+manuals give no transfer rate; the sweep does not run a count of 0; and a
 program whose count is not where the count states put it (a constant, a
 field the host fills) keeps its own count in the sweep. O1 needs the
 last of these before it lands.

@@ -10,6 +10,14 @@
 //!   program. Pairs stall on VF fields still in the FMAC pipeline, on VI
 //!   values from ILW, and on a busy FDIV or EFU; Q, P and the MAC and clip
 //!   flags are not interlocked and change when their latency has passed.
+//!   WAITQ waits until Q lands and WAITP until the cycle before P lands
+//!   (the EFU's Nn stage), so that the pair after it reads P (§3.4.5 and
+//!   §3.4.6, figures 3-9 and 3-12). A conditional branch issued on the
+//!   cycle after an integer instruction wrote its register reads the value
+//!   from before, as the branch slot requires (§3.4.8, figure 3-15);
+//!   the flag checks (FSAND and the others) are the exception. XGKICK's
+//!   PATH1 transfer is not timed: the manuals give no transfer rate.
+//!   The tests named after figures run the manual's worked examples.
 //!   Arithmetic is deterministic f32 clamped to the VU's range, not the
 //!   VU's exact rounding, and addresses wrap around data memory.
 // Several test crates include this file, and each uses part of it.
@@ -299,6 +307,25 @@ const ARITHMETIC: [&str; 13] = [
     "msuba",
 ];
 
+/// Whether a lower instruction is a conditional branch, which §3.4.8 says
+/// needs a slot after the instruction that sets its register (JR and JALR,
+/// whose register is an address, have no such restriction).
+fn reads_vi_for_branch(name: &str) -> bool {
+    matches!(
+        name,
+        "ibeq" | "ibne" | "ibltz" | "ibgtz" | "iblez" | "ibgez"
+    )
+}
+
+/// The flag checks, whose result a branch may read on the next cycle
+/// (§3.4.8).
+fn is_flag_check(name: &str) -> bool {
+    matches!(
+        name,
+        "fcand" | "fceq" | "fcget" | "fcor" | "fmand" | "fmeq" | "fmor" | "fsand" | "fseq" | "fsor"
+    )
+}
+
 /// FDIV throughput and latency (VU User's Manual 6.0, section 7.4).
 fn fdiv_timing(name: &str) -> Option<(u64, u64)> {
     match name {
@@ -397,6 +424,9 @@ struct Pipeline {
     efu_free: u64,
     q_landing: u64,
     p_landing: u64,
+    /// For each VI register an integer instruction wrote: when, and the
+    /// value before, which a branch on the next cycle reads.
+    vi_before: [Option<(u64, u16)>; 16],
     /// Landing cycle, issue order, change.
     pending: Vec<(u64, usize, Late)>,
     issued: usize,
@@ -430,7 +460,8 @@ impl Pipeline {
                 cycle = cycle.max(self.q_landing);
             }
             if needs.wait_p {
-                cycle = cycle.max(self.p_landing);
+                // The EFU's stall clears at Nn, a cycle before P lands.
+                cycle = cycle.max(self.p_landing.saturating_sub(1));
             }
         }
         cycle
@@ -621,7 +652,29 @@ impl Program {
             // SCE §3.4.2: both slots issue together. All reads use preissue
             // values, including a lower MTIR/SQ reading an upper destination.
             let high = self.evaluate(upper, &state, pc, true, config)?;
-            let low = self.evaluate(lower, &state, pc, false, config)?;
+            // §3.4.8: a branch the cycle after an integer instruction set
+            // its register reads the value from before it.
+            let mut restore = Vec::new();
+            if config.timed && reads_vi_for_branch(&lower.name) {
+                for register in lower.needs(false).vi {
+                    if let Some((written, before)) = pipeline.vi_before[register]
+                        && written + 1 == cycle
+                    {
+                        restore.push((register, state.vi[register]));
+                        state.vi[register] = before;
+                    }
+                }
+            }
+            let low = self.evaluate(lower, &state, pc, false, config);
+            for (register, value) in restore {
+                state.vi[register] = value;
+            }
+            let low = low?;
+            let set_before: Vec<(usize, u16)> = low
+                .vi
+                .iter()
+                .map(|&(register, _)| (register, state.vi[register]))
+                .collect();
             if upper.end && (end_delay || low.branch.is_some()) {
                 return Err("E in E delay slot or on a branch pair".into());
             }
@@ -638,6 +691,11 @@ impl Program {
             let high_writes: HashSet<_> = high.vf.iter().map(|(r, _, _)| *r).collect();
             let timing = config.timed.then_some((&mut pipeline, cycle));
             low.commit(&mut state, &high_writes, timing);
+            if config.timed && low.vi_latency <= 1 && !is_flag_check(&lower.name) {
+                for (register, before) in set_before {
+                    pipeline.vi_before[register] = Some((cycle, before));
+                }
+            }
             let timing = config.timed.then_some((&mut pipeline, cycle));
             high.commit(&mut state, &HashSet::new(), timing);
             next_cycle = cycle + 1;
@@ -1669,6 +1727,263 @@ mod tests {
             .unwrap()
             .run(state, Config::TIMED, 64)
             .unwrap()
+    }
+
+    /// The stall cycles before each pair issued.
+    fn stalls(execution: &Execution) -> Vec<u64> {
+        execution.profile.iter().map(|&(_, stall)| stall).collect()
+    }
+
+    const NOP: (&str, &str) = ("NOP", "NOP");
+
+    #[test]
+    fn figure_3_3_a_result_four_pairs_on_does_not_stall() {
+        // Instruction 1's result is read by instruction 5: the three pairs
+        // between cover the FMAC latency.
+        let execution = timed(
+            &[
+                ("mul VF05,VF10,VF20", "NOP"),
+                ("mul VF06,VF11,VF21", "NOP"),
+                ("mul VF07,VF12,VF22", "NOP"),
+                ("mul VF08,VF13,VF23", "NOP"),
+                ("mul VF09,VF05,VF24", "NOP"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            State::default(),
+        );
+        assert_eq!(stalls(&execution), [0; 7]);
+        assert_eq!(execution.cycles, 7);
+    }
+
+    #[test]
+    fn figure_3_4_fmac_hazards_are_per_field() {
+        // Instruction 2 reads VF10x and y from instruction 1: it waits for
+        // the S stage, three cycles. Instruction 3 reads VF10z and w, which
+        // instruction 2 does not write: no stall. Instruction 4 reads the
+        // VF10z instruction 3 writes: three cycles again.
+        let execution = timed(
+            &[
+                ("mul VF10,VF10,VF10", "NOP"),
+                ("addy.x VF10,VF10,VF10y", "NOP"),
+                ("addw.z VF10,VF10,VF10w", "NOP"),
+                ("NOP", "move.z VF20,VF10"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            State::default(),
+        );
+        assert_eq!(stalls(&execution), [0, 3, 0, 3, 0, 0]);
+    }
+
+    #[test]
+    fn figure_3_7_and_3_8_q_lands_seven_cycles_after_div() {
+        let mut state = State::default();
+        state.set_vector(10, [8.0; 4]);
+        state.set_vector(20, [2.0; 4]);
+        state.set_vector(11, [9.0; 4]);
+        state.set_vector(21, [3.0; 4]);
+        state.set_vector(22, [1.0; 4]);
+        state.set_vector(23, [1.0; 4]);
+        state.q = 0.5_f32.to_bits();
+        // Figure 3-7: with six pairs between, the MULq reads the quotient.
+        let mut pairs = vec![("NOP", "div Q,VF10x,VF20x")];
+        pairs.extend([NOP; 6]);
+        pairs.extend([("mulq VF12,VF22,Q", "NOP"), ("NOP[E]", "NOP"), NOP]);
+        let execution = timed(&pairs, state.clone());
+        assert_eq!(execution.state.vf[12], [4.0_f32.to_bits(); 4]);
+        assert_eq!(stalls(&execution), [0; 10]);
+        // Figure 3-8: the second DIV waits until the first's D6 ends, five
+        // cycles; the MULq before it reads the old Q, and the MULq with it
+        // the first quotient, landed in the cycles it waited.
+        let execution = timed(
+            &[
+                ("NOP", "div Q,VF10x,VF20x"),
+                ("mulq VF12,VF22,Q", "NOP"),
+                ("mulq VF13,VF23,Q", "div Q,VF11x,VF21x"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state,
+        );
+        assert_eq!(stalls(&execution), [0, 0, 5, 0, 0]);
+        assert_eq!(execution.state.vf[12], [0.5_f32.to_bits(); 4]);
+        assert_eq!(execution.state.vf[13], [4.0_f32.to_bits(); 4]);
+    }
+
+    #[test]
+    fn figure_3_9_waitq_waits_for_q_and_its_pair_reads_it() {
+        let mut state = State::default();
+        state.set_vector(10, [8.0; 4]);
+        state.set_vector(20, [2.0; 4]);
+        state.set_vector(23, [1.0; 4]);
+        let execution = timed(
+            &[
+                ("NOP", "div Q,VF10x,VF20x"),
+                ("mulq VF13,VF23,Q", "waitq"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state,
+        );
+        assert_eq!(stalls(&execution), [0, 6, 0, 0]);
+        assert_eq!(execution.state.vf[13], [4.0_f32.to_bits(); 4]);
+    }
+
+    #[test]
+    fn figure_3_11_and_3_12_the_efu_frees_at_nn() {
+        let mut state = State::default();
+        state.set_vector(10, [1.0, 2.0, 2.0, 0.0]);
+        state.p = 7.0_f32.to_bits();
+        // Figure 3-11: ESADD (throughput 10) after ESADD issues ten
+        // cycles after it.
+        let execution = timed(
+            &[
+                ("NOP", "esadd P,VF10"),
+                ("NOP", "esadd P,VF10"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state.clone(),
+        );
+        assert_eq!(stalls(&execution), [0, 9, 0, 0]);
+        // Figure 3-12: the MFP right after reads the old P; WAITP holds
+        // until the ESADD's Nn stage, a cycle before P (latency 11) lands,
+        // and the MFP after it reads the sum.
+        let execution = timed(
+            &[
+                ("NOP", "esadd P,VF10"),
+                ("NOP", "mfp.x VF01,P"),
+                ("NOP", "waitp"),
+                ("NOP", "mfp.x VF02,P"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state,
+        );
+        assert_eq!(stalls(&execution), [0, 0, 8, 0, 0, 0]);
+        assert_eq!(execution.state.vf[1][0], 7.0_f32.to_bits());
+        assert_eq!(execution.state.vf[2][0], 9.0_f32.to_bits());
+    }
+
+    #[test]
+    fn figure_3_14_integer_results_are_bypassed() {
+        let mut state = State::default();
+        state.vi[2] = 2;
+        state.vi[3] = 3;
+        state.vi[5] = 10;
+        let execution = timed(
+            &[
+                ("NOP", "iadd VI04,VI03,VI02"),
+                ("NOP", "iaddi VI05,VI05,-1"),
+                ("NOP", "iadd VI06,VI05,VI04"),
+                ("NOP", "iadd VI07,VI06,VI04"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state,
+        );
+        assert_eq!(stalls(&execution), [0; 6]);
+        assert_eq!(execution.state.vi[7], 19);
+    }
+
+    #[test]
+    fn figure_3_15_a_branch_needs_a_slot_after_its_setter() {
+        // The loop of figure 3-15 decrements VI03 and branches on it with
+        // a pair between: three passes from 3. With the IBNE right after
+        // the IADDI it reads the count from before, and runs one pass more.
+        let program = |slot: bool| {
+            let body = if slot {
+                assembly(&[
+                    ("NOP", "iaddi VI03,VI03,-1"),
+                    ("NOP", "iaddiu VI04,VI04,1"),
+                    ("NOP", "ibne VI03,VI00,loop"),
+                    NOP,
+                ])
+            } else {
+                assembly(&[
+                    ("NOP", "iaddi VI03,VI03,-1"),
+                    ("NOP", "ibne VI03,VI00,loop"),
+                    ("NOP", "iaddiu VI04,VI04,1"),
+                ])
+            };
+            format!("loop:\n{body}{}", assembly(&[("NOP[E]", "NOP"), NOP]))
+        };
+        let mut state = State::default();
+        state.vi[3] = 3;
+        let run = |text: String| {
+            Program::parse(&text)
+                .unwrap()
+                .run(state.clone(), Config::TIMED, 64)
+                .unwrap()
+        };
+        assert_eq!(run(program(true)).state.vi[4], 3);
+        let unslotted = run(program(false));
+        assert_eq!(unslotted.state.vi[4], 4);
+        assert_eq!(unslotted.state.vi[3], 0xffff);
+        // A flag check needs no slot.
+        let text = format!(
+            "{}target:\n{}",
+            assembly(&[
+                ("NOP", "fsand VI01,0x1"),
+                ("NOP", "ibne VI01,VI00,target"),
+                NOP,
+                ("NOP", "iaddiu VI02,VI00,9"),
+            ]),
+            assembly(&[("NOP[E]", "NOP"), NOP])
+        );
+        let state = State {
+            status: 1,
+            ..State::default()
+        };
+        let execution = Program::parse(&text)
+            .unwrap()
+            .run(state, Config::TIMED, 64)
+            .unwrap();
+        assert_eq!(execution.state.vi[2], 0);
+    }
+
+    #[test]
+    fn figure_3_16_and_3_17_the_status_flag_follows_the_s_stage() {
+        // Figure 3-16: FSAND three pairs after a MUL reads its status.
+        let mut state = State::default();
+        state.set_vector(10, [-1.0; 4]);
+        state.set_vector(20, [2.0; 4]);
+        state.set_vector(11, [2.0; 4]);
+        state.set_vector(12, [1.0; 4]);
+        state.set_vector(14, [1.0; 4]);
+        state.set_vector(24, [1.0; 4]);
+        let execution = timed(
+            &[
+                ("mul VF05,VF10,VF20", "NOP"),
+                ("add VF06,VF11,VF21", "NOP"),
+                ("add VF07,VF12,VF22", "NOP"),
+                ("add VF08,VF13,VF23", "NOP"),
+                ("add VF09,VF14,VF24", "fsand VI01,0xfff"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state.clone(),
+        );
+        // S from the MUL (negative), sticky SS; the ADDs are later.
+        assert_eq!(execution.state.vi[1], 0x82);
+        // Figure 3-17: instructions 2 and 3 each wait for the one before,
+        // three cycles; FSAND then reads instruction 2's status: Z from its
+        // zero sum, the stickies of both.
+        let execution = timed(
+            &[
+                ("mul VF05,VF10,VF20", "NOP"),
+                ("add VF06,VF11,VF05", "NOP"),
+                ("add VF07,VF12,VF06", "NOP"),
+                ("add VF08,VF13,VF23", "NOP"),
+                ("add VF09,VF14,VF24", "fsand VI01,0xfff"),
+                ("NOP[E]", "NOP"),
+                NOP,
+            ],
+            state,
+        );
+        assert_eq!(stalls(&execution), [0, 3, 3, 0, 0, 0, 0]);
+        assert_eq!(execution.state.vi[1], 0xc1);
     }
 
     #[test]
