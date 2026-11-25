@@ -21,7 +21,8 @@ otherwise, and each compiles with `oxide-vusl example.vusl`
 
 ```glsl
 // Scales every vector in a batch, in place.
-struct Batch {
+struct Batch
+{
     layout(lane = w) int16 count;   // the header qword's w
     vec4 scale;
     vec4 values[count];
@@ -30,7 +31,9 @@ struct Batch {
 void main(layout(xtop, vif_base = 0, vif_offset = 512) inout Batch batch)
 {
     for (inout vec4 value : batch.values)
+    {
         value = value * batch.scale;
+    }
 }
 ```
 
@@ -96,7 +99,11 @@ A variable of a struct type keeps each member in registers of its own, in the la
 gives it in memory, so storing a member moves nothing and every path leaves it in the same lanes:
 
 ```glsl
-struct Vertex { vec4 position; layout(lane = w) uint32 color; };
+struct Vertex
+{
+    vec4 position;
+    layout(lane = w) uint32 color;
+};
 
 Vertex transformed(Vertex vertex, mat4 by)
 {
@@ -125,7 +132,7 @@ batch.target = vertex;
 
 ```glsl
 enum class ClipPlane { Near, PositiveX, NegativeX, PositiveY, NegativeY };
-enum class Blend : int16 { Opaque = -1, Add = 2, Multiply };   // Multiply is 3
+enum class Blend : int16 { Opaque = -1, Add = 2, Multiply }; // Multiply is 3
 
 float planeDistance(vec4 pos, ClipPlane plane)
 {
@@ -195,7 +202,12 @@ without first moving it. VUSL makes lane moves explicit.
   already in place.
 
 ```glsl
-struct Block { vec2 uv; vec2 st; vec4 out0; };
+struct Block
+{
+    vec2 uv;
+    vec2 st;
+    vec4 out0;
+};
 
 void main(layout(address = 0) inout Block block)
 {
@@ -290,7 +302,9 @@ from that region. Setting it later from other memory is an error.
 
 ```glsl
 struct Out { vec4 v; };
-struct Block {
+
+struct Block
+{
     layout(lane = w) int16 count;
     vec4 values[count];
     Out kept[];
@@ -587,6 +601,7 @@ the library's memory, and declares its exports:
 
 struct Constants { vec4 scale; };
 struct Saves { qword q[5]; };
+
 layout(address = 0) uniform Constants constants;   // memory the library only reads
 layout(address = 1000) inout Saves saves;          // where it saves registers
 
@@ -623,7 +638,15 @@ argument must be a whole variable.
 ```glsl
 #include "mathlib.vush"
 
-struct Block { vec4 value; int16 count; int16 pad0; int16 pad1; int16 pad2; vec4 result; };
+struct Block
+{
+    vec4 value;
+    int16 count;
+    int16 pad0;
+    int16 pad1;
+    int16 pad2;
+    vec4 result;
+};
 
 void main(layout(address = 4) inout Block block)
 {

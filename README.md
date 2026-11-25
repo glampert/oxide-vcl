@@ -29,7 +29,7 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
   `unswitch`, each of which `--no-opt=NAME` turns off. They are described
   in [VCL_REFERENCE.md](docs/VCL_REFERENCE.md#optimizations) and
   [OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md).
-- [VUSL](#vusl), a GLSL-like language for VU1 microprograms, compiles to VCL
+- [VUSL](docs/VUSL.md), a GLSL-like language for VU1 microprograms, compiles to VCL
   through oxide-vcl and writes a C++ header and JSON describing the program's
   memory for the host. Its ports of the Quake 2 and Doom 3 programs in the
   corpus draw the same packets as the hand-written VCL on every test scene,
@@ -51,18 +51,21 @@ data memory:
 // transform.vusl: Transforms a batch of vertices to clip space and tints them, in place.
 #pragma program(VU1Prog_Transform)
 
-struct Frame {
+struct Frame
+{
     mat4 mvp;
     vec4 tint;
 };
 
-struct Vertex {
+struct Vertex
+{
     vec4 position;
     vec4 color;
 };
 
-struct Batch {
-    layout(lane = w) int16 count;   // the header qword's w
+struct Batch
+{
+    layout(lane = w) int16 count; // the header qword's w
     Vertex vertices[count];
 };
 
