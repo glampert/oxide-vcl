@@ -7,9 +7,10 @@ use super::ast::*;
 use super::lexer::{Pos, Punct, Token, TokenKind};
 
 /// Words that cannot name anything.
-pub const KEYWORDS: [&str; 21] = [
+pub const KEYWORDS: [&str; 22] = [
     "struct", "if", "else", "for", "while", "do", "break", "continue", "return", "yield", "in",
     "out", "inout", "uniform", "layout", "const", "precise", "true", "false", "ref", "export",
+    "enum",
 ];
 
 /// Why the tokens are not a program.
@@ -19,6 +20,8 @@ pub enum SyntaxErrorKind {
     Expected { expected: String, found: String },
     /// A keyword where a name belongs.
     KeywordAsName(String),
+    /// `enum` without `class`: a C enum, which VUSL does not have.
+    UnscopedEnum,
     /// A variable declared at file scope.
     GlobalVariable(String),
     /// A call of something that is not a name: `(f)(x)`, `a.b(c)`.
@@ -192,6 +195,17 @@ impl Parser<'_> {
         if self.at_keyword("const") {
             return Ok(Item::Const(self.const_decl()?));
         }
+        if self.at_keyword("enum") {
+            return Ok(Item::Enum(self.enum_decl()?));
+        }
+        // `type` names a type only before a name and `=`: elsewhere it is
+        // an ordinary name.
+        if self.at_keyword("type")
+            && Self::is_name(self.peek_at(1))
+            && self.peek_at(2).is(Punct::Assign)
+        {
+            return Ok(Item::Alias(self.type_alias()?));
+        }
         let pos = self.peek().pos;
         if self.at_keyword("layout") {
             // Memory at file scope: a library's.
@@ -363,6 +377,53 @@ impl Parser<'_> {
         }
         self.expect(Punct::Semicolon)?;
         Ok(StructDecl { name, members, pos })
+    }
+
+    fn enum_decl(&mut self) -> Parsed<EnumDecl> {
+        let pos = self.advance().pos;
+        if !self.eat_keyword("class") {
+            return Err(SyntaxError {
+                kind: SyntaxErrorKind::UnscopedEnum,
+                pos: self.peek().pos,
+            });
+        }
+        let name = self.ident("the enum's name")?;
+        let underlying = if self.eat(Punct::Colon) {
+            Some(self.type_name("the enum's underlying type")?)
+        } else {
+            None
+        };
+        self.expect(Punct::OpenBrace)?;
+        let mut values = Vec::new();
+        while !self.eat(Punct::CloseBrace) {
+            let name = self.ident("an enumerator's name")?;
+            let value = if self.eat(Punct::Assign) {
+                Some(self.conditional()?)
+            } else {
+                None
+            };
+            values.push(Enumerator { name, value });
+            if !self.eat(Punct::Comma) {
+                self.expect(Punct::CloseBrace)?;
+                break;
+            }
+        }
+        self.expect(Punct::Semicolon)?;
+        Ok(EnumDecl {
+            name,
+            underlying,
+            values,
+            pos,
+        })
+    }
+
+    fn type_alias(&mut self) -> Parsed<TypeAlias> {
+        let pos = self.advance().pos;
+        let name = self.ident("the type's name")?;
+        self.expect(Punct::Assign)?;
+        let ty = self.type_name("the type it names")?;
+        self.expect(Punct::Semicolon)?;
+        Ok(TypeAlias { name, ty, pos })
     }
 
     fn const_decl(&mut self) -> Parsed<ConstDecl> {
@@ -855,7 +916,11 @@ impl Parser<'_> {
             }
             TokenKind::Ident if Self::is_name(&token) => {
                 let name = self.ident("an expression")?;
-                if self.at_punct(Punct::OpenParen) {
+                if self.eat(Punct::Scope) {
+                    let scope = name;
+                    let name = self.ident("a value of the enum")?;
+                    ExprKind::Scoped { scope, name }
+                } else if self.at_punct(Punct::OpenParen) {
                     let args = self.call_args()?;
                     let callee = TypeName {
                         pos: name.pos,

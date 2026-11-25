@@ -1,0 +1,5 @@
+input.vusl(6): error: '+' on ClipPlane: an enum's values only compare with each other
+   6 |     block.plane = block.plane + ClipPlane::PositiveX;
+     |                               ^
+     = help: convert it with int16(...) for arithmetic, and back with its constructor
+oxide-vusl: 1 error; no output written

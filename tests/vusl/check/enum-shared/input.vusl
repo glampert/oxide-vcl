@@ -1,0 +1,15 @@
+// A second program that includes draw_state.vush, so that two generated
+// headers share the DrawMode enum and the DrawState struct.
+#pragma program(EnumShared)
+#include "../../include/draw_state.vush"
+
+struct Out { Color color; };
+
+void main(layout(address = 0) uniform DrawState state,
+          layout(address = 2) out Out result)
+{
+    Color color = state.tint;
+    if (state.mode == DrawMode::Lines)
+        color = Color(1.0);
+    result.color = color;
+}

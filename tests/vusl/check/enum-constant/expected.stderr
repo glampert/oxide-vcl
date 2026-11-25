@@ -1,0 +1,5 @@
+input.vusl(6): error: the constant needs ClipPlane, not the integer constant 2: enums convert only explicitly
+   6 | const ClipPlane kThird = 2;
+     |                          ^
+     = help: convert it explicitly with a constructor: ClipPlane(value)
+oxide-vusl: 1 error; no output written

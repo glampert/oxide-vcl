@@ -1,0 +1,26 @@
+// Enums in memory: a shared one from draw_state.vush and the program's
+// own, each an int16 lane, and arrays of them a qword per element. The
+// header declares each as an enum class of the lane's size.
+#pragma program(EnumMemory)
+#include "../../include/draw_state.vush"
+
+enum class Blend : int16
+{
+    Opaque = -1,
+    Add    = 2,
+    Multiply,
+};
+
+struct Batch {
+    layout(lane = w) Blend blend;
+    Blend   steps[2];
+    vec4    color;
+};
+
+void main(layout(address = 0) uniform DrawState state,
+          layout(address = 2) inout Batch batch)
+{
+    if (state.mode == DrawMode::Triangles && batch.blend != Blend::Opaque)
+        batch.color = state.tint;
+    batch.steps[1] = Blend(int16(batch.steps[0]) + 1);
+}

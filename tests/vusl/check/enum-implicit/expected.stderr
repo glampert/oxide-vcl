@@ -1,0 +1,5 @@
+input.vusl(6): error: comparing with ClipPlane needs ClipPlane, not the integer constant 0: enums convert only explicitly
+   6 |     if (block.plane == 0)
+     |                     ^
+     = help: convert it explicitly with a constructor: ClipPlane(value)
+oxide-vusl: 1 error; no output written

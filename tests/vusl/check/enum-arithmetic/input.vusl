@@ -1,0 +1,7 @@
+// An enum's values only compare: arithmetic goes through int16.
+enum class ClipPlane { Near, PositiveX };
+struct Block { layout(lane = x) ClipPlane plane; };
+void main(layout(address = 0) inout Block block)
+{
+    block.plane = block.plane + ClipPlane::PositiveX;
+}

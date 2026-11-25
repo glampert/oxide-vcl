@@ -1,0 +1,18 @@
+// A draw state the host sets, shared by the programs that include it: an
+// enum in memory, and a type alias.
+#pragma once
+
+enum class DrawMode
+{
+    Points,
+    Lines,
+    Triangles = 4,
+};
+
+type Color = vec4;
+
+struct DrawState {
+    layout(lane = x) DrawMode mode;
+    layout(lane = y) int16    count;
+    Color                     tint;
+};

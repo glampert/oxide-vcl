@@ -23,6 +23,8 @@ pub struct File {
 pub enum Item {
     Pragma(Pragma),
     Struct(StructDecl),
+    Enum(EnumDecl),
+    Alias(TypeAlias),
     Const(ConstDecl),
     Function(Function),
     /// `layout(...) qualifier Type name;`: memory a library binds at file
@@ -112,6 +114,32 @@ pub struct Member {
     pub layout: Option<Layout>,
     pub ty: TypeName,
     pub names: Vec<Declarator>,
+    pub pos: Pos,
+}
+
+/// `enum class Name { A, B = value, ... };`, optionally `: int16` after
+/// the name.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EnumDecl {
+    pub name: Ident,
+    /// The type after `:`, as written.
+    pub underlying: Option<TypeName>,
+    pub values: Vec<Enumerator>,
+    pub pos: Pos,
+}
+
+/// One of an enum's names, with its value as written.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Enumerator {
+    pub name: Ident,
+    pub value: Option<Expr>,
+}
+
+/// `type Name = Type;`: another name for a type.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypeAlias {
+    pub name: Ident,
+    pub ty: TypeName,
     pub pos: Pos,
 }
 
@@ -331,6 +359,11 @@ pub enum ExprKind {
     Float(f32),
     Bool(bool),
     Name(Ident),
+    /// `Type::name`: an enum's value.
+    Scoped {
+        scope: Ident,
+        name: Ident,
+    },
     Unary {
         op: UnaryOp,
         operand: Box<Expr>,

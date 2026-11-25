@@ -9,7 +9,7 @@ pub mod hir;
 pub mod layout;
 pub mod types;
 
-pub use check::DATA_MEMORY_QWORDS;
+pub use check::{DATA_MEMORY_QWORDS, type_names};
 
 use crate::diagnostics::VuslMessage;
 use crate::syntax::Pos;

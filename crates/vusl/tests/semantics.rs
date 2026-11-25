@@ -524,6 +524,53 @@ fn struct_assignments_copy_and_swap() {
 }
 
 #[test]
+fn enums_and_type_aliases() {
+    // Enums read from memory and compared at run time, converted both
+    // ways, passed as constants (whose comparisons fold) and as values,
+    // held in struct variables and stored; aliases of a vector, a struct
+    // and a ref name those types.
+    let source = "enum class Plane { Near, PositiveX, NegativeX = 4, PositiveY };\n\
+                  type Color = vec4;\n\
+                  struct Pair { Color first; layout(lane = w) Plane plane; };\n\
+                  type Twin = Pair;\n\
+                  type Cursor = ref<Color>;\n\
+                  struct Block { layout(lane = x) int16 index; layout(lane = y) Plane stored;\n\
+                  \x20   Color a; Color b; Color out0; Color out1; Color out2; Pair pair;\n\
+                  \x20   Color items[2]; };\n\
+                  float term(Color pos, Plane plane)\n\
+                  {\n\
+                  \x20   layout(lane = x) float d = 0.0;\n\
+                  \x20   if (plane == Plane::Near) d = pos.z;\n\
+                  \x20   else if (plane == Plane::PositiveX) d = pos.x;\n\
+                  \x20   else if (plane < Plane::PositiveY) d = pos.y;\n\
+                  \x20   else d = pos.w;\n\
+                  \x20   return d;\n\
+                  }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   Plane chosen = Plane(block.index);\n\
+                  \x20   block.out0 = vec4(term(block.a, chosen), term(block.a, Plane::NegativeX),\n\
+                  \x20       term(block.b, block.stored), term(block.b, Plane::PositiveY));\n\
+                  \x20   Twin twin = Twin(block.b, chosen);\n\
+                  \x20   if (twin.plane >= Plane::NegativeX)\n\
+                  \x20       twin.first = block.a;\n\
+                  \x20   block.pair = twin;\n\
+                  \x20   block.stored = Plane(int16(chosen) + 1);\n\
+                  \x20   Cursor cursor = Cursor(block.items);\n\
+                  \x20   block.out1 = cursor[1];\n\
+                  \x20   block.out2.x = float(int16(block.pair.plane));\n\
+                  }\n";
+    // The index and the stored plane run over every value, and one more.
+    agree(source, 32, |memory, _, _| {
+        let pick = |seed: u32| [0, 1, 4, 5, 2][(seed % 5) as usize];
+        let index = pick(memory[2][0] >> 20);
+        let stored = pick(memory[2][1] >> 21);
+        memory[0][0] = index;
+        memory[0][1] = stored;
+    });
+}
+
+#[test]
 fn matrices_from_columns_and_vector_constants() {
     // mat4 and mat3 from columns, mat3 from a mat4 in either order, a
     // matrix built from its own columns, and vector constants at file

@@ -57,6 +57,8 @@ pub struct Checked {
     pub warnings: Vec<Diagnostic>,
     /// The file each of the program's structs was declared in.
     pub struct_files: Vec<String>,
+    /// The file each of the program's enums was declared in.
+    pub enum_files: Vec<String>,
     /// The file the program was read from.
     pub source: String,
     /// Where each line of the preprocessed program came from.
@@ -82,6 +84,7 @@ impl Checked {
             &self.program,
             &self.source,
             &self.struct_files,
+            &self.enum_files,
             &exports,
             instructions,
         )
@@ -452,11 +455,17 @@ pub fn check(name: &str, preprocessed: &Preprocessed) -> Result<Checked, Box<Fai
                 .iter()
                 .map(|def| locator.locate(def.pos).file)
                 .collect();
+            let enum_files = program
+                .enums
+                .iter()
+                .map(|def| locator.locate(def.pos).file)
+                .collect();
             Ok(Checked {
                 program,
                 entries: checking.entries,
                 warnings,
                 struct_files,
+                enum_files,
                 source: name.to_string(),
                 origins: preprocessed.line_origins.clone(),
             })

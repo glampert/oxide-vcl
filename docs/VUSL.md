@@ -49,7 +49,8 @@ that fits the 512-qword half.
 
 A file holds, at file scope:
 
-- **Types:** `struct` declarations.
+- **Types:** `struct` declarations, [enums](#enums) (`enum class`) and
+  [type aliases](#type-aliases) (`type Name = Type;`).
 - **Constants:** `const int16 kName = 45;`, `const float kHalf = 0.5;` and vectors of constants,
   `const vec4 kScale = vec4(1.0, 2.0, kHalf, 4.0);` or `vec4(0.5)` for all four. A vector constant
   costs what its constructor written out would at each use. A `const` in a function may be any of
@@ -87,6 +88,7 @@ but letters, digits and `_` made `_`. The listing exports `Name_CodeStart` and `
 | `clipflags` | one CLIPW judgement | Made by `clipw()`, read by `any()`, `adc()` and `clipped()`. It can be copied, returned, and passed as an `in` or `out` parameter, and always names the `clipw` it came from |
 | `ref<T>` | a VI qword address | Explicit addressing into memory (see [refs](#refs)) |
 | A `struct` | memory, or one register per member | In memory as a parameter (see [memory](#memory)), or a variable (see [struct variables](#struct-variables)) |
+| An `enum class` | VI, as an `int16` | Named values that compare only with their own type (see [enums](#enums)) |
 
 ### Struct variables
 
@@ -116,6 +118,58 @@ batch.target = vertex;
   copy.
 - A struct with an array member cannot be a variable, a library export cannot take or return one,
   and a struct value is used through its members: there is no struct arithmetic or comparison.
+
+### Enums
+
+`enum class` declares a type of named `int16` values, as C++'s scoped enums do:
+
+```glsl
+enum class ClipPlane { Near, PositiveX, NegativeX, PositiveY, NegativeY };
+enum class Blend : int16 { Opaque = -1, Add = 2, Multiply };   // Multiply is 3
+
+float planeDistance(vec4 pos, ClipPlane plane)
+{
+    if (plane == ClipPlane::Near)
+        return pos.w - pos.z;
+    ...
+}
+
+float d = planeDistance(pos, ClipPlane::Near);
+```
+
+- A value is named with its enum, `ClipPlane::Near`. Each is one more than the one before, from 0,
+  unless it is given: an integer constant, which may name the enum's earlier values, and must fit
+  an `int16`. The underlying type is always `int16`; `: int16` may say so.
+- An enum's value compares (`==`, `!=`, `<`, `<=`, `>`, `>=`) only with a value of the same enum.
+  It does not convert to or from an `int16`, an integer constant or another enum by itself: the
+  constructors convert, `ClipPlane(n)` from an `int16`, an integer constant or another enum, and
+  `int16(plane)` back. There is no arithmetic on an enum; convert to `int16` for it. A condition
+  needs a comparison, not an enum.
+- Enums are file-scope types. They can be variables, constants (`const ClipPlane kFirst =
+  ClipPlane::Near;`), parameters, struct members in registers or in memory, and array elements.
+  In memory a member takes one lane, as an `int16` does.
+- An enum costs what an `int16` does: a variable is a VI register, a comparison an `int16`
+  comparison, and a conversion nothing. A constant enum argument makes the callee's comparisons
+  fold, as an `int16` constant does.
+- [Reflection](#reflection) gives each enum a struct member holds: an `enum class` of the lane's
+  size in the header, and its values in the JSON.
+
+### Type aliases
+
+`type Name = Type;` at file scope names a type again, as Rust's `type` does: any type a declaration
+can name, built-in or the file's, `ref<T>` included.
+
+```glsl
+type Color = vec4;
+type Cursor = ref<Corner>;
+
+Color tint = Color(1.0);          // a vec4, built with vec4's constructor
+Cursor walk = Cursor(clip.a);     // ref<Corner>(clip.a)
+```
+
+An alias is the type itself, not a new one: a `Color` is a `vec4` everywhere, in messages and in the
+reflection too. Its constructor is the type's. An alias cannot take a built-in type's name, and
+`type` is a name like any other outside such a declaration (a member may be called `type`).
 
 ### Lanes
 
@@ -394,6 +448,7 @@ The most instructions each construct emits. Value reuse, hoisting and the peepho
 | A range-for | A guard, a pointer step per distinct stride, the exit branch |
 | A struct copy | 2 per qword |
 | A struct variable | Its members': each member read, set or stored as a variable of its type |
+| An enum | As an `int16`; converting one costs nothing |
 | A function call | 0: inlined. An `in` argument that is a local the call leaves alone, or a constant, is not copied |
 | A library call | A move per argument and result, the entry address, the JALR and its delay slot, the entry table's branch and its delay slot, the library's saves and restores, its JR and its delay slot |
 | `xgkick` | 1, plus the address when it is not in a register |
@@ -459,6 +514,9 @@ Each of these is an error that says what to write instead:
 | A copy of an array whose length is read at run time | A range-for that copies each element |
 | A matrix or struct constant | A variable built from constants |
 | `qword(...)`, `bool(...)` | Copy a qword from memory or set its lanes; compare (`n != 0`) |
+| A C enum (`enum Name { ... }`) | `enum class Name { ... }` |
+| An enum compared with or set from an integer, a constant or another enum | Its constructor, `Name(n)`, or `int16(e)` |
+| Arithmetic on an enum | `int16(e)` first, then the constructor back |
 
 ## Pragmas
 
@@ -565,7 +623,7 @@ not its prototype's; a library build that leaves an export undefined; memory, `b
 `--reflect=prog.json` and `--header=prog.h` describe the program's memory for the host. Both come
 from the checked program, so `--check` writes them without generating code. Complete examples are
 the check cases with an `expected.json` and `expected.h` in `tests/vusl/check` (`particles`,
-`features`, `frame-tint`, `xitop-batch`).
+`features`, `frame-tint`, `xitop-batch`, and `enum-memory` and `enum-shared` for enums).
 
 ### JSON
 
@@ -587,6 +645,8 @@ Schema version 1 (`"vusl": 1`):
   members. A member has its name, type, qword (a number, or an expression after a run-time-length
   array), lane, length, stride, matrix order and `unpack`. The qword and stride give the host its
   UNPACK address and STCYCL settings.
+- `enums`, when a struct member holds one: each enum with its file and its values' names and
+  integers.
 
 ### C++ header
 
@@ -602,8 +662,10 @@ C++17, with `<cstddef>`, `<cstdint>`, and `<tamtypes.h>` when `_EE` is defined.
   (`kBatchParticles`, `kBatchParticlesStride`), of a member at a fixed offset after them
   (`kBatchState` for a `layout(offset = N)` member), and functions the offsets after them
   (`BatchPacket(count)`) and the size (`BatchQwords(count)`).
-- **Shared types.** A struct from an included file goes in `vusl::layout_<hash>`, behind an include
-  guard on the hash of its layout, so the headers of two programs that include the same file can be
+- **One `enum class` per enum a struct member holds,** with `std::int32_t` underneath, the size of
+  the lane it takes, and its values. The VU reads the low 16 bits.
+- **Shared types.** A struct or an enum from an included file goes in `vusl::layout_<hash>`, behind
+  an include guard on the hash of its layout or values, so the headers of two programs that include the same file can be
   used in one translation unit. Types from the program's own file go in `vusl::<program>`.
 - **Program constants** in `vusl::<program>`: each parameter's address (`kFrameAddress`) or VIF base
   and offset (`kBatchVifBase`, `kBatchVifOffset`), its size with the open arrays `main` writes

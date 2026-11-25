@@ -11,7 +11,7 @@
 
 use std::fmt::Write;
 
-use super::model::{ParamInfo, Reflection, StructInfo, extent_text, path_name};
+use super::model::{EnumInfo, ParamInfo, Reflection, StructInfo, extent_text, path_name};
 use crate::sema::hir::ParamPlacement;
 use crate::sema::layout::{Extent, StructDef};
 use crate::sema::types::{Length, Type};
@@ -106,8 +106,30 @@ fn struct_ref(infos: &[StructInfo], id: usize, in_program: bool) -> String {
     }
 }
 
+/// How an enum is named where `in_program` code (or a shared struct's
+/// namespace, when false) refers to it.
+fn enum_ref(infos: &[EnumInfo], id: usize, in_program: bool) -> String {
+    let info = &infos[id];
+    if info.shared && !in_program {
+        format!("::vusl::layout_{}::{}", info.hash, info.def.name)
+    } else {
+        info.def.name.clone()
+    }
+}
+
+/// An enum's definition: an `enum class` the size of an `int16` member's
+/// lane, whose low 16 bits the VU reads.
+fn write_enum(out: &mut String, info: &EnumInfo) {
+    let _ = writeln!(out, "enum class {} : std::int32_t\n{{", info.def.name);
+    for (name, value) in &info.def.values {
+        let _ = writeln!(out, "    {name} = {value},");
+    }
+    let _ = writeln!(out, "}};");
+}
+
 /// The C++ type of a lane or qword value.
-fn value_type(ty: &Type, infos: &[StructInfo], in_program: bool) -> String {
+fn value_type(ty: &Type, reflection: &Reflection, in_program: bool) -> String {
+    let infos = &reflection.structs;
     match ty {
         Type::Float => "float".into(),
         Type::Vec(n) => format!("vec{n}"),
@@ -119,6 +141,7 @@ fn value_type(ty: &Type, infos: &[StructInfo], in_program: bool) -> String {
         Type::Qword => "qword_t".into(),
         Type::Mat { size, .. } => format!("mat{size}"),
         Type::Struct(id) => struct_ref(infos, *id, in_program),
+        Type::Enum(id) => enum_ref(&reflection.enums, *id, in_program),
         _ => "qword_t".into(),
     }
 }
@@ -126,7 +149,7 @@ fn value_type(ty: &Type, infos: &[StructInfo], in_program: bool) -> String {
 /// The bytes a member at a fixed offset takes in its C++ struct.
 fn member_bytes(ty: &Type, structs: &[StructDef]) -> u32 {
     match ty {
-        Type::Float | Type::Int16 | Type::Int32 | Type::Uint32 => 4,
+        Type::Float | Type::Int16 | Type::Enum(_) | Type::Int32 | Type::Uint32 => 4,
         Type::Vec(n) | Type::IVec(n) | Type::UVec(n) => 4 * u32::from(*n),
         Type::Qword => 16,
         Type::Mat { size, .. } => 16 * u32::from(*size),
@@ -175,7 +198,7 @@ fn ends_definition(ty: &Type, structs: &[StructDef]) -> bool {
 /// One struct's definition, its checks and its constants.
 fn write_struct(
     out: &mut String,
-    infos: &[StructInfo],
+    reflection: &Reflection,
     structs: &[StructDef],
     id: usize,
     in_program: bool,
@@ -209,7 +232,7 @@ fn write_struct(
             pad += 1;
         }
         let lanes = match &member.ty {
-            Type::Int16 => Some(1),
+            Type::Int16 | Type::Enum(_) => Some(1),
             Type::Qword => None,
             ty => ty.vf_lanes(),
         };
@@ -257,14 +280,23 @@ fn write_struct(
         }
         let field = match &member.ty {
             Type::Array(element, Length::Fixed(n)) => {
-                let element_type = value_type(element, infos, in_program);
-                if element.vf_lanes().is_some_and(|lanes| lanes < 4) {
+                let element_type = value_type(element, reflection, in_program);
+                // An element of fewer than four lanes takes a qword.
+                let lanes = match **element {
+                    Type::Int16 | Type::Enum(_) => Some(1),
+                    ref element => element.vf_lanes(),
+                };
+                if lanes.is_some_and(|lanes| lanes < 4) {
                     format!("element<{element_type}> {}[{n}];", member.name)
                 } else {
                     format!("{element_type} {}[{n}];", member.name)
                 }
             }
-            ty => format!("{} {};", value_type(ty, infos, in_program), member.name),
+            ty => format!(
+                "{} {};",
+                value_type(ty, reflection, in_program),
+                member.name
+            ),
         };
         fields.push((field, note));
         declared += 1;
@@ -472,6 +504,26 @@ pub fn write(reflection: &Reflection) -> String {
         "#pragma once\n\n#include <cstddef>\n#include <cstdint>\n#if defined(_EE)\n#include <tamtypes.h>\n#endif\n\n",
     );
     out.push_str(VALUE_TYPES);
+    // Enums from included files first, shared as their structs are.
+    for info in reflection
+        .enums
+        .iter()
+        .filter(|info| info.used && info.shared)
+    {
+        let guard = format!("VUSL_ENUM_{}_{}", info.def.name, info.hash);
+        let _ = writeln!(
+            out,
+            "\n// {} ({}), shared by the programs that include it.",
+            info.def.name, info.file
+        );
+        let _ = writeln!(
+            out,
+            "#ifndef {guard}\n#define {guard}\nnamespace vusl::layout_{}\n{{",
+            info.hash
+        );
+        write_enum(&mut out, info);
+        let _ = writeln!(out, "}} // namespace vusl::layout_{}\n#endif", info.hash);
+    }
     for (id, info) in reflection.structs.iter().enumerate() {
         if !info.shared {
             continue;
@@ -487,10 +539,21 @@ pub fn write(reflection: &Reflection) -> String {
             "#ifndef {guard}\n#define {guard}\nnamespace vusl::layout_{}\n{{",
             info.hash
         );
-        write_struct(&mut out, &reflection.structs, &structs, id, false);
+        write_struct(&mut out, reflection, &structs, id, false);
         let _ = writeln!(out, "}} // namespace vusl::layout_{}\n#endif", info.hash);
     }
     let _ = writeln!(out, "\nnamespace vusl::{program}\n{{");
+    for info in reflection
+        .enums
+        .iter()
+        .filter(|info| info.used && info.shared)
+    {
+        let _ = writeln!(
+            out,
+            "using {} = layout_{}::{};",
+            info.def.name, info.hash, info.def.name
+        );
+    }
     for info in reflection.structs.iter().filter(|info| info.shared) {
         let _ = writeln!(
             out,
@@ -498,12 +561,20 @@ pub fn write(reflection: &Reflection) -> String {
             info.def.name, info.hash, info.def.name
         );
     }
+    for info in reflection
+        .enums
+        .iter()
+        .filter(|info| info.used && !info.shared)
+    {
+        out.push('\n');
+        write_enum(&mut out, info);
+    }
     for (id, info) in reflection.structs.iter().enumerate() {
         if info.shared {
             continue;
         }
         out.push('\n');
-        write_struct(&mut out, &reflection.structs, &structs, id, true);
+        write_struct(&mut out, reflection, &structs, id, true);
     }
     let own_library = reflection
         .library

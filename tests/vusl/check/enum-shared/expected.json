@@ -1,0 +1,107 @@
+{
+  "vusl": 1,
+  "program": {
+    "name": "EnumShared",
+    "source": "input.vusl",
+    "symbols": {
+      "start": "EnumShared_CodeStart",
+      "end": "EnumShared_CodeEnd"
+    },
+    "instructions": null
+  },
+  "uses": [],
+  "parameters": [
+    {
+      "name": "state",
+      "qualifier": "uniform",
+      "type": "DrawState",
+      "placement": {
+        "address": 0
+      },
+      "qwords": {
+        "fixed": 2
+      },
+      "reads": ["tint", "mode"],
+      "writes": []
+    },
+    {
+      "name": "result",
+      "qualifier": "out",
+      "type": "Out",
+      "placement": {
+        "address": 2
+      },
+      "qwords": {
+        "fixed": 1
+      },
+      "reads": [],
+      "writes": ["color"]
+    }
+  ],
+  "types": [
+    {
+      "name": "DrawState",
+      "file": "../../include/draw_state.vush",
+      "layout": "70e0c353",
+      "qwords": {
+        "fixed": 2
+      },
+      "members": [
+        {
+          "name": "mode",
+          "type": "DrawMode",
+          "qword": 0,
+          "lane": "x"
+        },
+        {
+          "name": "count",
+          "type": "int16",
+          "qword": 0,
+          "lane": "y"
+        },
+        {
+          "name": "tint",
+          "type": "vec4",
+          "qword": 1,
+          "lane": "x"
+        }
+      ]
+    },
+    {
+      "name": "Out",
+      "file": "input.vusl",
+      "layout": "a832968b",
+      "qwords": {
+        "fixed": 1
+      },
+      "members": [
+        {
+          "name": "color",
+          "type": "vec4",
+          "qword": 0,
+          "lane": "x"
+        }
+      ]
+    }
+  ],
+  "enums": [
+    {
+      "name": "DrawMode",
+      "file": "../../include/draw_state.vush",
+      "values": [
+        {
+          "name": "Points",
+          "value": 0
+        },
+        {
+          "name": "Lines",
+          "value": 1
+        },
+        {
+          "name": "Triangles",
+          "value": 4
+        }
+      ]
+    }
+  ]
+}

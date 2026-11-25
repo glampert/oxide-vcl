@@ -27,6 +27,27 @@ pub fn file(file: &File) -> String {
                 }
                 out.push_str("};\n");
             }
+            Item::Enum(decl) => {
+                let underlying = decl
+                    .underlying
+                    .as_ref()
+                    .map_or(String::new(), |ty| format!(" : {}", type_name(ty)));
+                let _ = writeln!(out, "enum class {}{underlying} {{", decl.name.name);
+                for value in &decl.values {
+                    match &value.value {
+                        Some(written) => {
+                            let _ = writeln!(out, "    {} = {},", value.name.name, expr(written));
+                        }
+                        None => {
+                            let _ = writeln!(out, "    {},", value.name.name);
+                        }
+                    }
+                }
+                out.push_str("};\n");
+            }
+            Item::Alias(alias) => {
+                let _ = writeln!(out, "type {} = {};", alias.name.name, type_name(&alias.ty));
+            }
             Item::Const(decl) => {
                 let _ = writeln!(
                     out,
@@ -254,6 +275,7 @@ pub fn expr(expression: &Expr) -> String {
         ExprKind::Float(value) => format!("{value:?}"),
         ExprKind::Bool(value) => value.to_string(),
         ExprKind::Name(name) => name.name.clone(),
+        ExprKind::Scoped { scope, name } => format!("{}::{}", scope.name, name.name),
         ExprKind::Unary { op, operand } => {
             let op = match op {
                 UnaryOp::Neg => "-",
@@ -411,6 +433,39 @@ mod tests {
              \x20       {\n\
              \x20       }\n\
              }\n"
+        );
+    }
+
+    #[test]
+    fn enums_and_aliases_round_trip() {
+        let program = "enum class ClipPlane { Near, Left = 1 + 1, Right, };\n\
+                       enum class Mode : int16 { Fill = -1 };\n\
+                       type Cursor = ref<Corner>;\n\
+                       struct Batch { int16 type; };\n\
+                       void main() { if (plane == ClipPlane::Near) a = Mode(3); }\n";
+        assert_eq!(
+            round_trip(program),
+            "enum class ClipPlane {\n\
+             \x20   Near,\n\
+             \x20   Left = (1 + 1),\n\
+             \x20   Right,\n\
+             };\n\
+             enum class Mode : int16 {\n\
+             \x20   Fill = (-1),\n\
+             };\n\
+             type Cursor = ref<Corner>;\n\
+             struct Batch {\n\
+             \x20   int16 type;\n\
+             };\n\
+             void main()\n\
+             {\n\
+             \x20   if ((plane == ClipPlane::Near))\n\
+             \x20       (a = Mode(3));\n\
+             }\n"
+        );
+        assert_eq!(
+            failure("enum Plane { Near };"),
+            SyntaxErrorKind::UnscopedEnum
         );
     }
 

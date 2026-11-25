@@ -18,7 +18,7 @@ use super::check::{
 use super::consteval;
 use super::hir::*;
 use super::layout::{Extent, Term};
-use super::types::{Lane, Length, Placement, StructId, Type, builtin_type};
+use super::types::{Lane, Length, Placement, StructId, Type, TypeNames};
 use super::{Checked, Problem, problem};
 use crate::diagnostics::VuslMessage;
 use crate::syntax::Pos;
@@ -99,12 +99,13 @@ pub fn program(
             function.name.pos,
         ));
     }
-    Ok(Program {
+    let mut program = Program {
         name: decls
             .program_name
             .clone()
             .unwrap_or_else(|| default_name.to_string()),
         structs: decls.structs.clone(),
+        enums: decls.enums.clone(),
         params,
         locals: elaborator.locals,
         elements: elaborator.elements,
@@ -113,7 +114,9 @@ pub fn program(
         accesses: elaborator.accesses,
         library: decls.library.clone(),
         entry: None,
-    })
+    };
+    program.erase_enums();
+    Ok(program)
 }
 
 /// A library's own build: the library itself (its memory, no code), and
@@ -183,9 +186,9 @@ pub fn library(
         let types = function
             .params
             .iter()
-            .map(|param| resolve_type(&param.ty, &decls.struct_ids))
+            .map(|param| resolve_type(&param.ty, &decls.types))
             .collect::<Checked<Vec<Type>>>()?;
-        let ret = resolve_type(&function.ret, &decls.struct_ids)?;
+        let ret = resolve_type(&function.ret, &decls.types)?;
         let (registers, result) = call_registers(&library, function, &types, &ret)?;
         elaborator.scopes.push(HashMap::new());
         let mut interface = Vec::new();
@@ -250,9 +253,10 @@ pub fn library(
             });
         }
         elaborator.scopes.pop();
-        entries.push(Program {
+        let mut entry = Program {
             name: format!("{}_{}", library.name, export),
             structs: decls.structs.clone(),
+            enums: decls.enums.clone(),
             params: params.clone(),
             locals: elaborator.locals,
             elements: elaborator.elements,
@@ -266,7 +270,9 @@ pub fn library(
                 params: interface,
                 save,
             }),
-        });
+        };
+        entry.erase_enums();
+        entries.push(entry);
     }
     // The library as a whole reads, writes and uses what its entries do.
     let mut accesses: Vec<Access> = Vec::new();
@@ -279,9 +285,10 @@ pub fn library(
         }
         uses.merge(&entry.uses);
     }
-    let program = Program {
+    let mut program = Program {
         name: library.name.clone(),
         structs: decls.structs.clone(),
+        enums: decls.enums.clone(),
         params,
         locals: Vec::new(),
         elements: Vec::new(),
@@ -291,6 +298,7 @@ pub fn library(
         library: Some(library),
         entry: None,
     };
+    program.erase_enums();
     Ok((program, entries))
 }
 
@@ -338,7 +346,7 @@ pub fn call_registers(
     let (mut vi, mut vf) = (library.vi, library.vf);
     let mut next = |name: &str, ty: &Type, pos: Pos| -> Checked<Register> {
         match ty {
-            Type::Int16 | Type::Ref(_) => {
+            Type::Int16 | Type::Enum(_) | Type::Ref(_) => {
                 if vi > 14 {
                     return err(
                         VuslMessage::ExportRegisters {
@@ -530,7 +538,7 @@ struct LoopContext {
 
 struct Elaborator<'d, 'w> {
     decls: &'d Declarations<'d>,
-    names: Vec<String>,
+    names: TypeNames,
     locals: Vec<Local>,
     state: Vec<LocalState>,
     elements: Vec<Element>,
@@ -570,7 +578,7 @@ impl<'d, 'w> Elaborator<'d, 'w> {
     fn new(decls: &'d Declarations<'d>, warnings: &'w mut Vec<Problem>) -> Self {
         Elaborator {
             decls,
-            names: decls.struct_names(),
+            names: decls.type_names(),
             locals: Vec::new(),
             state: Vec::new(),
             elements: Vec::new(),
@@ -1724,7 +1732,7 @@ impl Elaborator<'_, '_> {
                     range.source.pos,
                 );
             };
-            let declared = resolve_type(&range.ty, &self.decls.struct_ids)?;
+            let declared = resolve_type(&range.ty, &self.decls.types)?;
             if declared != *element_ty {
                 return err(
                     VuslMessage::RangeElementType {
@@ -1882,7 +1890,7 @@ impl Elaborator<'_, '_> {
     }
 
     fn decl(&mut self, decl: &ast::Decl, out: &mut Vec<Stmt>) -> Checked<()> {
-        let ty = resolve_type(&decl.ty, &self.decls.struct_ids)?;
+        let ty = resolve_type(&decl.ty, &self.decls.types)?;
         let mut fixed_lane = None;
         for arg in decl.layout.iter().flat_map(|layout| &layout.args) {
             let lane = match (
@@ -2742,6 +2750,15 @@ impl Elaborator<'_, '_> {
     fn increment(&mut self, operand: &ast::Expr, up: bool, pos: Pos) -> Checked<Stmt> {
         let target = self.target(operand)?;
         let (ty, _) = self.target_shape(&target);
+        if let Type::Enum(_) = ty {
+            return err(
+                VuslMessage::EnumOperation {
+                    op: if up { "++" } else { "--" }.into(),
+                    ty: self.type_name(&ty),
+                },
+                pos,
+            );
+        }
         if ty != Type::Int16 {
             return err(
                 VuslMessage::TypeMismatch {
@@ -2782,6 +2799,7 @@ impl Elaborator<'_, '_> {
             Type::Float
                 | Type::Vec(_)
                 | Type::Int16
+                | Type::Enum(_)
                 | Type::Int32
                 | Type::Uint32
                 | Type::IVec(_)
@@ -2867,6 +2885,7 @@ impl Elaborator<'_, '_> {
             Ast::Int(value) => Ok(Value::Reg(constant_expr(Const::Int(*value), pos))),
             Ast::Float(value) => Ok(Value::Reg(constant_expr(Const::Float(*value), pos))),
             Ast::Bool(value) => Ok(Value::Reg(constant_expr(Const::Bool(*value), pos))),
+            Ast::Scoped { scope, name } => self.enumerator(scope, name).map(Value::Reg),
             Ast::Name(name) => match self.lookup(name)? {
                 Symbol::Local(id) => Ok(Value::Reg(self.read_local(id, pos)?)),
                 Symbol::Const(value, ty) => {
@@ -3331,6 +3350,23 @@ impl Elaborator<'_, '_> {
     }
 
     fn unary(&mut self, op: UnaryOp, operand: Expr, pos: Pos) -> Checked<Expr> {
+        if let Type::Enum(_) = operand.ty {
+            let op = match op {
+                UnaryOp::Neg => "-",
+                UnaryOp::Plus => "+",
+                UnaryOp::Not => "!",
+                UnaryOp::BitNot => "~",
+                UnaryOp::PreIncrement => "++",
+                UnaryOp::PreDecrement => "--",
+            };
+            return err(
+                VuslMessage::EnumOperation {
+                    op: op.into(),
+                    ty: self.type_name(&operand.ty),
+                },
+                pos,
+            );
+        }
         if let Some(value) = as_const(&operand) {
             return match consteval::unary(op, value) {
                 Ok(value) => {
@@ -3544,7 +3580,7 @@ impl Elaborator<'_, '_> {
     /// first T, and `ref<T>(memory, address)`, an `int16` address within
     /// memory.
     fn make_ref(&mut self, callee: &ast::TypeName, args: &[ast::Expr], pos: Pos) -> Checked<Expr> {
-        let ty = resolve_type(callee, &self.decls.struct_ids)?;
+        let ty = resolve_type(callee, &self.decls.types)?;
         let Type::Ref(target) = ty.clone() else {
             return err(
                 VuslMessage::TypeMismatch {
@@ -3713,6 +3749,9 @@ impl Elaborator<'_, '_> {
     }
 
     fn binary_values(&mut self, op: BinaryOp, lhs: Expr, rhs: Expr, pos: Pos) -> Checked<Expr> {
+        if matches!(lhs.ty, Type::Enum(_)) || matches!(rhs.ty, Type::Enum(_)) {
+            return self.enum_binary(op, lhs, rhs, pos);
+        }
         if matches!(lhs.ty, Type::Ref(_)) || matches!(rhs.ty, Type::Ref(_)) {
             return self.ref_arithmetic(op, lhs, rhs, pos);
         }
@@ -4058,6 +4097,70 @@ impl Elaborator<'_, '_> {
         })
     }
 
+    /// An operation with an enum operand: only a comparison with the same
+    /// enum, which folds when both are constants and is otherwise an
+    /// `int16` comparison.
+    fn enum_binary(&mut self, op: BinaryOp, lhs: Expr, rhs: Expr, pos: Pos) -> Checked<Expr> {
+        let (enum_ty, other) = match (&lhs.ty, &rhs.ty) {
+            (Type::Enum(_), other) => (&lhs.ty, other),
+            (other, _) => (&rhs.ty, other),
+        };
+        if !op.is_comparison() {
+            return err(
+                VuslMessage::EnumOperation {
+                    op: op.spelling().into(),
+                    ty: self.type_name(enum_ty),
+                },
+                pos,
+            );
+        }
+        if lhs.ty != rhs.ty {
+            let found = match (other, as_const(if other == &lhs.ty { &lhs } else { &rhs })) {
+                (Type::Int16, Some(Const::Int(n))) => format!("the integer constant {n}"),
+                _ => self.type_name(other),
+            };
+            return err(
+                VuslMessage::EnumConversion {
+                    context: format!("comparing with {}", self.type_name(enum_ty)),
+                    expected: self.type_name(enum_ty),
+                    found,
+                },
+                pos,
+            );
+        }
+        if let (Some(a), Some(b)) = (as_const(&lhs), as_const(&rhs))
+            && let Ok(value) = consteval::binary(op, a, b)
+        {
+            return Ok(constant_expr(value, pos));
+        }
+        self.compare(op, lhs, rhs, pos)
+    }
+
+    /// `Enum::name`: the enum's value, a constant of the enum.
+    fn enumerator(&self, scope: &ast::Ident, name: &ast::Ident) -> Checked<Expr> {
+        let Some(Type::Enum(id)) = self.decls.named_type(&scope.name) else {
+            return err(
+                VuslMessage::NotAnEnum {
+                    name: scope.name.clone(),
+                },
+                scope.pos,
+            );
+        };
+        let def = &self.decls.enums[id];
+        let Some(value) = def.value(&name.name) else {
+            return err(
+                VuslMessage::UnknownEnumerator {
+                    ty: def.name.clone(),
+                    name: name.name.clone(),
+                },
+                name.pos,
+            );
+        };
+        let mut constant = constant_expr(Const::Int(value), scope.pos);
+        constant.ty = Type::Enum(id);
+        Ok(constant)
+    }
+
     fn compare(&self, op: BinaryOp, lhs: Expr, rhs: Expr, pos: Pos) -> Checked<Expr> {
         let compare_op = match op {
             BinaryOp::Less => CompareOp::Less,
@@ -4070,6 +4173,7 @@ impl Elaborator<'_, '_> {
         let scalars = match (&lhs.ty, &rhs.ty) {
             (Type::Int16, Type::Int16) | (Type::Float, Type::Float) => true,
             (Type::Ref(a), Type::Ref(b)) => a == b,
+            (Type::Enum(a), Type::Enum(b)) => a == b,
             _ => false,
         };
         if !scalars {
@@ -4122,6 +4226,20 @@ impl Elaborator<'_, '_> {
         if let (Type::Float, Some(Const::Int(_))) = (ty, as_const(&value)) {
             return Ok(self.to_float(value));
         }
+        if ty.has_enum() || value.ty.has_enum() {
+            let found = match (&value.ty, as_const(&value)) {
+                (Type::Int16, Some(Const::Int(n))) => format!("the integer constant {n}"),
+                _ => self.type_text(&value),
+            };
+            return err(
+                VuslMessage::EnumConversion {
+                    context: context.into(),
+                    expected: self.type_name(ty),
+                    found,
+                },
+                value.pos,
+            );
+        }
         err(
             VuslMessage::TypeMismatch {
                 context: context.into(),
@@ -4141,8 +4259,15 @@ impl Elaborator<'_, '_> {
             return self.make_ref(callee, args, pos).map(Value::Reg);
         }
         let name = callee.name.name.as_str();
-        if let Some(ty) = builtin_type(name) {
-            return self.construct(ty, name, args, pos).map(Value::Reg);
+        // A type's constructor: a built-in's, or a struct's, an enum's or
+        // an alias's.
+        match self.decls.named_type(name) {
+            Some(Type::Struct(id)) => {
+                return self.struct_constructor(id, args, pos).map(Value::Struct);
+            }
+            Some(Type::Ref(_)) => return self.make_ref(callee, args, pos).map(Value::Reg),
+            Some(ty) => return self.construct(ty, name, args, pos).map(Value::Reg),
+            None => {}
         }
         if let Some(function) = self.decls.functions.get(name).copied() {
             return match self.inline(function, args, pos)? {
@@ -4159,9 +4284,6 @@ impl Elaborator<'_, '_> {
         }
         if name == "xgkick" {
             return err(VuslMessage::NestedAssignment, pos);
-        }
-        if let Some(&id) = self.decls.struct_ids.get(name) {
-            return self.struct_constructor(id, args, pos).map(Value::Struct);
         }
         let args: Vec<Expr> = args
             .iter()
@@ -4603,8 +4725,38 @@ impl Elaborator<'_, '_> {
                         .map(|()| arg),
                 }
             }
+            Type::Enum(id) => {
+                let arg = single(args)?;
+                let mut value = match (&arg.ty, as_const(&arg)) {
+                    (Type::Int16 | Type::Enum(_), Some(Const::Int(n))) if !int16_range(n) => {
+                        return err(
+                            VuslMessage::ConstantRange {
+                                value: n.to_string(),
+                                ty: "int16",
+                            },
+                            arg.pos,
+                        );
+                    }
+                    (Type::Int16 | Type::Enum(_), _) => arg,
+                    _ => {
+                        return self
+                            .expect_type(&arg, false, &context, "an int16 or an enum")
+                            .map(|()| arg);
+                    }
+                };
+                // The same int16, now of the enum.
+                value.ty = Type::Enum(*id);
+                value.pos = pos;
+                Ok(value)
+            }
             Type::Int16 => {
                 let arg = single(args)?;
+                if let Type::Enum(_) = arg.ty {
+                    let mut value = arg;
+                    value.ty = Type::Int16;
+                    value.pos = pos;
+                    return Ok(value);
+                }
                 match (&arg.ty, as_const(&arg)) {
                     (_, Some(Const::Float(f))) => Ok(constant_expr(Const::Int(f as i64), pos)),
                     (Type::Int16, _) => Ok(arg),
@@ -4845,7 +4997,7 @@ impl Elaborator<'_, '_> {
             );
         }
         self.called.insert(name.clone());
-        let ret = resolve_type(&function.ret, &self.decls.struct_ids)?;
+        let ret = resolve_type(&function.ret, &self.decls.types)?;
         let mut scope: HashMap<String, (Symbol, Pos)> = HashMap::new();
         let mut setup = Vec::new();
         let library_call = self.decls.calls_library(&name);
@@ -4861,7 +5013,7 @@ impl Elaborator<'_, '_> {
                     layout.pos,
                 );
             }
-            let ty = resolve_type(&param.ty, &self.decls.struct_ids)?;
+            let ty = resolve_type(&param.ty, &self.decls.types)?;
             let qualifier = param
                 .qualifier
                 .map_or(Qualifier::In, |(qualifier, _)| qualifier);
@@ -5401,7 +5553,7 @@ fn target_root(expr: &ast::Expr) -> Option<&str> {
 fn expr_writes(decls: &Declarations, expr: &ast::Expr, name: &str) -> bool {
     let sub = |expr: &ast::Expr| expr_writes(decls, expr, name);
     match &expr.kind {
-        Ast::Int(_) | Ast::Float(_) | Ast::Bool(_) | Ast::Name(_) => false,
+        Ast::Int(_) | Ast::Float(_) | Ast::Bool(_) | Ast::Name(_) | Ast::Scoped { .. } => false,
         Ast::Assign { target, value, .. } => {
             target_root(target) == Some(name) || sub(target) || sub(value)
         }

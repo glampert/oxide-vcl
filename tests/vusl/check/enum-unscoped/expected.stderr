@@ -1,0 +1,5 @@
+input.vusl(2): error: an enum must be scoped: VUSL has no C enums
+   2 | enum ClipPlane { Near, PositiveX };
+     |      ^
+     = help: write enum class Name { ... }, and name its values as Name::Value
+oxide-vusl: 1 error; no output written

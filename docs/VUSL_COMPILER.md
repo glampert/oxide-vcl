@@ -37,15 +37,19 @@ Neither crate has external dependencies. The `vcl` crate provides the preprocess
 2. **Parse** (`syntax`). A lexer over the preprocessed text, where `#pragma` lines become tokens,
    and a recursive-descent parser with C precedence. `?:` and assignments inside expressions are
    parsed so the checker can reject them with a reason.
-3. **Check declarations** (`sema/check.rs`). Structs and their layouts, constants, functions and
-   file pragmas, then `main`'s parameters: their placements, the overlap check, `alias`, `spill`
-   and the double-buffer fit.
+3. **Check declarations** (`sema/check.rs`). Structs and their layouts, enums and their values,
+   type aliases, constants, functions and file pragmas, then `main`'s parameters: their
+   placements, the overlap check, `alias`, `spill` and the double-buffer fit. Every type name the
+   file declares goes in one map (`Declarations::types`): a struct's `Type::Struct`, an enum's
+   `Type::Enum`, and an alias's resolved type, so an alias is its type wherever it is named.
 4. **Elaborate `main`** (`sema/elaborate.rs`). Names are resolved, every call is inlined, and each
    expression gets its type and placement. The strict rules apply here: an operation with no VU
    instruction, operands in different lanes, a raw lane move, a ref leaving its region, a clip
    judgement out of reach. Constants fold, `#pragma unroll` repeats constant-count loops, and the
    accesses to each member are recorded for reflection. The result is the checked program
-   (`sema/hir.rs`).
+   (`sema/hir.rs`), whose enums are then `int16` (`Program::erase_enums`): an enum is only a
+   checker's type, and code generation and the interpreter see its values as the `int16` they are.
+   The struct definitions keep their enum members, for the reflection.
 5. **Reflect** (`reflect`). The description of the parameters and types comes from the checked
    program alone, so `--check` can write it.
 6. **Lower** (`codegen`). `codegen/fold.rs` first folds `0.0 + x`, `a + (-b)` and copies a local's
@@ -87,6 +91,12 @@ of one becomes one per member. A member's value that reads a member the same ass
 earlier goes through a new local first, and so does one that loads memory, before a store's first
 member. Vector constants (`Symbol::Vector`) are their constructor, substituted at each use. A
 matrix from columns is `ExprKind::Columns`, whose parts codegen puts in the matrix's registers.
+
+An enum's value (`Ast::Scoped`, `ClipPlane::Near`) is an `int16` constant of type `Type::Enum`.
+Enum operands are checked before constants fold, so `ClipPlane::Near == 0` is an error rather than
+`true`: only a comparison with the same enum is allowed (`enum_binary`), and `coerce` refuses an
+enum for an `int16` and the other way round. The constructors convert by retyping the value, which
+costs nothing.
 
 Each local carries, as the walk goes, the placement of its value and which components are set.
 Paths that join must agree on placements, except for `layout(lane = ...)` locals, whose every
@@ -321,6 +331,7 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `fold-zero-negation` | The first clipper's plane distance: `0.0 + pos.w`, a copy its next statement overwrites, and `d + jn.z` with `jn = -jp`, folded to `mul.w` and `sub.w` in lane w |
 | `loop-constants` | An `int16` mask in a loop with a branch, made once before it; a constant assigned to a local stays in the loop |
 | `struct-variable` | A vertex returned by a function and stored: each member computed in its own lanes and stored with no move |
+| `enum-planes` | The clipper's plane distance with the plane an `enum class`: each constant plane folds the comparisons to its one term |
 | `matrix-columns` | `mat4` from four columns, each loaded into the matrix's registers, and `mat3` of a `mat4` as three `lq.xyz` |
 | `clip-function` | `clip-adc` with each judgement returned by a function: the same code, since a `clipflags` result names its `clipw` |
 | `bool-any` | Whether any vertex is outside, as `fcand` and `ior` into a bool |

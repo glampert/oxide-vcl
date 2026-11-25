@@ -324,6 +324,36 @@ pub enum VuslMessage {
     RangeNotArray {
         found: String,
     },
+    /// A type alias named like a built-in type.
+    BuiltinTypeName {
+        name: String,
+    },
+    /// An enum declared with an underlying type other than `int16`.
+    EnumUnderlying {
+        name: String,
+        found: String,
+    },
+    /// `Enum::name` naming no value of the enum.
+    UnknownEnumerator {
+        ty: String,
+        name: String,
+    },
+    /// `Name::value` where `Name` is not an enum.
+    NotAnEnum {
+        name: String,
+    },
+    /// An enum where another type is wanted, or the other way round:
+    /// enums convert only with a constructor.
+    EnumConversion {
+        context: String,
+        expected: String,
+        found: String,
+    },
+    /// Arithmetic or logic on an enum's value, which only compares.
+    EnumOperation {
+        op: String,
+        ty: String,
+    },
     /// A type with no constructor: `qword(...)`, `bool(...)`.
     NoConstructor {
         ty: String,
@@ -409,6 +439,9 @@ fn dynamic_help(message: &VuslMessage) -> Option<String> {
             _ => None,
         },
         BadPragma { name, expected } => Some(format!("write #pragma {name}{expected}")),
+        EnumConversion { expected, .. } => Some(format!(
+            "convert it explicitly with a constructor: {expected}(value)"
+        )),
         CallInShortCircuit { name } => Some(format!(
             "call it before the condition and test its result: float result = {name}(...);"
         )),
@@ -728,6 +761,36 @@ fn wording(message: &VuslMessage) -> Wording {
             ),
         ),
         NoConstructor { ty, help } => (format!("{ty} has no constructor"), None, Some(help)),
+        BuiltinTypeName { name } => (
+            format!("'{name}' is a built-in type and cannot be declared again"),
+            Some(name.clone()),
+            None,
+        ),
+        EnumUnderlying { name, found } => (
+            format!("enum '{name}' holds {found}: an enum's values are int16"),
+            None,
+            Some("drop the type after ':', or write : int16"),
+        ),
+        UnknownEnumerator { ty, name } => about(format!("{ty} has no value '{name}'"), name),
+        NotAnEnum { name } => (
+            format!("'{name}' is not an enum: only an enum's values are named with ::"),
+            Some(name.clone()),
+            None,
+        ),
+        EnumConversion {
+            context,
+            expected,
+            found,
+        } => (
+            format!("{context} needs {expected}, not {found}: enums convert only explicitly"),
+            None,
+            None,
+        ),
+        EnumOperation { op, ty } => (
+            format!("'{op}' on {ty}: an enum's values only compare with each other"),
+            None,
+            Some("convert it with int16(...) for arithmetic, and back with its constructor"),
+        ),
         CallInShortCircuit { name } => (
             format!(
                 "'{name}' runs statements, which the right side of && or || cannot: they would \
@@ -852,6 +915,11 @@ fn syntax(kind: &SyntaxErrorKind) -> Wording {
                 "file scope holds types, constants and functions; memory reaches the program \
                  as main's parameters",
             ),
+        ),
+        SyntaxErrorKind::UnscopedEnum => (
+            "an enum must be scoped: VUSL has no C enums".into(),
+            None,
+            Some("write enum class Name { ... }, and name its values as Name::Value"),
         ),
         SyntaxErrorKind::NotCallable => (
             "only a function, a built-in or a type can be called".into(),

@@ -16,6 +16,9 @@ pub struct Program {
     /// `#pragma program(name)`, or the file's stem.
     pub name: String,
     pub structs: Vec<StructDef>,
+    /// The file's enums, which the reflection describes; the rest of the
+    /// program holds their values as `int16` (`erase_enums`).
+    pub enums: Vec<EnumDef>,
     pub params: Vec<Param>,
     pub locals: Vec<Local>,
     pub elements: Vec<Element>,
@@ -28,6 +31,119 @@ pub struct Program {
     /// For a library's entry: where its parameters arrive and its results
     /// leave.
     pub entry: Option<Entry>,
+}
+
+/// An `enum class`: its name and its values, in order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnumDef {
+    pub name: String,
+    pub pos: Pos,
+    pub values: Vec<(String, i64)>,
+}
+
+impl EnumDef {
+    /// The value of the enumerator `name`.
+    pub fn value(&self, name: &str) -> Option<i64> {
+        self.values
+            .iter()
+            .find(|(value_name, _)| value_name == name)
+            .map(|&(_, value)| value)
+    }
+}
+
+impl Program {
+    /// Every enum type in the program's code as the `int16` it holds: code
+    /// generation and the interpreter see only `int16`. The struct
+    /// definitions keep their enum members, for the reflection.
+    pub fn erase_enums(&mut self) {
+        for local in &mut self.locals {
+            local.ty = local.ty.erased();
+        }
+        for param in &mut self.params {
+            param.ty = param.ty.erased();
+        }
+        for element in &mut self.elements {
+            element.ty = element.ty.erased();
+            element.array.erase_enums();
+        }
+        erase_stmts(&mut self.body);
+    }
+}
+
+fn erase_stmts(stmts: &mut [Stmt]) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::SetLocal { value, .. } => value.erase_enums(),
+            Stmt::Store { place, value, .. } => {
+                place.erase_enums();
+                value.erase_enums();
+            }
+            Stmt::Copy { to, from, .. } => {
+                to.erase_enums();
+                from.erase_enums();
+            }
+            Stmt::Kick { place, .. } => place.erase_enums(),
+            Stmt::If {
+                cond,
+                then,
+                otherwise,
+                ..
+            } => {
+                cond.erase_enums();
+                erase_stmts(then);
+                erase_stmts(otherwise);
+            }
+            Stmt::Loop { kind, body, .. } => {
+                match kind {
+                    LoopKind::Condition {
+                        cond_stmts,
+                        cond,
+                        step,
+                        ..
+                    } => {
+                        erase_stmts(cond_stmts);
+                        cond.erase_enums();
+                        erase_stmts(step);
+                    }
+                    LoopKind::Range { count, .. } => {
+                        if let Count::Member(place) = count {
+                            place.erase_enums();
+                        }
+                    }
+                }
+                erase_stmts(body);
+            }
+            Stmt::Call {
+                setup, args, body, ..
+            } => {
+                erase_stmts(setup);
+                for arg in args {
+                    arg.ty = arg.ty.erased();
+                    if let Some(input) = &mut arg.input {
+                        input.erase_enums();
+                    }
+                }
+                erase_stmts(body);
+            }
+            Stmt::Break { .. }
+            | Stmt::Continue { .. }
+            | Stmt::Exit { .. }
+            | Stmt::Yield { .. }
+            | Stmt::Barrier { .. } => {}
+        }
+    }
+}
+
+impl Place {
+    fn erase_enums(&mut self) {
+        self.ty = self.ty.erased();
+        for (index, _) in &mut self.offset.indices {
+            index.erase_enums();
+        }
+        if let Some(length) = &mut self.length {
+            length.erase_enums();
+        }
+    }
 }
 
 /// `#pragma library(name, address = A, vf = F, vi = I, saved_vf = SF,
@@ -603,6 +719,14 @@ impl Expr {
         let mut found = false;
         self.each_child(&mut |child| found |= child.reads_local(local));
         found
+    }
+
+    fn erase_enums(&mut self) {
+        self.ty = self.ty.erased();
+        if let ExprKind::Load(place) | ExprKind::Address(place) = &mut self.kind {
+            place.erase_enums();
+        }
+        self.each_child_mut(&mut |child| child.erase_enums());
     }
 
     /// Whether the expression reads memory, at any depth.

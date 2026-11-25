@@ -1,0 +1,7 @@
+// A constant of an enum takes one of its values, or a constructor: an
+// integer is not one.
+enum class ClipPlane { Near, PositiveX };
+const ClipPlane kFirst = ClipPlane::Near;
+const ClipPlane kSecond = ClipPlane(1);
+const ClipPlane kThird = 2;
+void main() {}

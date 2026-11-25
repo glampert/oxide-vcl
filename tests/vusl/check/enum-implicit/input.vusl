@@ -1,0 +1,8 @@
+// An enum compares only with its own type: not with an integer constant.
+enum class ClipPlane { Near, PositiveX };
+struct Block { layout(lane = x) ClipPlane plane; vec4 out0; };
+void main(layout(address = 0) inout Block block)
+{
+    if (block.plane == 0)
+        block.out0 = vec4(1.0);
+}

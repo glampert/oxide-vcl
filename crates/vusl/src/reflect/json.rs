@@ -6,6 +6,7 @@ use std::fmt::Write;
 use super::model::{Reflection, extent_text, path_name};
 use crate::sema::hir::ParamPlacement;
 use crate::sema::layout::Extent;
+use crate::sema::type_names;
 use crate::sema::types::{Length, Type};
 
 /// A JSON value, with an object's keys in the order given.
@@ -140,7 +141,12 @@ pub fn write(reflection: &Reflection) -> String {
         .iter()
         .map(|info| info.def.clone())
         .collect();
-    let names: Vec<String> = structs.iter().map(|def| def.name.clone()).collect();
+    let enum_defs: Vec<crate::sema::hir::EnumDef> = reflection
+        .enums
+        .iter()
+        .map(|info| info.def.clone())
+        .collect();
+    let names = type_names(&structs, &enum_defs);
     let program = object(vec![
         ("name", string(&reflection.program)),
         ("source", string(&reflection.source)),
@@ -163,7 +169,7 @@ pub fn write(reflection: &Reflection) -> String {
         .iter()
         .map(|param| {
             let ty = match param.struct_id {
-                Some(id) => names[id].clone(),
+                Some(id) => names.structs[id].clone(),
                 None => "int16".into(),
             };
             let placement = match param.placement {
@@ -240,7 +246,7 @@ pub fn write(reflection: &Reflection) -> String {
                         ("qword", qword),
                     ];
                     if (element.vf_lanes().is_some() && element != Type::Qword)
-                        || element == Type::Int16
+                        || matches!(element, Type::Int16 | Type::Enum(_))
                     {
                         entries.push(("lane", string(member.lane.letter().to_string())));
                     }
@@ -308,6 +314,34 @@ pub fn write(reflection: &Reflection) -> String {
         ("parameters", Json::Array(parameters)),
         ("types", Json::Array(types)),
     ]);
+    // The enums the structs hold, after the structs; none, no entry.
+    let enums: Vec<Json> = reflection
+        .enums
+        .iter()
+        .filter(|info| info.used)
+        .map(|info| {
+            let values = info
+                .def
+                .values
+                .iter()
+                .map(|(name, value)| {
+                    object(vec![("name", string(name)), ("value", Json::Int(*value))])
+                })
+                .collect();
+            object(vec![
+                ("name", string(&info.def.name)),
+                ("file", string(&info.file)),
+                ("values", Json::Array(values)),
+            ])
+        })
+        .collect();
+    let root = match root {
+        Json::Object(mut entries) if !enums.is_empty() => {
+            entries.push(("enums".to_string(), Json::Array(enums)));
+            Json::Object(entries)
+        }
+        root => root,
+    };
     let root = match (&reflection.library, root) {
         (Some(library), Json::Object(mut entries)) => {
             let mut info = vec![

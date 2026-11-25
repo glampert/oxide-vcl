@@ -1,0 +1,35 @@
+// The clipper's plane distance with the plane an enum, as its passes call
+// it: each call's plane is a constant, so its comparisons fold and each
+// distance is the one term its plane takes (z, x, x, y, y), at the cost of
+// the int16 version.
+enum class ClipPlane { Near, PositiveX, NegativeX, PositiveY, NegativeY };
+
+struct Frame { vec3 clipScale; float clipShrink; };
+struct Batch { vec4 pos; vec4 near; layout(lane = x) float right; layout(lane = y) float left;
+               layout(lane = z) float top; layout(lane = w) float bottom; };
+
+float planeDistance(in Frame frame, vec4 pos, ClipPlane plane)
+{
+    vec3 jp = pos.xyz * frame.clipScale;
+    float d = pos.w * frame.clipShrink;
+    if (plane == ClipPlane::Near)
+        d = d - jp.z;
+    else if (plane == ClipPlane::PositiveX)
+        d = d - jp.x;
+    else if (plane == ClipPlane::NegativeX)
+        d = d + jp.x;
+    else if (plane == ClipPlane::PositiveY)
+        d = d - jp.y;
+    else
+        d = d + jp.y;
+    return d;
+}
+
+void main(layout(address = 0) uniform Frame frame, layout(address = 1) inout Batch batch)
+{
+    batch.near.w = planeDistance(frame, batch.pos, ClipPlane::Near);
+    batch.right  = planeDistance(frame, batch.pos, ClipPlane::PositiveX);
+    batch.left   = planeDistance(frame, batch.pos, ClipPlane::NegativeX);
+    batch.top    = planeDistance(frame, batch.pos, ClipPlane::PositiveY);
+    batch.bottom = planeDistance(frame, batch.pos, ClipPlane::NegativeY);
+}

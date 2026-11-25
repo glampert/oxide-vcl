@@ -1,0 +1,4 @@
+input.vusl(2): error: 'vec4' is a built-in type and cannot be declared again
+   2 | type vec4 = float;
+     |      ^^^^
+oxide-vusl: 1 error; no output written

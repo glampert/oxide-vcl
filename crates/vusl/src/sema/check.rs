@@ -4,9 +4,9 @@
 use std::collections::HashMap;
 
 use super::consteval;
-use super::hir::{Const, Library, Param, ParamPlacement, Vif};
+use super::hir::{Const, EnumDef, Library, Param, ParamPlacement, Vif};
 use super::layout::{MemberSpec, Packer, StructDef, Unpack};
-use super::types::{Lane, Length, StructId, Type, builtin_type};
+use super::types::{Lane, Length, Type, TypeNames, builtin_type};
 use super::{Checked, Problem, problem};
 use crate::diagnostics::VuslMessage;
 use crate::syntax::Pos;
@@ -18,7 +18,10 @@ pub const DATA_MEMORY_QWORDS: u32 = 1024;
 /// What the file declares.
 pub struct Declarations<'a> {
     pub structs: Vec<StructDef>,
-    pub struct_ids: HashMap<String, StructId>,
+    pub enums: Vec<EnumDef>,
+    /// The types the file names: its structs and enums, and its aliases'
+    /// types.
+    pub types: HashMap<String, Type>,
     /// File-scope constants: their value and type.
     pub consts: HashMap<String, (Const, Type)>,
     /// File-scope vector constants: their components.
@@ -44,12 +47,17 @@ impl Declarations<'_> {
 }
 
 impl Declarations<'_> {
-    pub fn struct_names(&self) -> Vec<String> {
-        self.structs.iter().map(|def| def.name.clone()).collect()
+    pub fn type_names(&self) -> TypeNames {
+        type_names(&self.structs, &self.enums)
     }
 
     pub fn type_name(&self, ty: &Type) -> String {
-        ty.name(&self.struct_names())
+        ty.name(&self.type_names())
+    }
+
+    /// The type `name` names: a built-in, or the file's.
+    pub fn named_type(&self, name: &str) -> Option<Type> {
+        builtin_type(name).or_else(|| self.types.get(name).cloned())
     }
 }
 
@@ -80,15 +88,24 @@ impl Names {
 }
 
 /// The type a name spells, given the structs declared so far.
-pub fn resolve_type(ty: &ast::TypeName, struct_ids: &HashMap<String, StructId>) -> Checked<Type> {
+pub fn type_names(structs: &[StructDef], enums: &[EnumDef]) -> TypeNames {
+    TypeNames {
+        structs: structs.iter().map(|def| def.name.clone()).collect(),
+        enums: enums.iter().map(|def| def.name.clone()).collect(),
+    }
+}
+
+/// The type `ty` names: a built-in, a `ref<T>`, or one of `types`, the
+/// file's structs, enums and aliases.
+pub fn resolve_type(ty: &ast::TypeName, types: &HashMap<String, Type>) -> Checked<Type> {
     if let Some(argument) = &ty.argument {
-        return Ok(Type::Ref(Box::new(resolve_type(argument, struct_ids)?)));
+        return Ok(Type::Ref(Box::new(resolve_type(argument, types)?)));
     }
     if let Some(builtin) = builtin_type(&ty.name.name) {
         return Ok(builtin);
     }
-    match struct_ids.get(&ty.name.name) {
-        Some(id) => Ok(Type::Struct(*id)),
+    match types.get(&ty.name.name) {
+        Some(found) => Ok(found.clone()),
         None => Err(Box::new(problem(
             VuslMessage::UnknownType {
                 name: ty.name.name.clone(),
@@ -104,7 +121,11 @@ pub fn constant(expr: &ast::Expr, consts: &HashMap<String, (Const, Type)>) -> Op
         ExprKind::Int(value) => Some(Const::Int(*value)),
         ExprKind::Float(value) => Some(Const::Float(*value)),
         ExprKind::Bool(value) => Some(Const::Bool(*value)),
-        ExprKind::Name(name) => consts.get(&name.name).map(|(value, _)| *value),
+        // An enum's value is not an integer: only its own type takes it.
+        ExprKind::Name(name) => consts
+            .get(&name.name)
+            .filter(|(_, ty)| !matches!(ty, Type::Enum(_)))
+            .map(|(value, _)| *value),
         ExprKind::Unary { op, operand } => consteval::unary(*op, constant(operand, consts)?).ok(),
         ExprKind::Binary { op, lhs, rhs, .. } => {
             consteval::binary(*op, constant(lhs, consts)?, constant(rhs, consts)?).ok()
@@ -174,7 +195,8 @@ pub fn declarations<'a>(
 ) -> Checked<Declarations<'a>> {
     let mut names = Names(HashMap::new());
     let mut structs: Vec<StructDef> = Vec::new();
-    let mut struct_ids: HashMap<String, StructId> = HashMap::new();
+    let mut enums: Vec<EnumDef> = Vec::new();
+    let mut types: HashMap<String, Type> = HashMap::new();
     let mut consts: HashMap<String, (Const, Type)> = HashMap::new();
     let mut vectors: HashMap<String, Vec<f32>> = HashMap::new();
     let mut functions: HashMap<String, &'a ast::Function> = HashMap::new();
@@ -257,13 +279,32 @@ pub fn declarations<'a>(
             }
             Item::Struct(decl) => {
                 names.declare(&decl.name)?;
-                let def = struct_def(decl, &structs, &struct_ids, &consts, &xitop)?;
-                struct_ids.insert(def.name.clone(), structs.len());
+                let def = struct_def(decl, &structs, &types, &consts, &xitop)?;
+                types.insert(def.name.clone(), Type::Struct(structs.len()));
                 structs.push(def);
+            }
+            Item::Enum(decl) => {
+                names.declare(&decl.name)?;
+                let def = enum_def(decl, &types, &consts)?;
+                types.insert(def.name.clone(), Type::Enum(enums.len()));
+                enums.push(def);
+            }
+            Item::Alias(alias) => {
+                if builtin_type(&alias.name.name).is_some() {
+                    return Err(Box::new(problem(
+                        VuslMessage::BuiltinTypeName {
+                            name: alias.name.name.clone(),
+                        },
+                        alias.name.pos,
+                    )));
+                }
+                names.declare(&alias.name)?;
+                let ty = resolve_type(&alias.ty, &types)?;
+                types.insert(alias.name.name.clone(), ty);
             }
             Item::Const(decl) => {
                 names.declare(&decl.name)?;
-                let ty = resolve_type(&decl.ty, &struct_ids)?;
+                let ty = resolve_type(&decl.ty, &types)?;
                 let not_constant = || {
                     Box::new(problem(
                         VuslMessage::NotConstant {
@@ -279,14 +320,28 @@ pub fn declarations<'a>(
                     vectors.insert(decl.name.name.clone(), components);
                     continue;
                 }
+                if let Type::Enum(id) = ty {
+                    let value = enum_constant(&decl.value, id, &enums, &types, &consts)?;
+                    consts.insert(decl.name.name.clone(), (Const::Int(value), ty));
+                    continue;
+                }
                 if !matches!(ty, Type::Int16 | Type::Float | Type::Bool) {
-                    let names: Vec<String> = structs.iter().map(|def| def.name.clone()).collect();
                     return Err(Box::new(problem(
                         VuslMessage::ConstantType {
                             name: decl.name.name.clone(),
-                            ty: ty.name(&names),
+                            ty: ty.name(&type_names(&structs, &enums)),
                         },
                         decl.name.pos,
+                    )));
+                }
+                if let Some(found) = enum_typed(&decl.value, &enums, &types, &consts) {
+                    return Err(Box::new(problem(
+                        VuslMessage::EnumConversion {
+                            context: "the constant".into(),
+                            expected: ty.name(&TypeNames::default()),
+                            found,
+                        },
+                        decl.value.pos,
                     )));
                 }
                 let value = constant(&decl.value, &consts).ok_or_else(not_constant)?;
@@ -294,7 +349,7 @@ pub fn declarations<'a>(
                     return Err(Box::new(problem(
                         VuslMessage::TypeMismatch {
                             context: format!("constant '{}'", decl.name.name),
-                            expected: ty.name(&[]),
+                            expected: ty.name(&TypeNames::default()),
                             found: const_type_name(value).into(),
                         },
                         decl.value.pos,
@@ -323,7 +378,8 @@ pub fn declarations<'a>(
     }
     Ok(Declarations {
         structs,
-        struct_ids,
+        enums,
+        types,
         consts,
         vectors,
         functions,
@@ -532,17 +588,205 @@ fn xitop_names(file: &ast::File) -> Vec<String> {
         .collect()
 }
 
+/// An enum's values: each its own, or one more than the one before (0
+/// for the first). A value's expression may name the enum's earlier
+/// values, as integers.
+fn enum_def(
+    decl: &ast::EnumDecl,
+    types: &HashMap<String, Type>,
+    consts: &HashMap<String, (Const, Type)>,
+) -> Checked<EnumDef> {
+    if let Some(underlying) = &decl.underlying {
+        let ty = resolve_type(underlying, types)?;
+        if ty != Type::Int16 {
+            return Err(Box::new(problem(
+                VuslMessage::EnumUnderlying {
+                    name: decl.name.name.clone(),
+                    found: ty.name(&TypeNames::default()),
+                },
+                underlying.pos,
+            )));
+        }
+    }
+    let mut scope = consts.clone();
+    let mut seen: HashMap<String, Pos> = HashMap::new();
+    let mut values = Vec::new();
+    let mut next = 0;
+    for enumerator in &decl.values {
+        let name = &enumerator.name;
+        if let Some(first) = seen.insert(name.name.clone(), name.pos) {
+            return Err(Box::new(
+                problem(
+                    VuslMessage::Redeclared {
+                        name: name.name.clone(),
+                    },
+                    name.pos,
+                )
+                .with_note(
+                    first,
+                    VuslMessage::FirstDeclaredHere {
+                        name: name.name.clone(),
+                    },
+                ),
+            ));
+        }
+        let value = match &enumerator.value {
+            None => next,
+            Some(written) => match constant(written, &scope) {
+                Some(Const::Int(value)) => value,
+                _ => {
+                    return Err(Box::new(problem(
+                        VuslMessage::NotConstant {
+                            name: format!("{}::{}", decl.name.name, name.name),
+                        },
+                        written.pos,
+                    )));
+                }
+            },
+        };
+        if !int16_range(value) {
+            return Err(Box::new(problem(
+                VuslMessage::ConstantRange {
+                    value: value.to_string(),
+                    ty: "int16",
+                },
+                enumerator
+                    .value
+                    .as_ref()
+                    .map_or(name.pos, |value| value.pos),
+            )));
+        }
+        scope.insert(name.name.clone(), (Const::Int(value), Type::Int16));
+        values.push((name.name.clone(), value));
+        next = value + 1;
+    }
+    Ok(EnumDef {
+        name: decl.name.name.clone(),
+        pos: decl.name.pos,
+        values,
+    })
+}
+
+/// The enum an initializer's value is of, when it is one of an enum's
+/// values, a constant of an enum or an enum's constructor.
+fn enum_typed(
+    expr: &ast::Expr,
+    enums: &[EnumDef],
+    types: &HashMap<String, Type>,
+    consts: &HashMap<String, (Const, Type)>,
+) -> Option<String> {
+    let id = match &expr.kind {
+        ExprKind::Scoped { scope, .. } => match types.get(&scope.name) {
+            Some(Type::Enum(id)) => *id,
+            _ => return None,
+        },
+        ExprKind::Name(name) => match consts.get(&name.name) {
+            Some((_, Type::Enum(id))) => *id,
+            _ => return None,
+        },
+        ExprKind::Call { callee, .. } if callee.argument.is_none() => {
+            match types.get(&callee.name.name) {
+                Some(Type::Enum(id)) => *id,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    Some(enums[id].name.clone())
+}
+
+/// The value of a constant of enum `id`: one of its values
+/// (`ClipPlane::Near`), a constant of the same enum, or the enum's
+/// constructor of an integer constant (`ClipPlane(2)`).
+fn enum_constant(
+    expr: &ast::Expr,
+    id: usize,
+    enums: &[EnumDef],
+    types: &HashMap<String, Type>,
+    consts: &HashMap<String, (Const, Type)>,
+) -> Checked<i64> {
+    let names = || type_names(&[], enums);
+    let found = match &expr.kind {
+        ExprKind::Scoped { scope, name } => {
+            let ty = types.get(&scope.name).cloned();
+            match ty {
+                Some(Type::Enum(of)) => {
+                    let value = enums[of].value(&name.name).ok_or_else(|| {
+                        Box::new(problem(
+                            VuslMessage::UnknownEnumerator {
+                                ty: enums[of].name.clone(),
+                                name: name.name.clone(),
+                            },
+                            name.pos,
+                        ))
+                    })?;
+                    if of == id {
+                        return Ok(value);
+                    }
+                    Type::Enum(of).name(&names())
+                }
+                _ => {
+                    return Err(Box::new(problem(
+                        VuslMessage::NotAnEnum {
+                            name: scope.name.clone(),
+                        },
+                        scope.pos,
+                    )));
+                }
+            }
+        }
+        ExprKind::Name(name) => match consts.get(&name.name) {
+            Some((Const::Int(value), Type::Enum(of))) if *of == id => return Ok(*value),
+            Some((_, ty)) => ty.name(&names()),
+            None => "a value that is not constant".into(),
+        },
+        ExprKind::Call { callee, args }
+            if callee.argument.is_none()
+                && types.get(&callee.name.name) == Some(&Type::Enum(id)) =>
+        {
+            match args.as_slice() {
+                [arg] => match constant(arg, consts) {
+                    Some(Const::Int(value)) if int16_range(value) => return Ok(value),
+                    Some(Const::Int(value)) => {
+                        return Err(Box::new(problem(
+                            VuslMessage::ConstantRange {
+                                value: value.to_string(),
+                                ty: "int16",
+                            },
+                            arg.pos,
+                        )));
+                    }
+                    _ => "a constructor of a value that is not an integer constant".into(),
+                },
+                _ => "a constructor without one argument".into(),
+            }
+        }
+        _ => match constant(expr, consts) {
+            Some(Const::Int(value)) => format!("the integer constant {value}"),
+            _ => "a value that is not one of its values".into(),
+        },
+    };
+    Err(Box::new(problem(
+        VuslMessage::EnumConversion {
+            context: "the constant".into(),
+            expected: enums[id].name.clone(),
+            found,
+        },
+        expr.pos,
+    )))
+}
+
 fn struct_def(
     decl: &ast::StructDecl,
     structs: &[StructDef],
-    struct_ids: &HashMap<String, StructId>,
+    types: &HashMap<String, Type>,
     consts: &HashMap<String, (Const, Type)>,
     xitop: &[String],
 ) -> Checked<StructDef> {
     let mut packer = Packer::new();
     let mut seen: HashMap<String, Pos> = HashMap::new();
     for member in &decl.members {
-        let base = resolve_type(&member.ty, struct_ids)?;
+        let base = resolve_type(&member.ty, types)?;
         // The member line's layout applies to each name on it.
         let mut lane = None;
         let mut offset = None;
@@ -739,7 +983,7 @@ pub fn bindings(decls: &Declarations) -> Checked<Vec<Param>> {
             ));
         }
         seen.insert(name.clone(), param.name.pos);
-        let ty = resolve_type(&param.ty, &decls.struct_ids)?;
+        let ty = resolve_type(&param.ty, &decls.types)?;
         let qualifier = param
             .qualifier
             .map_or(Qualifier::In, |(qualifier, _)| qualifier);

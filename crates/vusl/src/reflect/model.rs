@@ -4,8 +4,9 @@
 //! layouts.
 
 use crate::sema::DATA_MEMORY_QWORDS;
-use crate::sema::hir::{Base, Count, LoopKind, ParamPlacement, Program, Stmt};
+use crate::sema::hir::{Base, Count, EnumDef, LoopKind, ParamPlacement, Program, Stmt};
 use crate::sema::layout::{Extent, StructDef};
+use crate::sema::type_names;
 use crate::sema::types::{Length, Type};
 use crate::syntax::ast::Qualifier;
 
@@ -19,6 +20,8 @@ pub struct Reflection {
     pub instructions: Option<usize>,
     pub uses: Vec<&'static str>,
     pub structs: Vec<StructInfo>,
+    /// Every enum, by id; the writers describe those a struct holds.
+    pub enums: Vec<EnumInfo>,
     pub params: Vec<ParamInfo>,
     /// The library the program calls, or that this build is.
     pub library: Option<LibraryInfo>,
@@ -52,6 +55,19 @@ pub struct StructInfo {
     pub shared: bool,
     /// A hash of the layout, as 8 hex digits.
     pub hash: String,
+}
+
+/// An enum and where it was declared.
+#[derive(Clone, Debug)]
+pub struct EnumInfo {
+    pub def: EnumDef,
+    pub file: String,
+    /// Declared in an included file, as for a struct.
+    pub shared: bool,
+    /// A hash of its name and values, as 8 hex digits.
+    pub hash: String,
+    /// A struct member holds it: the writers describe it.
+    pub used: bool,
 }
 
 /// One of `main`'s parameters.
@@ -154,8 +170,8 @@ fn hash(text: &str) -> String {
 
 /// A struct's layout as text, for its hash: the members' names, types,
 /// places and formats, and the layouts of the structs it holds.
-fn layout_text(structs: &[StructDef], id: usize) -> String {
-    let names: Vec<String> = structs.iter().map(|def| def.name.clone()).collect();
+fn layout_text(structs: &[StructDef], enums: &[EnumDef], id: usize) -> String {
+    let names = type_names(structs, enums);
     let def = &structs[id];
     let mut text = format!("{}{{", def.name);
     for member in &def.members {
@@ -173,21 +189,38 @@ fn layout_text(structs: &[StructDef], id: usize) -> String {
                 if unpack.unsigned { "u" } else { "" }
             ));
         }
-        let inner = match &member.ty {
-            Type::Struct(inner) => Some(*inner),
-            Type::Array(element, _) => match **element {
-                Type::Struct(inner) => Some(inner),
-                _ => None,
-            },
-            _ => None,
+        let element = match &member.ty {
+            Type::Array(element, _) => element,
+            ty => ty,
         };
-        if let Some(inner) = inner {
-            text.push_str(&layout_text(structs, inner));
+        match element {
+            Type::Struct(inner) => text.push_str(&layout_text(structs, enums, *inner)),
+            Type::Enum(inner) => text.push_str(&enum_text(&enums[*inner])),
+            _ => {}
         }
         text.push(';');
     }
     text.push('}');
     text
+}
+
+/// An enum's name and values as text, for its hash.
+fn enum_text(def: &EnumDef) -> String {
+    let values: Vec<String> = def
+        .values
+        .iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect();
+    format!("{}{{{}}}", def.name, values.join(","))
+}
+
+/// The enum a member holds, itself or as its array's element.
+pub fn member_enum(ty: &Type) -> Option<usize> {
+    match ty {
+        Type::Enum(id) => Some(*id),
+        Type::Array(element, _) => member_enum(element),
+        _ => None,
+    }
 }
 
 /// Every statement, nested ones included.
@@ -223,10 +256,34 @@ pub fn reflect(
     program: &Program,
     source: &str,
     struct_files: &[String],
+    enum_files: &[String],
     exports: &[String],
     instructions: Option<usize>,
 ) -> Reflection {
     let structs = &program.structs;
+    let enums: Vec<EnumInfo> = program
+        .enums
+        .iter()
+        .enumerate()
+        .map(|(id, def)| {
+            let file = enum_files
+                .get(id)
+                .cloned()
+                .unwrap_or_else(|| source.to_string());
+            let used = structs.iter().any(|def| {
+                def.members
+                    .iter()
+                    .any(|member| member_enum(&member.ty) == Some(id))
+            });
+            EnumInfo {
+                def: def.clone(),
+                shared: file != source,
+                file,
+                hash: hash(&enum_text(def)),
+                used,
+            }
+        })
+        .collect();
     let infos: Vec<StructInfo> = structs
         .iter()
         .enumerate()
@@ -239,7 +296,7 @@ pub fn reflect(
                 def: def.clone(),
                 shared: file != source,
                 file,
-                hash: hash(&layout_text(structs, id)),
+                hash: hash(&layout_text(structs, &program.enums, id)),
             }
         })
         .collect();
@@ -422,6 +479,7 @@ pub fn reflect(
         instructions,
         uses,
         structs: infos,
+        enums,
         params,
         library: program.library.as_ref().map(|library| LibraryInfo {
             name: library.name.clone(),

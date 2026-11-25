@@ -1,0 +1,3 @@
+// VUSL's enums are scoped: there are no C enums.
+enum ClipPlane { Near, PositiveX };
+void main() {}

@@ -32,6 +32,8 @@ pub enum Punct {
     Comma,
     Semicolon,
     Dot,
+    /// `::`, which names an enum's value: `ClipPlane::Near`.
+    Scope,
     Colon,
     Question,
     Assign,
@@ -69,7 +71,7 @@ pub enum Punct {
     Shr,
 }
 
-const PUNCTUATION: [(&str, Punct); 44] = [
+const PUNCTUATION: [(&str, Punct); 45] = [
     ("<<=", Punct::ShlAssign),
     (">>=", Punct::ShrAssign),
     ("+=", Punct::AddAssign),
@@ -90,6 +92,7 @@ const PUNCTUATION: [(&str, Punct); 44] = [
     ("--", Punct::Decrement),
     ("<<", Punct::Shl),
     (">>", Punct::Shr),
+    ("::", Punct::Scope),
     ("(", Punct::OpenParen),
     (")", Punct::CloseParen),
     ("[", Punct::OpenBracket),

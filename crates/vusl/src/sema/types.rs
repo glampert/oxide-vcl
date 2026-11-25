@@ -145,6 +145,16 @@ impl fmt::Debug for Placement {
 /// An index into the program's structs.
 pub type StructId = usize;
 
+/// An index into the program's enums.
+pub type EnumId = usize;
+
+/// The names of the program's structs and enums, by id, for messages.
+#[derive(Clone, Debug, Default)]
+pub struct TypeNames {
+    pub structs: Vec<String>,
+    pub enums: Vec<String>,
+}
+
 /// An array's length.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Length {
@@ -185,6 +195,10 @@ pub enum Type {
     /// One CLIPW judgement.
     ClipFlags,
     Struct(StructId),
+    /// An `enum class`: an `int16` in a VI register, or in a lane of
+    /// memory, that compares only with its own type. The checked program
+    /// holds `int16` instead (`Program::erase_enums`).
+    Enum(EnumId),
     Array(Box<Type>, Length),
     /// A qword address in a VI register.
     Ref(Box<Type>),
@@ -235,8 +249,28 @@ impl Type {
         self.with_components(1)
     }
 
-    /// The name as written in VUSL, given the program's struct names.
-    pub fn name(&self, structs: &[String]) -> String {
+    /// The type with every enum as the `int16` it holds.
+    pub fn erased(&self) -> Type {
+        match self {
+            Type::Enum(_) => Type::Int16,
+            Type::Array(element, length) => Type::Array(Box::new(element.erased()), length.clone()),
+            Type::Ref(target) => Type::Ref(Box::new(target.erased())),
+            ty => ty.clone(),
+        }
+    }
+
+    /// Whether the type is or holds an enum.
+    pub fn has_enum(&self) -> bool {
+        match self {
+            Type::Enum(_) => true,
+            Type::Array(element, _) | Type::Ref(element) => element.has_enum(),
+            _ => false,
+        }
+    }
+
+    /// The name as written in VUSL, given the program's struct and enum
+    /// names.
+    pub fn name(&self, names: &TypeNames) -> String {
         match self {
             Type::Void => "void".into(),
             Type::Bool => "bool".into(),
@@ -256,16 +290,17 @@ impl Type {
                 }
             }
             Type::ClipFlags => "clipflags".into(),
-            Type::Struct(id) => structs.get(*id).cloned().unwrap_or_default(),
+            Type::Struct(id) => names.structs.get(*id).cloned().unwrap_or_default(),
+            Type::Enum(id) => names.enums.get(*id).cloned().unwrap_or_default(),
             Type::Array(element, length) => {
                 let length = match length {
                     Length::Fixed(n) => n.to_string(),
                     Length::Member(_) | Length::Xitop => "...".into(),
                     Length::Open => String::new(),
                 };
-                format!("{}[{length}]", element.name(structs))
+                format!("{}[{length}]", element.name(names))
             }
-            Type::Ref(target) => format!("ref<{}>", target.name(structs)),
+            Type::Ref(target) => format!("ref<{}>", target.name(names)),
         }
     }
 }
@@ -329,7 +364,7 @@ mod tests {
         assert_eq!(Type::IVec(4).component(), Some(Type::Int32));
         assert_eq!(Type::Float.with_components(3), Some(Type::Vec(3)));
         assert_eq!(
-            Type::Array(Box::new(Type::Qword), Length::Fixed(7)).name(&[]),
+            Type::Array(Box::new(Type::Qword), Length::Fixed(7)).name(&TypeNames::default()),
             "qword[7]"
         );
     }

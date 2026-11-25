@@ -1,0 +1,3 @@
+// An alias names a new type name: a built-in's cannot be taken.
+type vec4 = float;
+void main() {}

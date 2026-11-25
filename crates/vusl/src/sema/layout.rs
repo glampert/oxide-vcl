@@ -243,7 +243,9 @@ fn element_qwords(element: &Type, structs: &[StructDef]) -> Option<u32> {
 
 fn footprint(ty: &Type, structs: &[StructDef]) -> Option<Footprint> {
     Some(match ty {
-        Type::Float | Type::Int16 | Type::Int32 | Type::Uint32 => Footprint::Lanes(1),
+        Type::Float | Type::Int16 | Type::Enum(_) | Type::Int32 | Type::Uint32 => {
+            Footprint::Lanes(1)
+        }
         Type::Vec(n) | Type::IVec(n) | Type::UVec(n) => Footprint::Lanes(usize::from(*n)),
         Type::Qword => Footprint::Qwords(Extent::fixed(1), None),
         Type::Mat { size, .. } => Footprint::Qwords(Extent::fixed(u32::from(*size)), None),
