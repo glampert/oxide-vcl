@@ -1339,6 +1339,7 @@ fn parse_operand(
         operand_mask,
         instruction_mask,
         forced_mask,
+        syntax,
     )?;
     let register = fixed_register_name(spec.class, register)?;
 
@@ -1489,6 +1490,7 @@ fn assign_vector_mask(
     operand_mask: Option<Mask>,
     instruction_mask: Mask,
     forced_mask: bool,
+    syntax: Syntax,
 ) -> Result<(), ParseMessage> {
     use class::*;
     let required_mask = match operand_class {
@@ -1505,7 +1507,9 @@ fn assign_vector_mask(
     );
     if vector {
         if operand_class == SCALAR && !operand_mask.is_some_and(Mask::is_scalar) {
-            return Err(ParseMessage::ScalarComponentRequired);
+            return Err(ParseMessage::ScalarComponentRequired {
+                new_syntax: syntax == Syntax::New,
+            });
         }
         if let Some(required) = required_mask {
             if operand_mask.is_some_and(|mask| mask != required) {
@@ -1930,7 +1934,7 @@ mod tests {
         assert_eq!(instructions[0].operands[2].mask, Mask::W);
         assert_eq!(instructions[1].operands[2].register.as_deref(), Some("c"));
         rejected("div Q,a,b.w", |message| {
-            matches!(message, ParseMessage::ScalarComponentRequired)
+            matches!(message, ParseMessage::ScalarComponentRequired { .. })
         });
         rejected("addx b,a,c.y", |message| {
             matches!(message, ParseMessage::FieldSelectionsDiffer)
@@ -1957,7 +1961,7 @@ mod tests {
             matches!(message, ParseMessage::DuplicateComponent)
         });
         rejected("mtir vi02,value", |message| {
-            matches!(message, ParseMessage::ScalarComponentRequired)
+            matches!(message, ParseMessage::ScalarComponentRequired { .. })
         });
     }
 
@@ -1985,14 +1989,14 @@ mod tests {
                 matches!(
                     message,
                     ParseMessage::GeneralizedScalarComponent
-                        | ParseMessage::ScalarComponentRequired
+                        | ParseMessage::ScalarComponentRequired { .. }
                 )
             },
         );
         rejected(
             ".syntax new\n\
                   mtir vi02,valuex",
-            |message| matches!(message, ParseMessage::ScalarComponentRequired),
+            |message| matches!(message, ParseMessage::ScalarComponentRequired { .. }),
         );
     }
 

@@ -671,8 +671,12 @@ fn parse(message: &ParseMessage) -> Wording {
             .help("name each of x, y, z and w at most once"),
         InvalidOperandMask => Wording::new("the operand's field selection is not valid")
             .help("write the fields after a dot in x, y, z, w order: src.xy"),
-        ScalarComponentRequired => Wording::new("this operand selects one field")
-            .help("write a single field: src.x"),
+        ScalarComponentRequired { new_syntax } => Wording::new("this operand selects one field")
+            .help(if *new_syntax {
+                "write the field in brackets: src[x]"
+            } else {
+                "write a single field after the name: src.x or srcx"
+            }),
         FieldSelectionsDiffer => Wording::new("the instruction and the operand select different fields")
             .help("use the same fields on both, or write them once on the instruction"),
         OperandMustBe { expected } => Wording::new(format!("this operand must be {expected}")),
@@ -778,15 +782,7 @@ fn compile(message: &CompileMessage) -> Wording {
         UsedBeforeSet {
             register,
             component,
-        } => Wording::new(format!(
-            "'{register}.{component}' is read before anything writes it"
-        ))
-        .subject(register.clone())
-        .help(format!(
-            "write '{register}' earlier, or declare it as an input of the --enter block \
-             (in_vf {register}(vf01) or in_vi {register}(vi01)); in old syntax a name ending \
-             in x, y, z or w loses those letters as fields"
-        )),
+        } => used_before_set(register, component),
         OperandPoolUnsupported => Wording::new("this operand's register kind can't be allocated"),
         ExplicitMacWrite => Wording::new("the MAC flags can't be an input")
             .subject("in_hw_mac")
@@ -1019,6 +1015,47 @@ fn compile(message: &CompileMessage) -> Wording {
         )),
         Internal(detail) => internal(detail),
     }
+}
+
+/// A read with no write before it. The fix depends on the register: a
+/// hardware register is declared with its `in_hw_` form, a physical one by
+/// its own name, and a symbolic one bound to a register.
+fn used_before_set(register: &str, component: &str) -> Wording {
+    let upper = register.to_ascii_uppercase();
+    let lower = register.to_ascii_lowercase();
+    let read = |name: &str| format!("'{name}' is read before anything writes it");
+    let declare = |declaration: &str| {
+        format!(
+            "write {register} earlier, or declare it as an input of the --enter block: {declaration}"
+        )
+    };
+    let physical = |prefix: &str| {
+        upper
+            .strip_prefix(prefix)
+            .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+    };
+    let wording = match upper.as_str() {
+        // Single-value registers: a field would mean nothing.
+        "Q" | "P" | "R" | "I" | "CLIP" => {
+            Wording::new(read(register)).help(declare(&format!("in_hw_{lower} {lower}")))
+        }
+        "MAC" => Wording::new(read(register))
+            .help("the MAC flags can't be an input; compute them with an FMAC instruction first"),
+        "ACC" => {
+            Wording::new(read(&format!("{register}.{component}"))).help(declare("in_hw_acc acc"))
+        }
+        _ if physical("VF") => Wording::new(read(&format!("{register}.{component}")))
+            .help(declare(&format!("in_vf {lower}"))),
+        _ if physical("VI") => {
+            Wording::new(read(register)).help(declare(&format!("in_vi {lower}")))
+        }
+        _ => Wording::new(read(&format!("{register}.{component}"))).help(format!(
+            "write '{register}' earlier, or declare it as an input of the --enter block \
+             (in_vf {register}(vf01) or in_vi {register}(vi01)); in old syntax a name ending \
+             in x, y, z or w loses those letters as fields"
+        )),
+    };
+    wording.subject(register)
 }
 
 fn allocation(failure: &AllocationError) -> Wording {

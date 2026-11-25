@@ -380,7 +380,9 @@ in_hw_i I                   ; the I register holds a value on entry
 A program needs at least one `--enter`, and at least one `--exit`,
 `--exitm` or `--cont` (`the program has no --exit block`). Reading a register that
 is neither an input nor written first is an error: `'VF02.x' is read before
-anything writes it`.
+anything writes it`. Its help names the declaration that fixes it: `in_vf vf02`
+here, `in_hw_r r` for R. The MAC flags can't be an input (`in_hw_mac` is
+rejected), so a read of them needs an FMAC instruction before it.
 
 ### `--exit` ... `--endexit`
 

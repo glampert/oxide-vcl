@@ -739,7 +739,10 @@ pub enum ParseMessage {
     GeneralizedScalarComponent,
     DuplicateComponent,
     InvalidOperandMask,
-    ScalarComponentRequired,
+    /// A one-field operand without its field; the help spells it per syntax.
+    ScalarComponentRequired {
+        new_syntax: bool,
+    },
     FieldSelectionsDiffer,
     OperandMustBe {
         expected: String,
