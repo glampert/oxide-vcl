@@ -582,6 +582,31 @@ cycles and the model 1,192 (1,840 and 1,344 with one level).
 rule is structural, so a rare arm without an inner loop is copied with the
 usual path (quake2's window flush).
 
+### O12. Contract one product and a sum into an ACC chain (VUSL)
+
+*Evidence:* oxide-vusl's `contract` (`crates/vusl/src/codegen/mod.rs`)
+turns a sum of two or more products into one `mula`/`madda`/`madd`
+chain, but `a * b + c` stays `mul` then `add`. Both forms take two
+instructions. The `add` waits for the `mul`'s result (four cycles of FMAC
+latency), whereas ACC has no data hazards (VU User's Manual, §3.4.1), so
+`mula acc, c, vf00[w]` followed by `madd d, a, b` issues back to back. The
+product is rounded before the add in both forms, and `c` times 1.0 is `c`,
+so the result is the same bit for bit.
+
+*Change:* accept one product when the sum has at least one other term
+(`products < 2` becomes `products == 0 || terms.len() < 2`), with the same
+lowering for negative terms (`msub`).
+
+*Risk:* the one ACC register. Two chains cannot overlap, and in a
+pipelined kernel the scheduler can't interleave a chain with other ACC
+users the way it can two independent `mul`/`add` pairs. That can lengthen
+the kernel's period.
+
+*Measure before keeping it:* the scenes (`crates/vusl/tests/programs.rs`),
+the VUSL benchmarks and the semantics tests. Keep the change only where it
+saves cycles. If kernels get slower, apply it only outside pipelined
+loops, or only where the `add` would stall.
+
 ## 4. Not in this plan
 
 - **Fast-math rewrites** (`sqrt`+`div` → `rsqrt`; `esadd`+`ersqrt` →
@@ -668,6 +693,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
 | 7 | O5 (delay slots, superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
+| 8 | O12 (single-product ACC chains in VUSL) | Small | No stall after each `a * b + c`'s multiply, if pipelined kernels don't lose more to the shared ACC |
 
 Why this order:
 
