@@ -571,6 +571,97 @@ fn enums_and_type_aliases() {
 }
 
 #[test]
+fn switches_select_their_case() {
+    // Against values worked out here: a switch on an int16 and on an enum,
+    // read at run time, with stacked labels, a default between cases, a
+    // case in a block, a constant switch, and continue and switch in a loop.
+    let source = "enum class Step { Hold, Grow = 3, Shrink };\n\
+                  struct Block { layout(lane = x) int16 mode; layout(lane = y) int16 step;\n\
+                  \x20   layout(lane = x) int16 out0; layout(lane = y) int16 out1;\n\
+                  \x20   layout(lane = z) int16 out2; layout(lane = w) int16 out3; };\n\
+                  int16 grown(int16 value, Step step)\n\
+                  {\n\
+                  \x20   int16 result = value;\n\
+                  \x20   switch (step)\n\
+                  \x20   {\n\
+                  \x20   case Step::Grow: result = value + 10; break;\n\
+                  \x20   case Step::Shrink: result = value - 10; break;\n\
+                  \x20   default: break;\n\
+                  \x20   }\n\
+                  \x20   return result;\n\
+                  }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   int16 picked = 0;\n\
+                  \x20   switch (block.mode)\n\
+                  \x20   {\n\
+                  \x20   case 1:\n\
+                  \x20   case 2:\n\
+                  \x20       picked = 12;\n\
+                  \x20       break;\n\
+                  \x20   default:\n\
+                  \x20       picked = 99;\n\
+                  \x20       break;\n\
+                  \x20   case 7: {\n\
+                  \x20       picked = 70;\n\
+                  \x20       break;\n\
+                  \x20   }\n\
+                  \x20   case -1:\n\
+                  \x20       picked = -5;\n\
+                  \x20   }\n\
+                  \x20   block.out0 = picked;\n\
+                  \x20   block.out1 = grown(100, Step(block.step));\n\
+                  \x20   block.out2 = grown(100, Step::Shrink);\n\
+                  \x20   int16 total = 0;\n\
+                  \x20   for (int16 i = 0; i < 4; ++i)\n\
+                  \x20   {\n\
+                  \x20       switch (i)\n\
+                  \x20       {\n\
+                  \x20       case 1: continue;\n\
+                  \x20       case 2: total = total + 20; break;\n\
+                  \x20       default: total = total + 1;\n\
+                  \x20       }\n\
+                  \x20       total = total + 100;\n\
+                  \x20   }\n\
+                  \x20   block.out3 = total;\n\
+                  }\n";
+    let compiled = compile(source);
+    let program = vu_model::Program::parse(&compiled.assembly).unwrap();
+    let picked = |mode: i16| match mode {
+        1 | 2 => 12,
+        7 => 70,
+        -1 => -5,
+        _ => 99,
+    };
+    let grown = |step: i16| match step {
+        3 => 110,
+        4 => 90,
+        _ => 100,
+    };
+    // i = 0: 1 + 100, i = 1: skipped, i = 2: 20 + 100, i = 3: 1 + 100.
+    let total = 322;
+    for (mode, step) in [(0, 0), (1, 3), (2, 4), (7, 1), (-1, 3), (5, 4), (3, 2)] {
+        let mut memory = vec![[0; 4]; 1024];
+        memory[0] = [mode as u16 as u32, step as u16 as u32, 0, 0];
+        let state = vu_model::State {
+            memory,
+            ..vu_model::State::default()
+        };
+        let execution = program
+            .run(state, vu_model::Config::TIMED, 10_000)
+            .unwrap_or_else(|error| panic!("{error}\n{}", compiled.vcl));
+        let lanes = execution.state.memory[1].map(|lane| lane as u16 as i16);
+        assert_eq!(
+            lanes,
+            [picked(mode), grown(step), 90, total],
+            "mode {mode}, step {step}\n{}",
+            compiled.vcl
+        );
+    }
+    agree(source, 8, |_, _, _| {});
+}
+
+#[test]
 fn matrices_from_columns_and_vector_constants() {
     // mat4 and mat3 from columns, mat3 from a mat4 in either order, a
     // matrix built from its own columns, and vector constants at file

@@ -13,6 +13,7 @@ dependencies = [
 name = "oxide-vusl"
 version = "0.1.0"
 dependencies = [
+ "oxide-vcl",
  "vcl",
  "vusl",
 ]

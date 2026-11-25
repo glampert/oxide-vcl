@@ -128,20 +128,29 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
         reflection_files(&checked, None, arguments, &mut files);
         return write_files(&files);
     }
+    // The generated VCL as written: with the source lines under --annotate.
+    let written = |vcl: &vusl::Vcl| {
+        if arguments.annotate {
+            vcl.annotated(&preprocessed.files)
+        } else {
+            vcl.text.clone()
+        }
+    };
     if arguments.stop_at_vcl {
         let vcl = checked
             .generate()
             .map_err(|failure| RunError::Check(Box::new(failure.error)))?;
+        let text = written(&vcl);
         if let Some(path) = &arguments.emit_vcl {
-            files.push((path.clone(), vcl.text.clone().into_bytes()));
+            files.push((path.clone(), text.clone().into_bytes()));
         }
         reflection_files(&checked, None, arguments, &mut files);
         if let Some(path) = &arguments.output {
-            files.push((path.clone(), vcl.text.clone().into_bytes()));
+            files.push((path.clone(), text.clone().into_bytes()));
         }
         write_files(&files)?;
         if arguments.output.is_none() {
-            write_text(&vcl.text, arguments, reporter)?;
+            write_text(&text, arguments, reporter)?;
         }
         return Ok(());
     }
@@ -163,7 +172,7 @@ fn run(arguments: &Arguments, reporter: &mut Reporter) -> Result<(), RunError> {
         },
     };
     if let Some(path) = &arguments.emit_vcl {
-        files.push((path.clone(), vcl.text.clone().into_bytes()));
+        files.push((path.clone(), written(&vcl).into_bytes()));
     }
     if !compiled.warnings.is_empty() {
         reporter.set_source(&listing, &vcl.text);
@@ -239,6 +248,9 @@ fn main() {
     };
     reporter.set_warnings_as_errors(arguments.warnings_as_errors);
     reporter.set_color(arguments.color.enabled_here());
+    for notice in &arguments.notices {
+        reporter.report(notice);
+    }
 
     if arguments.version {
         reporter.version(&cli::version());

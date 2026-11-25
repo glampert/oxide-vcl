@@ -1,0 +1,5 @@
+input.vusl(8): error: this case's statements would run into the next case's
+   8 |         block.out0 = 1;
+     |         ^
+     = help: end them with break; labels with no statements between them (case 1: case 2:) share statements
+oxide-vusl: 1 error; no output written

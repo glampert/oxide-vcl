@@ -549,6 +549,9 @@ struct Elaborator<'d, 'w> {
     /// The inlined calls being elaborated, innermost last.
     calls: Vec<(String, Pos)>,
     loops: Vec<LoopContext>,
+    /// For each switch being elaborated, how many loops were open at it: a
+    /// `break` with no loop opened since would end a case early.
+    switches: Vec<usize>,
     uses: Uses,
     accesses: Vec<Access>,
     access_set: HashSet<Access>,
@@ -586,6 +589,7 @@ impl<'d, 'w> Elaborator<'d, 'w> {
             pending: Vec::new(),
             calls: Vec::new(),
             loops: Vec::new(),
+            switches: Vec::new(),
             uses: Uses::default(),
             accesses: Vec::new(),
             access_set: HashSet::new(),
@@ -696,6 +700,66 @@ fn called_function(expr: &ast::Expr, decls: &Declarations) -> Option<(String, Po
         }
         _ => None,
     }
+}
+
+/// The statements of a switch's case as one block, without the `break`
+/// that ends them. Only the last case may end otherwise.
+fn case_body(case: &ast::Case, last: bool) -> Checked<ast::Stmt> {
+    let mut body = case.body.clone();
+    let ends = strip_break(&mut body);
+    let leaves = matches!(
+        body.last().map(|stmt| &stmt.kind),
+        Some(StmtKind::Continue | StmtKind::Return(_))
+    );
+    if !ends && !leaves && !last && !body.is_empty() {
+        let at = case.body.last().map_or(case.pos, |stmt| stmt.pos);
+        return err(VuslMessage::CaseFallthrough, at);
+    }
+    if !ends && !last && body.is_empty() {
+        return err(VuslMessage::CaseFallthrough, case.pos);
+    }
+    Ok(ast::Stmt {
+        kind: StmtKind::Block(ast::Block {
+            stmts: body,
+            pos: case.pos,
+        }),
+        pos: case.pos,
+    })
+}
+
+/// Removes the `break` that ends `stmts`, also at the end of a block that
+/// ends them; whether there was one.
+fn strip_break(stmts: &mut Vec<ast::Stmt>) -> bool {
+    match stmts.last_mut().map(|stmt| &mut stmt.kind) {
+        Some(StmtKind::Break) => {
+            stmts.pop();
+            true
+        }
+        Some(StmtKind::Block(block)) => strip_break(&mut block.stmts),
+        _ => false,
+    }
+}
+
+/// The disjunction of a case's comparisons, folded when constant.
+fn any_of(conditions: Vec<Expr>, pos: Pos) -> Expr {
+    let mut kept: Vec<Expr> = Vec::new();
+    for condition in conditions {
+        match as_const(&condition) {
+            Some(Const::Bool(true)) => return constant_expr(Const::Bool(true), pos),
+            Some(Const::Bool(false)) => {}
+            _ => kept.push(condition),
+        }
+    }
+    let mut kept = kept.into_iter();
+    let Some(first) = kept.next() else {
+        return constant_expr(Const::Bool(false), pos);
+    };
+    kept.fold(first, |any, next| Expr {
+        kind: ExprKind::Or(Box::new(any), Box::new(next)),
+        ty: Type::Bool,
+        placement: None,
+        pos,
+    })
 }
 
 fn as_const(expr: &Expr) -> Option<Const> {
@@ -1313,8 +1377,12 @@ impl Elaborator<'_, '_> {
                     self.condition_loop(Some(cond), body, Vec::new(), false, hints, stmt.pos)?;
                 out.push(looped);
             }
+            StmtKind::Switch { value, cases } => self.switch(value, cases, stmt.pos, out)?,
             StmtKind::Break | StmtKind::Continue => {
                 let is_break = matches!(stmt.kind, StmtKind::Break);
+                if is_break && self.switches.last() == Some(&self.loops.len()) {
+                    return err(VuslMessage::BreakInCase, stmt.pos);
+                }
                 let state = self.state.clone();
                 let Some(context) = self.loops.last_mut() else {
                     let message = if is_break {
@@ -1377,6 +1445,138 @@ impl Elaborator<'_, '_> {
             }
         }
         Ok(())
+    }
+
+    /// `switch`: an `if` and `else` chain, a case per branch in order and
+    /// `default` last, each case's condition its labels' comparisons with
+    /// the value, which is read once. A case's statements end with `break`
+    /// (dropped) unless it is the last; a constant value folds the chain to
+    /// the case it selects, as an `if` folds.
+    fn switch(
+        &mut self,
+        value: &ast::Expr,
+        cases: &[ast::Case],
+        pos: Pos,
+        out: &mut Vec<Stmt>,
+    ) -> Checked<()> {
+        let value = self.rvalue(value)?;
+        if !matches!(value.ty, Type::Int16 | Type::Enum(_)) {
+            return err(
+                VuslMessage::SwitchType {
+                    found: self.type_text(&value),
+                },
+                value.pos,
+            );
+        }
+        out.append(&mut self.pending);
+        // One read of the value for every comparison.
+        let value = if matches!(value.kind, ExprKind::Local(_) | ExprKind::Const(_)) {
+            value
+        } else {
+            let local = self.new_local("switch", value.ty.clone(), None, false, value.pos);
+            let target = Target::Local {
+                id: local,
+                column: None,
+                components: None,
+            };
+            let set = self.set(target, value, pos)?;
+            out.push(set);
+            self.read_local(local, pos)?
+        };
+        // Each case's condition and statements, and the default's.
+        let mut seen: Vec<(i64, Pos)> = Vec::new();
+        let mut default: Option<(ast::Stmt, Pos)> = None;
+        let mut groups: Vec<(Expr, ast::Stmt)> = Vec::new();
+        for (index, case) in cases.iter().enumerate() {
+            let last = index + 1 == cases.len();
+            let body = case_body(case, last)?;
+            let mut conditions = Vec::new();
+            let mut is_default = false;
+            for label in &case.labels {
+                let label_value = match label {
+                    ast::CaseLabel::Default(at) => {
+                        if let Some((_, first)) = &default {
+                            return Err(Box::new(
+                                problem(
+                                    VuslMessage::Redeclared {
+                                        name: "default".into(),
+                                    },
+                                    *at,
+                                )
+                                .with_note(
+                                    *first,
+                                    VuslMessage::FirstDeclaredHere {
+                                        name: "default".into(),
+                                    },
+                                ),
+                            ));
+                        }
+                        is_default = true;
+                        default = Some((body.clone(), *at));
+                        continue;
+                    }
+                    ast::CaseLabel::Value(label_value) => label_value,
+                };
+                let label = self.rvalue(label_value)?;
+                let Some(Const::Int(constant)) = as_const(&label) else {
+                    return err(VuslMessage::CaseNotConstant, label_value.pos);
+                };
+                let text = crate::syntax::print::expr(label_value);
+                if let Some(&(_, first)) = seen.iter().find(|(known, _)| *known == constant) {
+                    return Err(Box::new(
+                        problem(
+                            VuslMessage::DuplicateCase {
+                                value: text.clone(),
+                            },
+                            label_value.pos,
+                        )
+                        .with_note(first, VuslMessage::CaseFirst { value: text }),
+                    ));
+                }
+                seen.push((constant, label_value.pos));
+                conditions.push(self.binary_values(
+                    BinaryOp::Equal,
+                    value.clone(),
+                    label,
+                    label_value.pos,
+                )?);
+            }
+            // The default's own labels match nothing it does not.
+            if !is_default {
+                groups.push((any_of(conditions, case.pos), body));
+            }
+        }
+        self.switches.push(self.loops.len());
+        let chain = self.case_chain(&groups, default.as_ref().map(|(body, _)| body));
+        self.switches.pop();
+        out.extend(chain?);
+        Ok(())
+    }
+
+    /// The `if` and `else` chain of `groups`, `default` last.
+    fn case_chain(
+        &mut self,
+        groups: &[(Expr, ast::Stmt)],
+        default: Option<&ast::Stmt>,
+    ) -> Checked<Vec<Stmt>> {
+        let Some(((cond, body), rest)) = groups.split_first() else {
+            return match default {
+                Some(body) => self.branch(body),
+                None => Ok(Vec::new()),
+            };
+        };
+        let before = self.state.clone();
+        let then = self.branch(body)?;
+        let after_then = std::mem::replace(&mut self.state, before);
+        let otherwise = self.case_chain(rest, default)?;
+        let after_else = std::mem::take(&mut self.state);
+        self.state = self.merge(&after_then, &after_else, body.pos)?;
+        Ok(vec![Stmt::If {
+            cond: cond.clone(),
+            then,
+            otherwise,
+            pos: body.pos,
+        }])
     }
 
     /// A branch of an `if`, in a scope of its own.
@@ -5282,6 +5482,7 @@ impl Elaborator<'_, '_> {
         let saved_scopes = std::mem::replace(&mut self.scopes, vec![scope]);
         let saved_pending = std::mem::take(&mut self.pending);
         let saved_loops = std::mem::take(&mut self.loops);
+        let saved_switches = std::mem::take(&mut self.switches);
         self.calls.push((name, pos));
         // The returned value sees the body's locals: one scope holds both.
         self.scopes.push(HashMap::new());
@@ -5310,6 +5511,7 @@ impl Elaborator<'_, '_> {
         self.scopes.pop();
         self.calls.pop();
         self.loops = saved_loops;
+        self.switches = saved_switches;
         self.scopes = saved_scopes;
         self.pending = saved_pending;
         let (body, value) = result?;
@@ -5537,6 +5739,15 @@ fn stmt_writes(decls: &Declarations, stmt: &ast::Stmt, name: &str) -> bool {
         }
         StmtKind::While { cond, body } | StmtKind::DoWhile { body, cond } => {
             expr(cond) || boxed(body)
+        }
+        StmtKind::Switch { value, cases } => {
+            expr(value)
+                || cases.iter().any(|case| {
+                    case.labels.iter().any(|label| match label {
+                        ast::CaseLabel::Value(value) => expr(value),
+                        ast::CaseLabel::Default(_) => false,
+                    }) || body_writes(decls, &case.body, name)
+                })
         }
     }
 }

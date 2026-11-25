@@ -19,6 +19,8 @@ path = "src/main.rs"
 [dependencies]
 vcl.workspace = true
 vusl.workspace = true
+# oxide-vcl's argument parser, for --vcl-option=.
+oxide-vcl = { path = "../oxide-vcl" }
 
 [lints]
 workspace = true

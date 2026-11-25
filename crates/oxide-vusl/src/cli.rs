@@ -47,6 +47,11 @@ pub struct Arguments {
     pub emit_vcl: Option<String>,
     /// `--stop-at-vcl`: write the generated VCL, not the listing.
     pub stop_at_vcl: bool,
+    /// `--annotate`: comment the written VCL with the source lines.
+    pub annotate: bool,
+    /// What oxide-vcl's parser had to say about `--vcl-option=` options
+    /// it accepts but ignores.
+    pub notices: Vec<Diagnostic>,
     /// `--warnings-as-errors`.
     pub warnings_as_errors: bool,
     /// `--color=`.
@@ -94,6 +99,59 @@ fn optimizations(argument: &str, list: &str) -> Result<vcl::Optimizations, VuslM
     })
 }
 
+/// The settings `--vcl-option=` options give oxide-vcl, parsed as its own
+/// command line does in `mode`, with the notices its parser has for them.
+/// Each must be a compile option: oxide-vusl reads the input, writes the
+/// files, sets the mode and names the generated labels.
+fn vcl_settings(
+    options: &[String],
+    mode: vcl::Mode,
+) -> Result<(vcl::Options, Vec<Diagnostic>), VuslMessage> {
+    if options.is_empty() {
+        return Ok((vcl::Options::default(), Vec::new()));
+    }
+    let mode = format!("--mode={}", mode.name());
+    let refuse = |option: &String, reason| VuslMessage::BadVclOption {
+        argument: option.clone(),
+        reason,
+    };
+    let rejected = |argument: String, error: vcl_cli::CliError| VuslMessage::VclOptionRejected {
+        argument,
+        reason: error.to_string(),
+    };
+    for option in options {
+        if !option.starts_with('-') {
+            return Err(refuse(option, "it is not an option"));
+        }
+        if option.starts_with("--mode=") {
+            return Err(refuse(option, "oxide-vusl's own --mode= sets the mode"));
+        }
+        if option.starts_with("-u") {
+            return Err(refuse(
+                option,
+                "oxide-vusl names the generated labels after the program",
+            ));
+        }
+        let alone = vcl_cli::parse([mode.as_str(), option.as_str()])
+            .map_err(|error| rejected(option.clone(), error))?;
+        let driver = vcl_cli::Arguments {
+            compile: vcl::Options::default(),
+            notices: Vec::new(),
+            ..alone
+        };
+        if driver != vcl_cli::Arguments::default() {
+            return Err(refuse(
+                option,
+                "it is not a compile option: oxide-vusl reads the input and writes the files",
+            ));
+        }
+    }
+    let all =
+        vcl_cli::parse(std::iter::once(mode.as_str()).chain(options.iter().map(String::as_str)))
+            .map_err(|error| rejected(options.join(" "), error))?;
+    Ok((all.compile, all.notices))
+}
+
 /// Parses the arguments after the program's name.
 pub fn parse<I, S>(arguments: I) -> Result<Arguments, CliError>
 where
@@ -118,8 +176,11 @@ where
         ..Arguments::default()
     };
     // The first --opt= or --no-opt=, which --mode=vcl rejects wherever it
-    // comes on the line.
+    // comes on the line, and what they choose.
     let mut optimization_argument = None;
+    let mut chosen: Option<vcl::Optimizations> = None;
+    let mut disabled = vcl::Optimizations::NONE;
+    let mut vcl_arguments: Vec<String> = Vec::new();
     let mut rest = arguments.into_iter();
     while let Some(argument) = rest.next() {
         // An option's value: the rest of the argument, or the next one.
@@ -140,6 +201,7 @@ where
             "--preprocess-only" => parsed.preprocess_only = true,
             "--check" => parsed.check = true,
             "--stop-at-vcl" => parsed.stop_at_vcl = true,
+            "--annotate" => parsed.annotate = true,
             "--warnings-as-errors" => parsed.warnings_as_errors = true,
             "-" => {
                 if parsed.input.is_some() {
@@ -158,15 +220,14 @@ where
                     };
                     parsed.compile.mode = mode;
                 } else if let Some(list) = argument.strip_prefix("--opt=") {
-                    let chosen = optimizations(&argument, list).map_err(fail)?;
-                    let earlier = parsed.compile.optimizations.unwrap_or_default();
-                    parsed.compile.optimizations = Some(earlier.union(chosen));
+                    let more = optimizations(&argument, list).map_err(fail)?;
+                    chosen = Some(chosen.unwrap_or_default().union(more));
                     optimization_argument.get_or_insert(argument);
                 } else if let Some(list) = argument.strip_prefix("--no-opt=") {
-                    let disabled = optimizations(&argument, list).map_err(fail)?;
-                    let compile = &mut parsed.compile;
-                    compile.disabled_optimizations = compile.disabled_optimizations.union(disabled);
+                    disabled = disabled.union(optimizations(&argument, list).map_err(fail)?);
                     optimization_argument.get_or_insert(argument);
+                } else if let Some(option) = argument.strip_prefix("--vcl-option=") {
+                    vcl_arguments.push(option.to_string());
                 } else if let Some(path) = argument.strip_prefix("--reflect=") {
                     parsed.reflect = Some(path.to_string());
                 } else if let Some(path) = argument.strip_prefix("--header=") {
@@ -203,6 +264,18 @@ where
     {
         return Err(fail(VuslMessage::OptimizationsNeedOxideMode { argument }));
     }
+    if parsed.annotate && parsed.emit_vcl.is_none() && !parsed.stop_at_vcl {
+        return Err(fail(VuslMessage::AnnotateWithoutVcl));
+    }
+    let (mut vcl_options, notices) =
+        vcl_settings(&vcl_arguments, parsed.compile.mode).map_err(fail)?;
+    if let Some(chosen) = chosen {
+        let earlier = vcl_options.optimizations.unwrap_or_default();
+        vcl_options.optimizations = Some(earlier.union(chosen));
+    }
+    vcl_options.disabled_optimizations = vcl_options.disabled_optimizations.union(disabled);
+    parsed.compile.vcl = vcl_options;
+    parsed.notices = notices;
     if parsed.input.is_none() && !parsed.help && !parsed.version {
         return Err(fail(VuslMessage::NoInput));
     }
@@ -275,9 +348,7 @@ mod tests {
             let compile = parse(arguments.iter().copied()).unwrap().compile;
             vcl::Options {
                 mode: compile.mode,
-                optimizations: compile.optimizations,
-                disabled_optimizations: compile.disabled_optimizations,
-                ..vcl::Options::default()
+                ..compile.vcl
             }
             .enabled_optimizations()
         };
@@ -322,6 +393,68 @@ mod tests {
                 },
             );
         }
+    }
+
+    #[test]
+    fn vcl_options_reach_oxide_vcl() {
+        let vcl = |arguments: &[&str]| parse(arguments.iter().copied()).unwrap().compile.vcl;
+        let passed = vcl(&["--vcl-option=-c", "--vcl-option=-L", "p.vusl"]);
+        assert!(passed.comments && passed.disable_loops);
+        assert!(!vcl(&["p.vusl"]).comments);
+        // --opt= in either place: the union, and --no-opt= of both.
+        let chosen = vcl(&["--vcl-option=--opt=exit", "--opt=unswitch", "p.vusl"]);
+        let both = vcl::Optimizations::NONE
+            .with(vcl::Optimization::Exit)
+            .with(vcl::Optimization::Unswitch);
+        assert_eq!(chosen.optimizations, Some(both));
+        for (option, reason) in [
+            (
+                "-ofoo.vsm",
+                "it is not a compile option: oxide-vusl reads the input and writes the files",
+            ),
+            (
+                "-G",
+                "it is not a compile option: oxide-vusl reads the input and writes the files",
+            ),
+            (
+                "-uName",
+                "oxide-vusl names the generated labels after the program",
+            ),
+            ("--mode=vcl", "oxide-vusl's own --mode= sets the mode"),
+            ("input.vcl", "it is not an option"),
+        ] {
+            let argument = format!("--vcl-option={option}");
+            rejects(
+                &[&argument, "p.vusl"],
+                VuslMessage::BadVclOption {
+                    argument: option.into(),
+                    reason,
+                },
+            );
+        }
+        let error = parse(["--vcl-option=--frob", "p.vusl"]).unwrap_err();
+        assert_eq!(
+            error.diagnostic.message,
+            vcl::Message::from(VuslMessage::VclOptionRejected {
+                argument: "--frob".into(),
+                reason: "unknown option '--frob'".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn annotate_needs_vcl_written() {
+        assert!(
+            parse(["--annotate", "--stop-at-vcl", "p.vusl"])
+                .unwrap()
+                .annotate
+        );
+        assert!(
+            parse(["--annotate", "--emit-vcl=p.vcl", "p.vusl"])
+                .unwrap()
+                .annotate
+        );
+        rejects(&["--annotate", "p.vusl"], VuslMessage::AnnotateWithoutVcl);
     }
 
     #[test]

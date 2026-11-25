@@ -245,6 +245,25 @@ pub fn stmt(out: &mut String, statement: &Stmt, depth: usize) {
             stmt(out, body, depth + 1);
             let _ = writeln!(out, "{indent}while ({});", expr(cond));
         }
+        StmtKind::Switch { value, cases } => {
+            let _ = writeln!(out, "{indent}switch ({})\n{indent}{{", expr(value));
+            for case in cases {
+                for label in &case.labels {
+                    match label {
+                        CaseLabel::Value(value) => {
+                            let _ = writeln!(out, "{indent}case {}:", expr(value));
+                        }
+                        CaseLabel::Default(_) => {
+                            let _ = writeln!(out, "{indent}default:");
+                        }
+                    }
+                }
+                for inner in &case.body {
+                    stmt(out, inner, depth + 1);
+                }
+            }
+            let _ = writeln!(out, "{indent}}}");
+        }
         StmtKind::Break => {
             let _ = writeln!(out, "{indent}break;");
         }
@@ -466,6 +485,37 @@ mod tests {
         assert_eq!(
             failure("enum Plane { Near };"),
             SyntaxErrorKind::UnscopedEnum
+        );
+    }
+
+    #[test]
+    fn switches_round_trip() {
+        let program = "void main() { switch (mode) { case 0: case Mode::Fill: a = 1; break;\n\
+                       default: { b = 2; break; } } }\n";
+        assert_eq!(
+            round_trip(program),
+            "void main()\n\
+             {\n\
+             \x20   switch (mode)\n\
+             \x20   {\n\
+             \x20   case 0:\n\
+             \x20   case Mode::Fill:\n\
+             \x20       (a = 1);\n\
+             \x20       break;\n\
+             \x20   default:\n\
+             \x20       {\n\
+             \x20           (b = 2);\n\
+             \x20           break;\n\
+             \x20       }\n\
+             \x20   }\n\
+             }\n"
+        );
+        assert_eq!(
+            failure("void main() { switch (a) { b = 1; } }"),
+            SyntaxErrorKind::Expected {
+                expected: "'case' or 'default'".into(),
+                found: "'b'".into()
+            }
         );
     }
 

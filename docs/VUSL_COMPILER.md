@@ -26,7 +26,11 @@ crates/oxide-vusl/src/
 
 Neither crate has external dependencies. The `vcl` crate provides the preprocessor's C-syntax mode
 (`docs/PREPROCESSOR.md`), `Message::Frontend` and `Reporter::set_program_name` for diagnostics, and
-`vcl::driver` for what both drivers share (`--color=` and writing all files or none).
+`vcl::driver` for what both drivers share (`--color=` and writing all files or none). The
+`oxide-vusl` driver also uses oxide-vcl's argument parser (`vcl_cli::parse`) for
+`--vcl-option=`: each option is parsed alone, prefixed with oxide-vusl's `--mode=`, and refused
+unless it changes only `vcl::Options`, which then make `vusl::Options::vcl`. `--annotate` is
+`Vcl::annotated`, from the line origins and the preprocessor's files.
 
 ## Phases
 
@@ -91,6 +95,13 @@ of one becomes one per member. A member's value that reads a member the same ass
 earlier goes through a new local first, and so does one that loads memory, before a store's first
 member. Vector constants (`Symbol::Vector`) are their constructor, substituted at each use. A
 matrix from columns is `ExprKind::Columns`, whose parts codegen puts in the matrix's registers.
+
+A `switch` (`Elaborator::switch`) is checked and then elaborated as an `if` and `else` chain
+(`case_chain`): the value goes to a local unless it is one or a constant, each case's condition is
+its labels' `==` comparisons joined with `||` (folded when constant), each body is a branch with
+its final `break` removed (`case_body`), and `default` is the last `else`. `switches` holds the
+loop depth at each switch, so a `break` with no loop opened since is refused rather than taken as
+the enclosing loop's.
 
 An enum's value (`Ast::Scoped`, `ClipPlane::Near`) is an `int16` constant of type `Type::Enum`.
 Enum operands are checked before constants fold, so `ClipPlane::Near == 0` is an error rather than
@@ -336,6 +347,7 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `loop-constants` | An `int16` mask in a loop with a branch, made once before it; a constant assigned to a local stays in the loop |
 | `struct-variable` | A vertex returned by a function and stored: each member computed in its own lanes and stored with no move |
 | `enum-planes` | The clipper's plane distance with the plane an `enum class`: each constant plane folds the comparisons to its one term, and the five calls share their `pos.xyz * clipScale` |
+| `switch` | A switch on a run-time `int16` as `ibeq`/`ibne` per label, stacked labels sharing a body; one on a constant enum argument leaves its case |
 | `literal-constructors` | `vec4(0.5)` as `loi`, `addi.xyz` and `muli.w`; a literal used twice loaded once; 0 into a fixed lane as a `move` from VF00 |
 | `matrix-columns` | `mat4` from four columns, each loaded into the matrix's registers, and `mat3` of a `mat4` as three `lq.xyz` |
 | `clip-function` | `clip-adc` with each judgement returned by a function: the same code, since a `clipflags` result names its `clipw` |

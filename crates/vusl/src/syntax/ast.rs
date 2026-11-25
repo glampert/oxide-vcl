@@ -261,11 +261,32 @@ pub enum StmtKind {
         body: Box<Stmt>,
         cond: Expr,
     },
+    /// `switch (value) { case c: ... default: ... }`.
+    Switch {
+        value: Expr,
+        cases: Vec<Case>,
+    },
     Break,
     Continue,
     Return(Option<Expr>),
     Yield,
     Empty,
+}
+
+/// One group of a switch: its labels, stacked, and its statements.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Case {
+    pub labels: Vec<CaseLabel>,
+    pub body: Vec<Stmt>,
+    pub pos: Pos,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum CaseLabel {
+    /// `case value:`.
+    Value(Expr),
+    /// `default:`, where it is.
+    Default(Pos),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

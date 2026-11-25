@@ -1,0 +1,36 @@
+// A switch is a chain of comparisons with its value, read once: stacked
+// labels share a body behind one test each, and default is the last else.
+// On a constant, as inlined with ClipPlane::NegativeX, only its case stays.
+enum class ClipPlane { Near, PositiveX, NegativeX };
+
+struct Block { vec4 pos; layout(lane = x) int16 mode; layout(lane = y) float distance;
+               layout(lane = z) float scale; };
+
+float planeTerm(vec4 pos, ClipPlane plane)
+{
+    layout(lane = w) float d = pos.w;
+    switch (plane)
+    {
+    case ClipPlane::Near:      d = d - pos.z; break;
+    case ClipPlane::PositiveX: d = d - pos.x; break;
+    default:                   d = d + pos.x; break;
+    }
+    return d;
+}
+
+void main(layout(address = 0) inout Block block)
+{
+    block.distance = planeTerm(block.pos, ClipPlane::NegativeX);
+    layout(lane = z) float scale = 0.0;
+    switch (block.mode)
+    {
+    case 1:
+    case 2:
+        scale = block.pos.y;
+        break;
+    default:
+        scale = block.pos.z;
+        break;
+    }
+    block.scale = scale;
+}

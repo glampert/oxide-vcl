@@ -261,6 +261,51 @@ fn optimizations_are_chosen_on_the_command_line() {
 }
 
 #[test]
+fn annotated_vcl_names_the_source_lines() {
+    let files = [
+        (
+            "p.vusl",
+            "#include \"lib.vush\"\n\
+             void main(layout(address = 0) inout Block block)\n\
+             {\n\
+             \x20   block.b = twice(block.a);\n\
+             }\n",
+        ),
+        (
+            "lib.vush",
+            "struct Block { vec4 a; vec4 b; };\n\
+             vec4 twice(vec4 v)\n\
+             {\n\
+             \x20   vec4 sum = v + v;\n\
+             \x20   return sum;\n\
+             }\n",
+        ),
+    ];
+    let result = run(
+        "annotate",
+        &["--stop-at-vcl", "--annotate", "p.vusl"],
+        &files,
+    );
+    assert_eq!((result.status, result.stderr.as_str()), (0, ""));
+    let vcl = &result.stdout;
+    for comment in [
+        "        ; p.vusl(4): block.b = twice(block.a);\n        lq.xyzw",
+        "        ; lib.vush(4): vec4 sum = v + v;\n        add.xyzw",
+    ] {
+        assert!(vcl.contains(comment), "{comment:?} in\n{vcl}");
+    }
+    // The listing is the same with and without the comments.
+    let plain = run("annotate-plain", &["p.vusl"], &files);
+    let annotated = run(
+        "annotate-listing",
+        &["--emit-vcl=p.vcl", "--annotate", "p.vusl"],
+        &files,
+    );
+    assert_eq!(plain.stdout, annotated.stdout);
+    assert!(annotated.file("p.vcl").unwrap().contains("; lib.vush(4)"));
+}
+
+#[test]
 fn check_errors_name_the_line_in_the_included_file() {
     let files = [
         ("p.vusl", "#include \"lib.vush\"\nvoid main() {}\n"),

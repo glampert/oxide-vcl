@@ -7,10 +7,10 @@ use super::ast::*;
 use super::lexer::{Pos, Punct, Token, TokenKind};
 
 /// Words that cannot name anything.
-pub const KEYWORDS: [&str; 22] = [
+pub const KEYWORDS: [&str; 25] = [
     "struct", "if", "else", "for", "while", "do", "break", "continue", "return", "yield", "in",
     "out", "inout", "uniform", "layout", "const", "precise", "true", "false", "ref", "export",
-    "enum",
+    "enum", "switch", "case", "default",
 ];
 
 /// Why the tokens are not a program.
@@ -523,6 +523,7 @@ impl Parser<'_> {
             TokenKind::Ident => match token.text.as_str() {
                 "if" => self.if_stmt()?,
                 "for" => self.for_stmt()?,
+                "switch" => self.switch_stmt()?,
                 "while" => {
                     self.advance();
                     self.expect(Punct::OpenParen)?;
@@ -572,6 +573,44 @@ impl Parser<'_> {
             _ => self.expr_stmt()?,
         };
         Ok(Stmt { kind, pos })
+    }
+
+    fn switch_stmt(&mut self) -> Parsed<StmtKind> {
+        self.advance();
+        self.expect(Punct::OpenParen)?;
+        let value = self.expr()?;
+        self.expect(Punct::CloseParen)?;
+        self.expect(Punct::OpenBrace)?;
+        let mut cases: Vec<Case> = Vec::new();
+        while !self.eat(Punct::CloseBrace) {
+            let pos = self.peek().pos;
+            if self.at_keyword("case") || self.at_keyword("default") {
+                // Labels with no statement between them are one group.
+                let mut labels = Vec::new();
+                while self.at_keyword("case") || self.at_keyword("default") {
+                    let label_pos = self.peek().pos;
+                    let label = if self.eat_keyword("case") {
+                        CaseLabel::Value(self.conditional()?)
+                    } else {
+                        self.advance();
+                        CaseLabel::Default(label_pos)
+                    };
+                    self.expect(Punct::Colon)?;
+                    labels.push(label);
+                }
+                cases.push(Case {
+                    labels,
+                    body: Vec::new(),
+                    pos,
+                });
+                continue;
+            }
+            let Some(case) = cases.last_mut() else {
+                return self.expected("'case' or 'default'");
+            };
+            case.body.push(self.stmt()?);
+        }
+        Ok(StmtKind::Switch { value, cases })
     }
 
     fn expr_stmt(&mut self) -> Parsed<StmtKind> {

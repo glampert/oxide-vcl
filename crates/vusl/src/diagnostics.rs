@@ -36,6 +36,18 @@ pub enum VuslMessage {
         argument: String,
         name: String,
     },
+    /// `--vcl-option=` with something oxide-vusl does not pass on.
+    BadVclOption {
+        argument: String,
+        reason: &'static str,
+    },
+    /// `--vcl-option=` options oxide-vcl's parser rejects, with its reason.
+    VclOptionRejected {
+        argument: String,
+        reason: String,
+    },
+    /// `--annotate` with no VCL written.
+    AnnotateWithoutVcl,
     /// `--opt=` or `--no-opt=` with `--mode=vcl`, which never optimizes.
     OptimizationsNeedOxideMode {
         argument: String,
@@ -324,6 +336,25 @@ pub enum VuslMessage {
     RangeNotArray {
         found: String,
     },
+    /// A switch on something other than an `int16` or an enum.
+    SwitchType {
+        found: String,
+    },
+    /// A case label that is not a constant.
+    CaseNotConstant,
+    /// Two case labels with one value.
+    DuplicateCase {
+        value: String,
+    },
+    /// Where a duplicate case label's value was first (a note).
+    CaseFirst {
+        value: String,
+    },
+    /// A case with statements that does not end in `break`, so it would
+    /// run into the next case.
+    CaseFallthrough,
+    /// A `break` of a switch that is not a case's last statement.
+    BreakInCase,
     /// A type alias named like a built-in type.
     BuiltinTypeName {
         name: String,
@@ -410,6 +441,9 @@ impl VuslMessage {
                 | BadMode { .. }
                 | BadOptimization { .. }
                 | OptimizationsNeedOxideMode { .. }
+                | BadVclOption { .. }
+                | VclOptionRejected { .. }
+                | AnnotateWithoutVcl
                 | BadDefine { .. }
                 | NoInput
                 | ExtraInput { .. }
@@ -500,6 +534,23 @@ fn wording(message: &VuslMessage) -> Wording {
                 plain(format!("unknown optimization '{name}'"))
             }
         }
+        BadVclOption { argument, reason } => (
+            format!("--vcl-option={argument} is not passed to oxide-vcl: {reason}"),
+            None,
+            Some(
+                "pass one of oxide-vcl's compile options, such as -c, -L or --fix=, per --vcl-option=",
+            ),
+        ),
+        VclOptionRejected { argument, reason } => (
+            format!("oxide-vcl rejects --vcl-option={argument}: {reason}"),
+            None,
+            Some("run 'oxide-vcl --help' for its options"),
+        ),
+        AnnotateWithoutVcl => (
+            "--annotate comments the generated VCL, which this run does not write".into(),
+            None,
+            Some("add --emit-vcl=<file> or --stop-at-vcl"),
+        ),
         OptimizationsNeedOxideMode { argument } => (
             format!("{argument} applies only in oxide mode"),
             None,
@@ -761,6 +812,30 @@ fn wording(message: &VuslMessage) -> Wording {
             ),
         ),
         NoConstructor { ty, help } => (format!("{ty} has no constructor"), None, Some(help)),
+        SwitchType { found } => (
+            format!("a switch needs an int16 or an enum, not {found}"),
+            None,
+            Some("compare other values with if and else"),
+        ),
+        CaseNotConstant => (
+            "a case's value must be a constant".into(),
+            None,
+            Some("write an integer constant or one of the enum's values, or compare with if"),
+        ),
+        DuplicateCase { value } => plain(format!("two cases are {value}")),
+        CaseFirst { value } => plain(format!("the first case {value} is here")),
+        CaseFallthrough => (
+            "this case's statements would run into the next case's".into(),
+            None,
+            Some(
+                "end them with break; labels with no statements between them (case 1: case 2:) share statements",
+            ),
+        ),
+        BreakInCase => (
+            "a switch's break must be its case's last statement".into(),
+            None,
+            Some("choose with if and else inside the case: a break ends only the whole case"),
+        ),
         BuiltinTypeName { name } => (
             format!("'{name}' is a built-in type and cannot be declared again"),
             Some(name.clone()),

@@ -72,6 +72,35 @@ pub struct Vcl {
     pub origins: Vec<Option<SourceLocation>>,
 }
 
+impl Vcl {
+    /// The text with a comment before each run of lines from one VUSL
+    /// line: its file, its number and its text, from `files`.
+    pub fn annotated(&self, files: &[preprocessor::ReadFile]) -> String {
+        let mut out = String::new();
+        let mut last: Option<(&str, usize)> = None;
+        for (index, line) in self.text.lines().enumerate() {
+            let origin = self.origins.get(index).and_then(Option::as_ref);
+            if let Some(origin) = origin
+                && last != Some((origin.file.as_str(), origin.line))
+            {
+                last = Some((origin.file.as_str(), origin.line));
+                let source = files
+                    .iter()
+                    .find(|file| file.name == origin.file)
+                    .and_then(|file| file.text.lines().nth(origin.line.saturating_sub(1)))
+                    .map_or("", str::trim);
+                out.push_str(&format!(
+                    "        ; {}({}): {source}\n",
+                    origin.file, origin.line
+                ));
+            }
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
+    }
+}
+
 impl Checked {
     /// The program's reflection; `instructions` once the code exists.
     pub fn reflection(&self, instructions: Option<usize>) -> reflect::Reflection {
@@ -147,8 +176,8 @@ impl Checked {
     }
 }
 
-/// Compiles generated VCL with `vcl`, in `options.mode` and with the
-/// optimizations `options` chooses, its generated labels prefixed with the
+/// Compiles generated VCL with `vcl`, in `options.mode` and with
+/// `options.vcl`'s settings, its generated labels prefixed with the
 /// program's name.
 pub fn assemble(
     vcl: &Vcl,
@@ -157,10 +186,8 @@ pub fn assemble(
 ) -> Result<vcl::Compiled, Vec<vcl::CompileError>> {
     let vcl_options = vcl::Options {
         mode: options.mode,
-        optimizations: options.optimizations,
-        disabled_optimizations: options.disabled_optimizations,
         unique: Some(program.to_string()),
-        ..vcl::Options::default()
+        ..options.vcl.clone()
     };
     vcl::compile(&vcl.text, &format!("{program}.vcl"), &vcl_options)
 }

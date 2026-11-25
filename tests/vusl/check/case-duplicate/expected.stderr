@@ -1,0 +1,7 @@
+input.vusl(9): error: two cases are 1
+   9 |     case 1: block.out0 = 2; break;
+     |          ^
+input.vusl(7): note: the first case 1 is here
+   7 |     case 1: block.out0 = 1; break;
+     |          ^
+oxide-vusl: 1 error; no output written

@@ -1,0 +1,5 @@
+input.vusl(5): error: a switch needs an int16 or an enum, not float
+   5 |     switch (block.v.x)
+     |             ^
+     = help: compare other values with if and else
+oxide-vusl: 1 error; no output written

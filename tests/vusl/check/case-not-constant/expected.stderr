@@ -1,0 +1,5 @@
+input.vusl(7): error: a case's value must be a constant
+   7 |     case block.out0: block.out0 = 1; break;
+     |          ^
+     = help: write an integer constant or one of the enum's values, or compare with if
+oxide-vusl: 1 error; no output written

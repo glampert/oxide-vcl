@@ -12,6 +12,8 @@ output:
   -o <file>            write the assembly listing to <file>
   --emit-vcl=<file>    also write the generated VCL to <file>
   --stop-at-vcl        write the generated VCL instead of the listing
+  --annotate           in the VCL written, comment each run of lines with the
+                       VUSL line it came from: its file, number and text
   --preprocess-only    write the preprocessed program and stop
   --check              check the program and stop: types, lanes, layouts
                        and main's parameters, without generating code
@@ -36,6 +38,10 @@ code:
                        chose: exit (an earlier E bit), loops (pipeline loops
                        without a pipeline pragma), unswitch (two copies of a
                        loop for a branch that does not change in it)
+  --vcl-option=<opt>   pass one oxide-vcl compile option, as its command line
+                       takes it (-c, -L, --fix=all, ...); may be repeated.
+                       Options for files, preprocessing, the mode or label
+                       names are oxide-vusl's own
 
 diagnostics:
   --warnings-as-errors fail the run on any warning

@@ -11,11 +11,10 @@ pub struct Options {
     /// `--mode=`: how `vcl` compiles the generated VCL, oxide mode unless
     /// asked otherwise.
     pub mode: vcl::Mode,
-    /// `--opt=`: the oxide-vcl optimizations chosen; `None` runs them all.
-    pub optimizations: Option<vcl::Optimizations>,
-    /// `--no-opt=`: the oxide-vcl optimizations turned off, whatever
-    /// `--opt=` chose.
-    pub disabled_optimizations: vcl::Optimizations,
+    /// How `vcl` compiles the generated VCL beyond its mode and label
+    /// prefix, which `mode` and the program's name set: the optimizations
+    /// (`--opt=`, `--no-opt=`) and what `--vcl-option=` passes.
+    pub vcl: vcl::Options,
 }
 
 impl Default for Options {
@@ -24,8 +23,7 @@ impl Default for Options {
             include_dirs: Vec::new(),
             defines: Vec::new(),
             mode: vcl::Mode::Oxide,
-            optimizations: None,
-            disabled_optimizations: vcl::Optimizations::NONE,
+            vcl: vcl::Options::default(),
         }
     }
 }

@@ -326,6 +326,32 @@ The GLSL statement set: declarations, assignments with `=` and the compound oper
 - **`for` and `while` loops** are rotated the same way: the test before the loop, then a
   do-while with the test at its end.
 - **`break` and `continue`** split the loop body into blocks, so vcl no longer pipelines it.
+- **`switch`** on an `int16` or an [enum](#enums), with C's `case` and `default` labels:
+
+  ```glsl
+  switch (plane)
+  {
+  case ClipPlane::Near:
+      d = d - jp.z;
+      break;
+  case ClipPlane::PositiveX:
+  case ClipPlane::NegativeX:     // stacked labels share the statements
+      d = d - jp.x;
+      break;
+  default:
+      d = d + jp.y;
+  }
+  ```
+
+  Each case's value is a constant (an integer, or a value of the switch's enum), and no two are
+  the same. A case's statements end with `break`, or `continue` or `return;` (`main`), unless it
+  is the last case: VUSL has no implicit fall-through, so labels share statements only when nothing
+  is between them. `break` is not allowed anywhere else in a case: it would end the case early.
+  `continue` reaches the loop around the switch.
+
+  A switch is an `if` and `else` chain: the value, read once, compared with each case's labels in
+  order, and `default` last wherever it is written. A constant value, such as an enum argument of
+  an inlined call, leaves only its case.
 - **`yield;`** ends this run with `--cont`; MSCNT resumes after it with every register as it was.
   The host sends another batch in between, so afterwards XTOP and the `layout(xitop)` parameters
   are read again and no value read from memory is kept. A yield inside a range-for is an error:
@@ -445,6 +471,7 @@ The most instructions each construct emits. Value reuse, hoisting and the peepho
 | `M * v` | One per column |
 | Conversions | As listed under [built-in functions](#built-in-functions) |
 | A comparison in a condition | 1 or 2, then the branch |
+| A `switch` | Per case label, an `int16` comparison with its branch (`iaddiu` and `ibne`); 0 for a constant value |
 | A range-for | A guard, a pointer step per distinct stride, the exit branch |
 | A struct copy | 2 per qword |
 | A struct variable | Its members': each member read, set or stored as a variable of its type |
@@ -519,6 +546,9 @@ Each of these is an error that says what to write instead:
 | A C enum (`enum Name { ... }`) | `enum class Name { ... }` |
 | An enum compared with or set from an integer, a constant or another enum | Its constructor, `Name(n)`, or `int16(e)` |
 | Arithmetic on an enum | `int16(e)` first, then the constructor back |
+| A case that runs into the next (`case 1: a(); case 2: b();`) | `break` at its end, or stacked labels |
+| `break` inside a case's statements | `if` and `else` inside the case |
+| A `switch` on a float or a vector | `if` and `else` |
 
 ## Pragmas
 
@@ -704,6 +734,7 @@ or `-oout.vsm`).
 | `-o <file>` | Write the listing to `<file>` |
 | `--emit-vcl=<file>` | Also write the generated VCL |
 | `--stop-at-vcl` | Write the generated VCL instead of the listing |
+| `--annotate` | In the VCL written, a comment before each run of lines from one VUSL line: its file, number and text (`; clipper.vusl(52): d = d - jp.z;`). Needs `--emit-vcl` or `--stop-at-vcl`; the listing is the same |
 | `--preprocess-only` | Write the preprocessed text and stop |
 | `--check` | Check the program and stop: types, lanes, layouts and `main`'s parameters, without generating code |
 | `--reflect=<file>` | Also write the reflection JSON |
@@ -713,6 +744,7 @@ or `-oout.vsm`).
 | `--mode=oxide` or `--mode=vcl` | How the generated VCL is compiled: oxide-vcl's oxide mode with all its optimizations (the default), or vcl 1.4beta7's code generation, for cross-checks |
 | `--opt=<names>` | Run only the named oxide-vcl optimizations, separated by commas, or `all` or `none`; may be repeated |
 | `--no-opt=<names>` | Do not run the named optimizations, whatever `--opt=` chose |
+| `--vcl-option=<option>` | Pass one oxide-vcl compile option, as oxide-vcl's command line takes it (`-c`, `-L`, `-M`, `-m0`, `--fix=all`, ...); may be repeated. Options for files, preprocessing, the mode and label names are oxide-vusl's own and are refused; `--opt=` here and oxide-vusl's join |
 | `--warnings-as-errors` | Fail the run on any warning |
 | `--color=auto`, `always`, `never` | Colour in diagnostics; `auto` when standard error is a terminal |
 | `-h`, `--help`; `-v`, `--version` | Help and version |

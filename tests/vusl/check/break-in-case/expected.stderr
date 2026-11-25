@@ -1,0 +1,5 @@
+input.vusl(10): error: a switch's break must be its case's last statement
+   10 |             break;
+      |             ^
+      = help: choose with if and else inside the case: a break ends only the whole case
+oxide-vusl: 1 error; no output written
