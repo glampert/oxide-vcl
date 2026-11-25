@@ -300,9 +300,10 @@ seed:
 
 ```sh
 cargo test --release --test listing_equivalence cycle_report -- --ignored --nocapture
-``` A fourth test shows that a schedule reading Q one
-row before the quotient lands is a difference, which the logical
-configuration does not see.
+```
+
+A fourth test shows that a schedule reading Q one row before the quotient
+lands is a difference, which the logical configuration does not see.
 
 `crates/oxide-vcl/tests/optimizations.rs` checks each optimization on
 small inline programs: the listing it changes, its `--opt=` and
@@ -345,6 +346,49 @@ VCL_PROFILE=<case> cargo test --release --test scenes scene_profile -- --ignored
 
 The scenes are synthetic: they follow the hosts' memory layouts, not
 recorded frames, so how often each path runs is a model of a frame.
+
+## Benchmarks
+
+Two benchmarks measure what an optimization or a compile-time change does,
+against tables committed in `tests/bench`, one line per measurement:
+
+- `crates/oxide-vcl/tests/bench.rs` (`tests/bench/corpus.txt`): every public
+  corpus program, compiled with its recorded flags in vcl and in oxide
+  mode, and run in the timed model from the twelve seeded states of
+  [Listing equivalence](#listing-equivalence). A row gives the listing's
+  instruction pairs; how many runs finish, and their cycles and stall
+  cycles; and the compile's work. A rejected program is `rejected=1`.
+- `crates/vusl/tests/programs.rs`, `bench` (`tests/bench/scenes.txt`): the
+  VUSL ports and their hand-written programs, compiled in oxide mode, with
+  their pairs and work, and their cycles and stall cycles on each
+  [renderer scene](#renderer-scenes). A port's work counts all its hoist
+  attempts, and the clipper library has a row of its own.
+
+The compile's work is `vcl::Compiled::stats` (`crates/vcl/src/stats.rs`):
+the list scheduler's search nodes, the wrangler's steps and checks, and the
+flow analyses with the blocks they walk to their fixed points. These depend
+only on the program and the options, so they measure a compile-time change
+exactly where time, on a shared machine, does not; a change that alters
+them changed what the searches do, not just how fast they run. The cycles
+are the timed model's, so they are as good as the model is.
+
+A benchmark prints what changed against its table: each changed row with
+its old and new values, rows added or gone, and per group (the first word
+of a key: the mode, or `vusl` and `hand`) the totals of each value over
+the rows both have. `BENCH_UPDATE=1` writes the table instead, to commit
+with the change it measures, so that the diff shows the change program by
+program:
+
+```sh
+cargo test --release -p oxide-vcl --test bench -- --ignored --nocapture
+cargo test --release -p vusl --test programs bench -- --ignored --nocapture
+BENCH_UPDATE=1 cargo test --release -p oxide-vcl --test bench -- --ignored
+BENCH_UPDATE=1 cargo test --release -p vusl --test programs bench -- --ignored
+```
+
+The corpus benchmark takes a minute or two on eight cores, the scenes one
+about fifteen seconds. Both are ignored by `cargo test`: a table that
+changes is a measurement, not a failure.
 
 ## Preprocessor
 

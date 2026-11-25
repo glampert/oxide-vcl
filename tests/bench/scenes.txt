@@ -1,0 +1,42 @@
+# The VUSL ports (vusl) and their hand-written programs (hand), compiled in
+# oxide mode: instruction pairs and the compile's work (search nodes,
+# wrangler steps and checks, flow analyses and the blocks they walk), then
+# cycles and stall cycles on each scene. A port's compile counts every hoist
+# attempt. Written by crates/vusl/tests/programs.rs (bench).
+hand particles burst                 cycles=1189 stalls=7
+hand particles compile               pairs=114 nodes=0 steps=137422 checks=477939 analyses=17 walks=107
+hand textured_triangles compile      pairs=1212 nodes=0 steps=82877 checks=856805 analyses=18 walks=4111
+hand textured_triangles model        cycles=1578 stalls=326
+hand textured_triangles model_near   cycles=3786 stalls=915
+hand textured_triangles world_floor  cycles=16768 stalls=4480
+hand textured_triangles world_wall   cycles=2805 stalls=574
+hand world_lm compile                pairs=1019 nodes=0 steps=137474 checks=914072 analyses=18 walks=5150
+hand world_lm floor                  cycles=46153 stalls=12174
+hand world_lm floor_lit              cycles=91197 stalls=24340
+hand world_lm side                   cycles=18224 stalls=4121
+hand world_lm side_lit               cycles=35403 stalls=8234
+hand world_lm wall                   cycles=2259 stalls=8
+hand world_lm wall_lit               cycles=3476 stalls=8
+hand world_strips compile            pairs=695 nodes=0 steps=132834 checks=446608 analyses=17 walks=3233
+hand world_strips floor              cycles=47371 stalls=13007
+hand world_strips side               cycles=19314 stalls=4858
+hand world_strips wall               cycles=3896 stalls=952
+vusl library compile                 pairs=433 nodes=0 steps=132530 checks=19662 analyses=17 walks=1297
+vusl particles burst                 cycles=1020 stalls=10
+vusl particles compile               pairs=113 nodes=0 steps=44462 checks=1795102 analyses=17 walks=107
+vusl textured_triangles compile      pairs=1144 nodes=188782 steps=591472 checks=6692415 analyses=396 walks=93159
+vusl textured_triangles model        cycles=1211 stalls=36
+vusl textured_triangles model_near   cycles=3228 stalls=544
+vusl textured_triangles world_floor  cycles=13750 stalls=3099
+vusl textured_triangles world_wall   cycles=1801 stalls=60
+vusl world_lm compile                pairs=642 nodes=0 steps=51883 checks=1119177 analyses=130 walks=11960
+vusl world_lm floor                  cycles=40892 stalls=8802
+vusl world_lm floor_lit              cycles=80726 stalls=17581
+vusl world_lm side                   cycles=16259 stalls=2598
+vusl world_lm side_lit               cycles=31524 stalls=5173
+vusl world_lm wall                   cycles=2135 stalls=20
+vusl world_lm wall_lit               cycles=3154 stalls=20
+vusl world_strips compile            pairs=368 nodes=0 steps=88861 checks=1043796 analyses=79 walks=4325
+vusl world_strips floor              cycles=40472 stalls=8932
+vusl world_strips side               cycles=15903 stalls=2728
+vusl world_strips wall               cycles=2190 stalls=21

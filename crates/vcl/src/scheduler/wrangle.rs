@@ -2984,6 +2984,7 @@ impl<'a> Table<'a> {
 
         loop {
             steps += 1;
+            crate::stats::count(crate::stats::Counter::WrangleSteps, 1);
             self.work.steps = steps;
             if steps > budget || self.work.checks > self.check_limit {
                 self.failed_trace = trace;
@@ -3084,6 +3085,7 @@ impl<'a> Table<'a> {
             // In a loop this inner search also spends the step budget.
             if self.period > 0 {
                 *steps += 1;
+                crate::stats::count(crate::stats::Counter::WrangleSteps, 1);
                 self.work.steps = *steps;
                 if *steps > budget || self.work.checks > self.check_limit {
                     self.failed_trace = std::mem::take(trace);
@@ -3204,6 +3206,7 @@ impl<'a> Table<'a> {
     /// Move check for an already placed instruction, linear.
     fn can_move(&mut self, index: usize, position: Position) -> u32 {
         self.work.checks += 1;
+        crate::stats::count(crate::stats::Counter::WrangleChecks, 1);
         let insn = self.insn(index);
         let line = position.line;
         let row = self.fold(line).0;

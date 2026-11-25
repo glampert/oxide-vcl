@@ -419,6 +419,7 @@ impl Graph {
     /// The results of every copy fold back onto the original blocks and
     /// operations.
     pub fn analyze(&self) -> Result<Analysis, FlowError> {
+        crate::stats::count(crate::stats::Counter::FlowAnalyses, 1);
         if self.entry >= self.blocks.len() {
             return Err(FlowError::InvalidEntry(self.entry));
         }
@@ -725,6 +726,7 @@ impl Graph {
             if next == incoming[id] && !outgoing[id].defs.is_empty() {
                 continue;
             }
+            crate::stats::count(crate::stats::Counter::FlowWalks, 1);
             let out = walk(self, &self.blocks[id], next.clone(), |_, _| {});
             incoming[id] = next;
             if out != outgoing[id] {

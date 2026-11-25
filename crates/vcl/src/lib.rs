@@ -33,6 +33,7 @@ mod options;
 pub mod parser;
 pub mod preprocessor;
 pub mod scheduler;
+pub mod stats;
 
 pub use compiler::{CompileError, Compiled, compile};
 pub use diagnostics::{Diagnostic, Message, Mode, Note, SourceLocation};

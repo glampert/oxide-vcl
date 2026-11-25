@@ -277,6 +277,7 @@ fn compile_library(
             }
         }
         compiled.instruction_pairs += entry_compiled.instruction_pairs;
+        compiled.stats = compiled.stats + entry_compiled.stats;
         compiled.warnings.extend(entry_compiled.warnings);
     }
     compiled.instruction_pairs += 2 * checked.entries.len();
@@ -299,11 +300,13 @@ fn compile_program(
         let vcl = checked
             .generate_program(program, codegen::Settings { hoist_limit })
             .map_err(|failure| Box::new(CompileFailure::Generate(failure)))?;
-        let result = assemble(&vcl, &program.name, options);
-        Ok((vcl, result))
+        let (result, work) = vcl::stats::measure(|| assemble(&vcl, &program.name, options));
+        Ok((vcl, result, work))
     };
     let mut choice = Choice::default();
-    if choice.consider(attempt(HOIST_LIMITS[0])?) {
+    let first = attempt(HOIST_LIMITS[0])?;
+    choice.work = first.2;
+    if choice.consider(first) {
         let others: Vec<_> = std::thread::scope(|scope| {
             let handles: Vec<_> = HOIST_LIMITS[1..]
                 .iter()
@@ -318,20 +321,36 @@ fn compile_program(
                 })
                 .collect()
         });
+        for other in others.iter().flatten() {
+            choice.work = choice.work + other.2;
+        }
         for other in others {
             if !choice.consider(other?) {
                 break;
             }
         }
     }
+    // The work is every attempt's that ran, chosen or not: what the
+    // compile took.
+    let work = choice.work;
     match choice.best {
-        Some(compiled) => Ok(compiled),
+        Some((vcl, compiled)) => Ok((
+            vcl,
+            vcl::Compiled {
+                stats: work,
+                ..compiled
+            },
+        )),
         None => Err(Box::new(choice.failure.expect("at least one attempt"))),
     }
 }
 
 /// One hoist limit's VCL and what vcl made of it.
-type Attempt = (Vcl, Result<vcl::Compiled, Vec<vcl::CompileError>>);
+type Attempt = (
+    Vcl,
+    Result<vcl::Compiled, Vec<vcl::CompileError>>,
+    vcl::stats::Stats,
+);
 
 /// The attempts considered so far: the result with the fewest values kept in
 /// memory, the first of equals, and the last failure.
@@ -339,12 +358,14 @@ type Attempt = (Vcl, Result<vcl::Compiled, Vec<vcl::CompileError>>);
 struct Choice {
     best: Option<(Vcl, vcl::Compiled)>,
     failure: Option<CompileFailure>,
+    /// The work of every attempt that ran.
+    work: vcl::stats::Stats,
 }
 
 impl Choice {
     /// Takes one attempt into account; false when no later one can be
     /// chosen.
-    fn consider(&mut self, (vcl, result): Attempt) -> bool {
+    fn consider(&mut self, (vcl, result, _): Attempt) -> bool {
         match result {
             Ok(compiled) => {
                 let fewer = self

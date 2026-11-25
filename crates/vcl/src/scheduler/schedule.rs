@@ -819,6 +819,7 @@ impl Search<'_> {
                         return Err(ScheduleError::SearchBudgetExceeded { nodes: self.nodes });
                     }
                     self.nodes += 1;
+                    crate::stats::count(crate::stats::Counter::SearchNodes, 1);
                     let placement = Placement { cycle, pipe };
                     if !self.fits(index, placement) {
                         continue;

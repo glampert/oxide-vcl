@@ -11,6 +11,8 @@
 //! their one library, than their hand-written programs together. The ignored
 //! `report` prints the cycles and instructions of each.
 
+#[path = "../../oxide-vcl/tests/support/bench.rs"]
+mod bench;
 #[path = "../../oxide-vcl/tests/support/scenes.rs"]
 #[allow(dead_code)]
 mod scenes;
@@ -48,6 +50,9 @@ struct Built {
     checked: Option<vusl::Checked>,
     /// The instructions of the library a port calls, if it calls one.
     library: Option<usize>,
+    /// What the compile did, and the library's compile.
+    stats: vcl::stats::Stats,
+    library_stats: Option<vcl::stats::Stats>,
 }
 
 fn hand_written(corpus: &str) -> Built {
@@ -70,6 +75,8 @@ fn hand_written(corpus: &str) -> Built {
         instructions: compiled.instruction_pairs,
         checked: None,
         library: None,
+        stats: compiled.stats,
+        library_stats: None,
     }
 }
 
@@ -114,6 +121,7 @@ fn ported(case: &Path) -> Built {
     let (mut checked, compiled) = compile(&input);
     let mut assembly = compiled.assembly.clone();
     let mut library = None;
+    let mut library_stats = None;
     // A program that calls a library: the library at its address after it.
     // The program includes only the library's header, and the interpreter
     // runs a call as the export's definition, so it runs the program with
@@ -133,6 +141,7 @@ fn ported(case: &Path) -> Built {
         let padding = format!("{:9}{:<59}NOP\n", "", "NOP").repeat(address - pairs);
         assembly = format!("{assembly}\n{padding}{}", code.assembly);
         library = Some(code.instruction_pairs);
+        library_stats = Some(code.stats);
         let text = std::fs::read_to_string(&input).unwrap();
         checked = check(&input, &format!("{text}\n#include \"{}.vusl\"\n", lib.name));
     }
@@ -141,6 +150,8 @@ fn ported(case: &Path) -> Built {
         instructions: compiled.instruction_pairs,
         checked: Some(checked),
         library,
+        stats: compiled.stats,
+        library_stats,
     }
 }
 
@@ -209,6 +220,9 @@ struct Run {
     scene: String,
     hand: u64,
     vusl: u64,
+    /// The stall cycles of each.
+    hand_stalls: u64,
+    vusl_stalls: u64,
     same: bool,
     drawn: usize,
     expected: usize,
@@ -235,6 +249,8 @@ fn runs(case: &Path) -> (String, Built, Built, Vec<Run>) {
             scene: scene.name.clone(),
             hand: a.cycles,
             vusl: b.cycles,
+            hand_stalls: a.profile.iter().map(|&(_, stall)| stall).sum(),
+            vusl_stalls: b.profile.iter().map(|&(_, stall)| stall).sum(),
             same: a.state.kicks == b.state.kicks,
             drawn: scenes::drawn_primitives(&b.state.kicks),
             expected: scene.primitives,
@@ -327,6 +343,63 @@ fn report() {
             shared + library_size
         );
     }
+}
+
+/// The scenes benchmark (docs/TESTING.md, "Benchmarks"): each port and its
+/// hand-written program, with their size and what their compiles did, and
+/// their cycles and stall cycles on each scene, in `tests/bench/scenes.txt`:
+/// `cargo test --release -p vusl --test programs bench -- --ignored
+/// --nocapture`, and `BENCH_UPDATE=1` to write the table.
+#[test]
+#[ignore = "a benchmark: run it with --ignored"]
+fn bench() {
+    use bench::Row;
+    let measured: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = cases()
+            .into_iter()
+            .map(|case| scope.spawn(move || runs(&case)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect()
+    });
+    let mut rows = Vec::new();
+    let mut libraries = Vec::new();
+    for (name, hand, vusl, runs) in &measured {
+        for (side, built) in [("vusl", vusl), ("hand", hand)] {
+            let row = Row::new(&[side, name, "compile"]).value("pairs", built.instructions as u64);
+            rows.push(bench::work(row, &built.stats));
+        }
+        if let (Some(pairs), Some(stats)) = (vusl.library, vusl.library_stats)
+            && libraries.is_empty()
+        {
+            let row = Row::new(&["vusl", "library", "compile"]).value("pairs", pairs as u64);
+            libraries.push(bench::work(row, &stats));
+        }
+        for run in runs {
+            for (side, cycles, stalls) in [
+                ("vusl", run.vusl, run.vusl_stalls),
+                ("hand", run.hand, run.hand_stalls),
+            ] {
+                let scene = run.scene.replace(' ', "_");
+                rows.push(
+                    Row::new(&[side, name, &scene])
+                        .value("cycles", cycles)
+                        .value("stalls", stalls),
+                );
+            }
+        }
+    }
+    rows.extend(libraries);
+    rows.sort_by(|a, b| a.key.cmp(&b.key));
+    let heading = "\
+The VUSL ports (vusl) and their hand-written programs (hand), compiled in
+oxide mode: instruction pairs and the compile's work (search nodes,
+wrangler steps and checks, flow analyses and the blocks they walk), then
+cycles and stall cycles on each scene. A port's compile counts every hoist
+attempt. Written by crates/vusl/tests/programs.rs (bench).";
+    bench::compare_or_update(&root().join("tests/bench/scenes.txt"), heading, &rows);
 }
 
 /// Where a program spends its cycles on each scene, by the label each row

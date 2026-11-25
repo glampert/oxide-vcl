@@ -112,6 +112,8 @@ pub struct Compiled {
     pub header: String,
     pub instruction_pairs: usize,
     pub warnings: Vec<Diagnostic>,
+    /// The work the compile did (`crate::stats`).
+    pub stats: crate::stats::Stats,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -1504,6 +1506,15 @@ fn allocation_error(failure: crate::allocator::allocation::AllocationError) -> C
 /// Compile a complete VCL source. Parsing and allocation errors retain source
 /// line numbers. The caller decides where output files and diagnostics go.
 pub fn compile(
+    source: &str,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Vec<CompileError>> {
+    let (result, stats) = crate::stats::measure(|| compile_text(source, filename, options));
+    result.map(|compiled| Compiled { stats, ..compiled })
+}
+
+fn compile_text(
     source: &str,
     filename: &str,
     options: &Options,

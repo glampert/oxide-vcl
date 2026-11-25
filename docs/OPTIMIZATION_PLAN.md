@@ -633,11 +633,17 @@ phase 0:
    repairs. A test shows that it catches a read of Q one row before the
    quotient lands, which an interlocked model accepts.
 
-Still open: the model's cycle counts (`Execution::cycles`) are not yet
-reported per program and path, so the survey still uses the static
-`STALL ?n` notes; the timing has not been checked against the manual's
-worked examples (figures 3-3 to 3-18); and the seeds do not aim trip
-counts at 0, 1 or the stage boundaries of a pipelined loop. O1 needs the
+5. **Benchmarks.** `crates/oxide-vcl/tests/bench.rs` and the `bench` test
+   of `crates/vusl/tests/programs.rs` record, per program and scene, the
+   model's cycles and stall cycles, the code size and the compile's work
+   counts (`vcl::stats`) in tables under `tests/bench`, and print what a
+   change does to them (docs/TESTING.md, "Benchmarks").
+
+Still open: the benchmarks total the seeded runs, so a loop's cycles per
+iteration and its prologue and epilogue are not measured apart; the timing
+has not been checked against the manual's worked examples (figures 3-3 to
+3-18); and the seeds do not aim trip counts at 0, 1 or the stage
+boundaries of a pipelined loop. O1 needs the
 last of these before it lands.
 
 ## 6. Phases
