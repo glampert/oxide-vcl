@@ -53,25 +53,23 @@ float planeDistance(in Frame frame, vec4 pos, ClipPlane plane)
     vec3 jp = pos.xyz * frame.clipScale;
     float d = pos.w * frame.clipShrink;
 
-    if (plane == ClipPlane::Near)
+    switch (plane)
     {
+    case ClipPlane::Near:
         d = d - jp.z;
-    }
-    else if (plane == ClipPlane::PositiveX)
-    {
+        break;
+    case ClipPlane::PositiveX:
         d = d - jp.x;
-    }
-    else if (plane == ClipPlane::NegativeX)
-    {
+        break;
+    case ClipPlane::NegativeX:
         d = d + jp.x;
-    }
-    else if (plane == ClipPlane::PositiveY)
-    {
+        break;
+    case ClipPlane::PositiveY:
         d = d - jp.y;
-    }
-    else
-    {
+        break;
+    case ClipPlane::NegativeY:
         d = d + jp.y;
+        break;
     }
 
     return d * frame.clipDistance;

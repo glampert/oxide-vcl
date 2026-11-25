@@ -10,7 +10,8 @@ hand-written VCL program it replaced (`hand-written`, a case in `tests/corpus`).
 | `world_lm`, `world_strips` | [glampert/doom3-bfg-ps2](https://github.com/glampert/doom3-bfg-ps2) (440b77c) | `src/ps2/renderer/vu1progs/{world_lm,world_strips}.vusl` as `input.vusl`, and `clipper.vush`, `clipper.vusl`, `vu_memory.vush` and `world.vush` in `include` |
 
 The files are copied unchanged, except that `clipper.vusl` and `textured_triangles` name their
-clip planes with an `enum class ClipPlane` where the projects pass an `int16` index; the
+clip planes with an `enum class ClipPlane` where the projects pass an `int16` index, and choose
+each plane's term in `planeDistance` with a `switch` where the projects chain `if`s; the
 generated code is the same. `include` is on the include path. The two doom3 programs call the
 clipper library (`include/clipper.vusl`), which the suite places at its address after each.
 

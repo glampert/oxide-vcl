@@ -309,16 +309,14 @@ float planeDistance(in Frame frame, vec4 pos, ClipPlane plane)
 {
     vec3 jp = pos.xyz * frame.clipScale;
     float d = pos.w * frame.gsScale.w;
-    if (plane == ClipPlane::Near)
-        d = d - jp.z;
-    else if (plane == ClipPlane::PositiveX)
-        d = d - jp.x;
-    else if (plane == ClipPlane::NegativeX)
-        d = d + jp.x;
-    else if (plane == ClipPlane::PositiveY)
-        d = d - jp.y;
-    else
-        d = d + jp.y;
+    switch (plane)
+    {
+    case ClipPlane::Near:      d = d - jp.z; break;
+    case ClipPlane::PositiveX: d = d - jp.x; break;
+    case ClipPlane::NegativeX: d = d + jp.x; break;
+    case ClipPlane::PositiveY: d = d - jp.y; break;
+    case ClipPlane::NegativeY: d = d + jp.y; break;
+    }
     return d * frame.gsOffset.w;
 }
 
