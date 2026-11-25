@@ -50,11 +50,10 @@ impl<'a> TimingContext<'a> {
                     continue;
                 }
                 for access in &region.instructions[id].effects.reads {
-                    for read in analysis.reads.iter().filter(|r| {
-                        r.operation == owner
-                            && r.register == access.register
-                            && access.mask & (1 << r.component) != 0
-                    }) {
+                    for read in analysis
+                        .reads_of(access.register)
+                        .filter(|r| r.operation == owner && access.mask & (1 << r.component) != 0)
+                    {
                         reads_by.insert((id, read.register, read.component), read);
                     }
                 }

@@ -441,7 +441,7 @@ The most instructions each construct emits. Value reuse, hoisting and the peepho
 | `int16` literals | 1: `iaddiu`; 2 for 0x8000 and above |
 | `int16` `+`, `-`, `&`, `\|` | 1: `iadd`, `isub`, `iaddiu`, `isubiu`, `iand`, `ior` |
 | A lane move | 1 per moved lane, or 1 per `mr32` step when that is fewer |
-| A constructor | 0 when only broadcast; 1 per part not computed in place |
+| A constructor | 0 when only broadcast; 1 per part not computed in place, except literals: a `loi` per distinct literal and one `addi` for its lanes (`muli` for w), so `vec4(0.5)` is 3 |
 | `M * v` | One per column |
 | Conversions | As listed under [built-in functions](#built-in-functions) |
 | A comparison in a condition | 1 or 2, then the branch |
@@ -459,7 +459,9 @@ These are the optimizations that the hand-written programs do by hand. Each only
 work the source asks for.
 
 - **Value reuse.** A loaded qword, an `int16`, a sum of two VI registers, or a pure expression is
-  computed once and used again while it holds. It stops holding after a store that may change its
+  computed once and used again while it holds, also across inlined calls: an expression of a
+  parameter set from the same value as another call's is the same expression. It stops holding
+  after a store that may change its
   memory, an assignment to what it reads, a join of paths that did not all compute it, or a
   `yield`. Distinct parameters never alias unless one says `alias`, distinct members never do, and
   the same base with different offsets never does.

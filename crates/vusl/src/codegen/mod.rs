@@ -80,6 +80,9 @@ enum Component {
     Zero,
     One,
     Lane(Vf, Lane),
+    /// A float literal other than 0 and 1, not yet in a register: a
+    /// constructor writes it with LOI and an I-register add.
+    Literal(f32),
 }
 
 /// The registers of a local.
@@ -118,6 +121,7 @@ pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<
         out: Output::default(),
         locals: vec![LocalReg::Unset; program.locals.len()],
         placements: vec![None; program.locals.len()],
+        copies: vec![None; program.locals.len()],
         elements: vec![None; program.elements.len()],
         xtop: None,
         loops: Vec::new(),
@@ -141,6 +145,10 @@ struct Lowering<'p> {
     locals: Vec<LocalReg>,
     /// Where each local's value is now, as the code goes.
     placements: Vec<Option<Placement>>,
+    /// For a local last set by a copy of another register: that register,
+    /// the lanes, and how many times it had been written then. While it is
+    /// unchanged, keys name the local by it.
+    copies: Vec<Option<(Vf, Placement, u64)>>,
     /// Each range element's pointer and its offset from it, inside its
     /// loop.
     elements: Vec<Option<(Vi, i64)>>,
@@ -453,6 +461,7 @@ impl Lowering<'_> {
             reads: Vec::new(),
             locals: Vec::new(),
             elements: Vec::new(),
+            regs: Vec::new(),
         });
         reg
     }
@@ -928,6 +937,7 @@ impl Lowering<'_> {
                 self.out.pos = Some(*pos);
                 let since = self.cache.mark();
                 let q_before = self.q_holds;
+                self.copies[*local] = None;
                 self.set_local(*local, *column, components.as_deref(), value)?;
                 // What the local's registers held before is gone; what the
                 // value left in them holds.
@@ -2048,6 +2058,10 @@ impl Lowering<'_> {
                         _ => None,
                     };
                     self.copy(reg, result.reg, &result.placement, raw, reload);
+                    if !raw {
+                        let writes = self.cache.writes(result.reg);
+                        self.copies[id] = Some((result.reg, result.placement, writes));
+                    }
                 }
                 Ok(result.placement)
             }
@@ -2197,6 +2211,15 @@ impl Lowering<'_> {
                     "add",
                     Some(&lane),
                     &[dest_name, "vf00".into(), "vf00[w]".into()],
+                );
+            }
+            Component::Literal(value) => {
+                self.out.inst("loi", None, &[float_text(value)]);
+                let mnemonic = if target == Lane::W { "muli" } else { "addi" };
+                self.out.inst(
+                    mnemonic,
+                    Some(&lane),
+                    &[dest_name, "vf00".into(), "i".into()],
                 );
             }
             Component::Lane(source, from) if self.q_holds == Some((source, from)) => {
@@ -2419,6 +2442,7 @@ impl Lowering<'_> {
             reads: Vec::new(),
             locals: Vec::new(),
             elements: Vec::new(),
+            regs: Vec::new(),
         });
         sum
     }
@@ -2450,6 +2474,7 @@ impl Lowering<'_> {
             }],
             locals: Vec::new(),
             elements: Vec::new(),
+            regs: Vec::new(),
         });
         reg
     }
@@ -2481,6 +2506,7 @@ impl Lowering<'_> {
             }],
             locals: Vec::new(),
             elements: Vec::new(),
+            regs: Vec::new(),
         });
         reg
     }
@@ -2568,7 +2594,32 @@ impl Lowering<'_> {
     }
 
     /// Puts a pure expression's value in the cache under `key`.
+    /// `expr`'s key with its VF locals named by the register and lanes
+    /// that hold them, so that locals holding one value (an inlined
+    /// call's `in` parameter and its argument's load) share keys; and
+    /// those registers, whose writes end the entry.
+    fn vf_key(&self, expr: &Expr) -> Option<(String, Vec<Vf>)> {
+        let named = std::cell::RefCell::new(Vec::new());
+        let name = |id: LocalId| {
+            let (reg, placement) = match (self.copies[id], &self.locals[id]) {
+                (Some((source, placement, writes)), _) if self.cache.writes(source) == writes => {
+                    (source, placement)
+                }
+                (_, LocalReg::Vf(reg)) => (*reg, self.placements[id]?),
+                _ => return None,
+            };
+            named.borrow_mut().push(reg);
+            Some(format!("V{}@{}", self.name(reg), placement.letters()))
+        };
+        let key = values::expr_key_with(expr, &name)?;
+        Some((key, named.into_inner()))
+    }
+
     fn remember(&mut self, expr: &Expr, key: String, value: Value) {
+        self.remember_naming(expr, key, value, Vec::new());
+    }
+
+    fn remember_naming(&mut self, expr: &Expr, key: String, value: Value, regs: Vec<Vf>) {
         let mut locals = Vec::new();
         let mut places = Vec::new();
         values::inputs(expr, &mut locals, &mut places);
@@ -2587,6 +2638,7 @@ impl Lowering<'_> {
             reads,
             locals,
             elements,
+            regs,
         });
     }
 
@@ -2751,13 +2803,21 @@ impl Lowering<'_> {
     /// A float constant as an operand: VF00's x for 0 and w for 1, else
     /// LOI into a lane.
     fn float_constant(&mut self, value: f32, dest: Option<Vf>, lane: Lane) -> Fv {
-        if dest.is_none() {
-            if value == 0.0 && value.is_sign_positive() {
-                return Fv::scalar(Vf::Zero, Lane::X);
+        let zero = value == 0.0 && value.is_sign_positive();
+        match dest {
+            None if zero => return Fv::scalar(Vf::Zero, Lane::X),
+            None if value == 1.0 => return Fv::scalar(Vf::Zero, Lane::W),
+            // Into a register asked for, from VF00's lanes: one instruction.
+            Some(reg) if zero || value == 1.0 => {
+                let component = if zero {
+                    Component::Zero
+                } else {
+                    Component::One
+                };
+                self.put(reg, lane, component);
+                return Fv::scalar(reg, lane);
             }
-            if value == 1.0 {
-                return Fv::scalar(Vf::Zero, Lane::W);
-            }
+            _ => {}
         }
         let reg = self.dest(dest);
         self.out.inst("loi", None, &[float_text(value)]);
@@ -2799,19 +2859,15 @@ impl Lowering<'_> {
             } => false,
             _ => !matches!(expr.ty, Type::Mat { .. }),
         };
-        let key = if cacheable {
-            values::expr_key(expr)
-        } else {
-            None
-        };
-        if let Some(key) = &key
+        let key = if cacheable { self.vf_key(expr) } else { None };
+        if let Some((key, _)) = &key
             && let Some(Value::Vf(value)) = self.cache.find(&Key::Expr(key.clone()))
         {
             return Ok(value);
         }
         let value = self.vf_lower(expr, dest, lane)?;
-        if let Some(key) = key {
-            self.remember(expr, key, Value::Vf(value));
+        if let Some((key, regs)) = key {
+            self.remember_naming(expr, key, Value::Vf(value), regs);
         }
         Ok(value)
     }
@@ -3139,6 +3195,7 @@ impl Lowering<'_> {
                 Component::Zero => None,
                 Component::One => Some((qword, "vf00[w]".to_string())),
                 Component::Lane(source, lane) => Some((qword, self.out.field(*source, *lane))),
+                Component::Literal(_) => unreachable!("components() puts literals in registers"),
             })
             .collect();
         let dest_name = self.name(reg);
@@ -3171,13 +3228,53 @@ impl Lowering<'_> {
         })
     }
 
+    /// A constructor's components: as [`components`](Self::components),
+    /// except that a literal not in a register stays a literal, which the
+    /// constructor writes into its lanes itself.
+    fn construct_components(&mut self, expr: &Expr) -> Lowered<Vec<Component>> {
+        let ExprKind::Construct(args) = &expr.kind else {
+            return self.components(expr);
+        };
+        let count = expr.ty.vf_lanes().unwrap_or(1);
+        let mut components = Vec::new();
+        for arg in args {
+            let literal = match arg.kind {
+                ExprKind::Const(Const::Float(value)) => Some(value),
+                ExprKind::Const(Const::Int(value)) => Some(value as f32),
+                _ => None,
+            };
+            let held = values::expr_key(arg)
+                .and_then(|key| self.cache.find(&Key::Expr(key)))
+                .is_some();
+            match literal {
+                Some(value) if value == 0.0 && value.is_sign_positive() => {
+                    components.push(Component::Zero)
+                }
+                Some(1.0) => components.push(Component::One),
+                Some(value) if !held => components.push(Component::Literal(value)),
+                _ => {
+                    let value = self.vf(arg)?;
+                    for &lane in value.placement.lanes() {
+                        components.push(Component::Lane(value.reg, lane));
+                    }
+                }
+            }
+        }
+        // One scalar fills every component.
+        if args.len() == 1 && components.len() == 1 {
+            components = vec![components[0]; count];
+        }
+        Ok(components)
+    }
+
     fn construct(&mut self, expr: &Expr, dest: Option<Vf>) -> Lowered<Fv> {
-        let components = self.components(expr)?;
+        let components = self.construct_components(expr)?;
         let reg = self.dest(dest);
         let count = components.len();
         // Components already in their own lanes of one register move at
         // once.
         let mut moved: Vec<(Vf, Vec<Lane>)> = Vec::new();
+        let mut literals: Vec<(f32, Vec<Lane>)> = Vec::new();
         for (index, component) in components.into_iter().enumerate() {
             let target = Lane::from_index(index).expect("four components at most");
             // VF00's lanes are 0 in x, y and z and 1 in w: such components
@@ -3195,6 +3292,15 @@ impl Lowering<'_> {
                     }
                 }
                 Component::Lane(source, lane) if lane == target && source == reg => {}
+                Component::Literal(value) => {
+                    match literals
+                        .iter_mut()
+                        .find(|(known, _)| known.to_bits() == value.to_bits())
+                    {
+                        Some((_, lanes)) => lanes.push(target),
+                        None => literals.push((value, vec![target])),
+                    }
+                }
                 component => self.put(reg, target, component),
             }
         }
@@ -3202,6 +3308,21 @@ impl Lowering<'_> {
             let mask = Self::mask(&Placement::from_lanes(&lanes).expect("distinct"));
             let names = [self.name(reg), self.name(source)];
             self.out.inst("move", Some(&mask), &names);
+        }
+        // Each literal once into all its lanes, after the parts that may
+        // read the register's other lanes: 0 + I, and 1 * I in w (VF00's
+        // w is 1).
+        for (value, lanes) in literals {
+            self.out.inst("loi", None, &[float_text(value)]);
+            let (w, others): (Vec<Lane>, Vec<Lane>) =
+                lanes.into_iter().partition(|&lane| lane == Lane::W);
+            for (mnemonic, lanes) in [("addi", others), ("muli", w)] {
+                if let Some(placement) = Placement::from_lanes(&lanes) {
+                    let names = [self.name(reg), "vf00".into(), "i".into()];
+                    self.out
+                        .inst(mnemonic, Some(&Self::mask(&placement)), &names);
+                }
+            }
         }
         Ok(Fv {
             reg,

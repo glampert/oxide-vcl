@@ -58,6 +58,8 @@ pub(super) struct Entry {
     /// The range elements its expression reads or addresses: a key names
     /// an element, not where its pointer is.
     pub elements: Vec<ElementId>,
+    /// The VF registers its key names for the locals they hold.
+    pub regs: Vec<Vf>,
 }
 
 /// The entries valid at the point being lowered, each numbered in the
@@ -66,6 +68,9 @@ pub(super) struct Entry {
 pub(super) struct Cache {
     entries: Vec<(u64, Entry)>,
     made: u64,
+    /// How many times each VF register has been written, for copies that
+    /// name their source while it is unchanged.
+    writes: std::collections::HashMap<Vf, u64>,
 }
 
 impl Cache {
@@ -81,6 +86,11 @@ impl Cache {
         self.entries.retain(|(_, old)| old.key != entry.key);
         self.entries.push((self.made, entry));
         self.made += 1;
+    }
+
+    /// How many times `reg` has been written.
+    pub fn writes(&self, reg: Vf) -> u64 {
+        self.writes.get(&reg).copied().unwrap_or(0)
     }
 
     /// The number the next entry gets.
@@ -100,10 +110,12 @@ impl Cache {
     }
 
     /// The VF register `reg` written: values it holds from entries made
-    /// before `since` are gone.
+    /// before `since`, and entries whose key names it, are gone.
     pub fn clobber_vf(&mut self, reg: Vf, since: u64) {
+        *self.writes.entry(reg).or_default() += 1;
         self.entries.retain(|(made, entry)| {
-            *made >= since || !matches!(entry.value, Value::Vf(fv) if fv.reg == reg)
+            let held = *made < since && matches!(entry.value, Value::Vf(fv) if fv.reg == reg);
+            !held && !entry.regs.contains(&reg)
         });
     }
 
@@ -379,11 +391,21 @@ impl Effects {
 /// The text of a pure expression, for finding it again; `None` for one
 /// with effects (clip judgements, flags) or no value in a register.
 pub(super) fn expr_key(expr: &Expr) -> Option<String> {
-    let mut text = String::new();
-    write_key(expr, &mut text).then_some(text)
+    expr_key_with(expr, &|_| None)
 }
 
-fn write_place(place: &Place, out: &mut String) -> bool {
+/// A local as it is named in a key: `local`'s name for it (its register,
+/// while lowering), or else its number.
+pub(super) type LocalName<'a> = &'a dyn Fn(LocalId) -> Option<String>;
+
+/// [`expr_key`], with `local` naming the locals it can: two locals in one
+/// register give one key.
+pub(super) fn expr_key_with(expr: &Expr, local: LocalName) -> Option<String> {
+    let mut text = String::new();
+    write_key(expr, &mut text, local).then_some(text)
+}
+
+fn write_place(place: &Place, out: &mut String, local: LocalName) -> bool {
     match place.base {
         Base::Param(index) => out.push_str(&format!("P{index}")),
         Base::Element(element) => out.push_str(&format!("E{element}")),
@@ -400,7 +422,7 @@ fn write_place(place: &Place, out: &mut String) -> bool {
     }
     for (index, stride) in &place.offset.indices {
         out.push_str("+[");
-        if !write_key(index, out) {
+        if !write_key(index, out, local) {
             return false;
         }
         out.push_str(&format!("]*{stride}"));
@@ -409,14 +431,14 @@ fn write_place(place: &Place, out: &mut String) -> bool {
     true
 }
 
-fn write_key(expr: &Expr, out: &mut String) -> bool {
+fn write_key(expr: &Expr, out: &mut String, local: LocalName) -> bool {
     let args = |out: &mut String, args: &[&Expr]| {
         out.push('(');
         for (index, arg) in args.iter().enumerate() {
             if index > 0 {
                 out.push(',');
             }
-            if !write_key(arg, out) {
+            if !write_key(arg, out, local) {
                 return false;
             }
         }
@@ -434,12 +456,15 @@ fn write_key(expr: &Expr, out: &mut String) -> bool {
         }
         ExprKind::Const(Const::Bool(_)) => false,
         ExprKind::Local(id) => {
-            out.push_str(&format!("L{id}"));
+            match local(*id) {
+                Some(name) => out.push_str(&name),
+                None => out.push_str(&format!("L{id}")),
+            }
             true
         }
         ExprKind::Load(place) => {
             out.push_str("load ");
-            write_place(place, out)
+            write_place(place, out, local)
         }
         ExprKind::Swizzle { base, components } => {
             out.push_str(&format!("swizzle{components:?}"));
@@ -488,10 +513,10 @@ fn write_key(expr: &Expr, out: &mut String) -> bool {
         }
         ExprKind::Address(place) => {
             out.push_str("address ");
-            write_place(place, out)
+            write_place(place, out, local)
         }
         // The memory a ref stays within does not change its value.
-        ExprKind::RefTo { address, .. } => write_key(address, out),
+        ExprKind::RefTo { address, .. } => write_key(address, out, local),
     }
 }
 

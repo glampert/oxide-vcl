@@ -12,24 +12,20 @@
         mul.w      fd_3, fpos_0, ft_2[w]
         sub.w      fd_3, fd_3, fjp_1[z]
         sq.w       fd_3, 2(vi00)
-        mul.xyz    fjp_5, fpos_0, ft_2
         mul.w      fd_6, fpos_0, ft_2[w]
-        sub.w      fd_6, fd_6, fjp_5[x]
+        sub.w      fd_6, fd_6, fjp_1[x]
         add.x      fstore_7, vf00, fd_6[w]
         sq.x       fstore_7, 3(vi00)
-        mul.xyz    fjp_9, fpos_0, ft_2
         mul.w      fd_10, fpos_0, ft_2[w]
-        add.w      fd_10, fd_10, fjp_9[x]
+        add.w      fd_10, fd_10, fjp_1[x]
         add.y      fstore_11, vf00, fd_10[w]
         sq.y       fstore_11, 3(vi00)
-        mul.xyz    fjp_13, fpos_0, ft_2
         mul.w      fd_14, fpos_0, ft_2[w]
-        sub.w      fd_14, fd_14, fjp_13[y]
+        sub.w      fd_14, fd_14, fjp_1[y]
         add.z      fstore_15, vf00, fd_14[w]
         sq.z       fstore_15, 3(vi00)
-        mul.xyz    fjp_17, fpos_0, ft_2
         mul.w      fd_18, fpos_0, ft_2[w]
-        add.w      fd_18, fd_18, fjp_17[y]
+        add.w      fd_18, fd_18, fjp_1[y]
         sq.w       fd_18, 3(vi00)
 lexit_1:
 --exit

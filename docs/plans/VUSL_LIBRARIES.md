@@ -188,7 +188,7 @@ The table costs one branch per call.
 ## Costs
 
 Measured in `docs/VUSL_PERFORMANCE.md`, on doom3-bfg-ps2's own programs, which call the library:
-the two programs and the clipper take 1,446 instructions, the two hand-written programs 1,714, and
+the two programs and the clipper take 1,443 instructions, the two hand-written programs 1,714, and
 the scenes from 5% to 44% fewer cycles than the hand-written programs.
 
 - **Register pressure:** what a loop keeps live across a call cannot use the bank; what does not

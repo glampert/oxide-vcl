@@ -175,7 +175,11 @@ and XTOP read once into a register. Generated names are `f` or `i`, the source n
 - a whole qword loaded with `lq`, by base register and offset;
 - an `int16` loaded with `ilw`, by base, offset and lane;
 - a sum of two VI registers;
-- a pure expression, by a text key (`expr_key`).
+- a pure expression, by a text key (`expr_key`). While lowering, a VF local in the key is named
+  by the register and lanes that hold it (`vf_key`), and a local last set by a copy of another
+  register by that register, while the register's write count (`Cache::writes`) is what it was at
+  the copy. Two locals holding one value then give one key: an inlined call's `in` parameter
+  copied from a load and the next call's.
 
 Each entry also records the memory reads it depends on, as a `Region` and the base and offset when
 known, and the locals and range elements it reads.
@@ -184,7 +188,7 @@ known, and the locals and range elements it reads.
   parameter plus a path of members, elements and lane runs. Different parameters overlap only when
   one says `alias`. A ref's region is its `Within`.
 - **Local writes.** Writing a local or a register forgets the entries that read it
-  (`clobber_vf`, `clobber_vi`).
+  (`clobber_vf`, `clobber_vi`), including those whose keys name the register.
 - **Labels.** Lowering snapshots the cache at a branch and, at the join, keeps the entries every
   path has.
 - **Range copies.** Each unrolled copy of a range body forgets what read the previous copy's
@@ -331,7 +335,8 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `fold-zero-negation` | The first clipper's plane distance: `0.0 + pos.w`, a copy its next statement overwrites, and `d + jn.z` with `jn = -jp`, folded to `mul.w` and `sub.w` in lane w |
 | `loop-constants` | An `int16` mask in a loop with a branch, made once before it; a constant assigned to a local stays in the loop |
 | `struct-variable` | A vertex returned by a function and stored: each member computed in its own lanes and stored with no move |
-| `enum-planes` | The clipper's plane distance with the plane an `enum class`: each constant plane folds the comparisons to its one term |
+| `enum-planes` | The clipper's plane distance with the plane an `enum class`: each constant plane folds the comparisons to its one term, and the five calls share their `pos.xyz * clipScale` |
+| `literal-constructors` | `vec4(0.5)` as `loi`, `addi.xyz` and `muli.w`; a literal used twice loaded once; 0 into a fixed lane as a `move` from VF00 |
 | `matrix-columns` | `mat4` from four columns, each loaded into the matrix's registers, and `mat3` of a `mat4` as three `lq.xyz` |
 | `clip-function` | `clip-adc` with each judgement returned by a function: the same code, since a `clipflags` result names its `clipw` |
 | `bool-any` | Whether any vertex is outside, as `fcand` and `ior` into a bool |

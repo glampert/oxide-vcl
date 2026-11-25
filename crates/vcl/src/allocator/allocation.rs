@@ -150,25 +150,33 @@ impl Allocator {
         candidate: &Occupancy,
     ) -> Result<Option<u32>, AllocationError> {
         self.validate(candidate)?;
-        let Some(occupied) = self.occupied.get(physical) else {
+        if physical >= self.occupied.len() {
             return Err(AllocationError::InvalidPhysical(physical));
-        };
+        }
+        Ok(self.fit_cost(physical, candidate))
+    }
+
+    /// [`packing_cost`](Self::packing_cost) of a validated candidate on an
+    /// existing physical register.
+    fn fit_cost(&self, physical: usize, candidate: &Occupancy) -> Option<u32> {
+        let occupied = &self.occupied[physical];
+        let allowed = self.allowed[physical];
         let mut cost = 0;
         for (&want, &used) in candidate.rows.iter().zip(&occupied.rows) {
-            if self.allowed[physical] & want & COMPONENTS != want & COMPONENTS || want & used != 0 {
-                return Ok(None);
+            if allowed & want & COMPONENTS != want & COMPONENTS || want & used != 0 {
+                return None;
             }
             cost += u32::from(self.components) - ((want | used) & COMPONENTS).count_ones();
         }
-        Ok(Some(cost))
+        Some(cost)
     }
 
     /// Physical IDs are visited in order; equal costs retain the earlier ID.
     pub fn best_fit(&self, candidate: &Occupancy) -> Result<Option<usize>, AllocationError> {
         self.validate(candidate)?;
         let mut best = None;
-        for physical in 0..self.allowed.len() {
-            if let Some(cost) = self.packing_cost(physical, candidate)? {
+        for physical in 0..self.allowed.len().min(self.occupied.len()) {
+            if let Some(cost) = self.fit_cost(physical, candidate) {
                 if cost == 0 {
                     return Ok(Some(physical));
                 }
@@ -236,7 +244,8 @@ impl Allocator {
                 return Err(AllocationError::DuplicateVirtual(register.id));
             }
         }
-        pending.sort_by_key(|(discovery, register)| {
+        // The key scans every row: computed once per register.
+        pending.sort_by_cached_key(|(discovery, register)| {
             (
                 std::cmp::Reverse(register.occupancy.occupied_rows()),
                 std::cmp::Reverse(*discovery),

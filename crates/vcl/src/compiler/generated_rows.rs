@@ -57,11 +57,9 @@ pub(super) fn escaping_delay(
     write: Access,
 ) -> Option<u16> {
     let outside: Vec<_> = analysis
-        .reads
-        .iter()
+        .reads_of(write.register)
         .filter(|read| {
-            read.register == write.register
-                && write.mask & (1 << read.component) != 0
+            write.mask & (1 << read.component) != 0
                 && read.definitions.contains(&Definition::Operation(id))
                 && !block.operations.contains(&read.operation)
         })
@@ -116,11 +114,9 @@ pub(super) fn ordinary_tail_separation(
     write: Access,
 ) -> u16 {
     let future_ordinary_users = analysis
-        .reads
-        .iter()
+        .reads_of(write.register)
         .filter(|read| {
-            read.register == write.register
-                && write.mask & (1 << read.component) != 0
+            write.mask & (1 << read.component) != 0
                 && read.definitions.contains(&Definition::Operation(id))
                 && !block.operations.contains(&read.operation)
         })

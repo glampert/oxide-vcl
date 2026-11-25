@@ -1,0 +1,14 @@
+// Constructors of literals: each distinct literal is one LOI and one ADDI
+// into all its lanes (MULI in w, since VF00's w is 1), so vec4(0.5) is
+// three instructions and the 2.0 of vec4(2.0, 2.0, 3.0, 1.0) is loaded once.
+// 0 and 1 are VF00's lanes, also into a variable fixed in a lane.
+struct Block { vec4 a; vec4 out0; vec4 out1; vec4 out2; };
+
+void main(layout(address = 0) inout Block block)
+{
+    block.out0 = block.a * vec4(0.5);
+    block.out1 = block.a * vec4(2.0, 2.0, 3.0, 1.0);
+    layout(lane = y) float total = 0.0;
+    total = total + block.a.x;
+    block.out2.y = total;
+}

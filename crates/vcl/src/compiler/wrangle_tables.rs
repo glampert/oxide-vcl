@@ -303,10 +303,12 @@ impl<'a> TableBuilder<'a> {
     /// The flow reads of the table by (operation, register, component).
     fn collect_reads(&self) -> BTreeMap<(usize, usize, u8), &'a flow::Read> {
         let (region, analysis) = (self.region, self.analysis);
-        let mut reads_by: BTreeMap<(usize, usize, u8), &flow::Read> = BTreeMap::new();
-        for read in &analysis.reads {
-            reads_by.insert((read.operation, read.register, read.component), read);
-        }
+        // Built at once from every read: a key read twice keeps the last.
+        let mut reads_by: BTreeMap<(usize, usize, u8), &flow::Read> = analysis
+            .reads
+            .iter()
+            .map(|read| ((read.operation, read.register, read.component), read))
+            .collect();
         // A fixed table's lower half reads with its upper partner (flow moves
         // them to the pair's first operation).
         for &id in self.live {
@@ -322,11 +324,10 @@ impl<'a> TableBuilder<'a> {
                 continue;
             }
             for access in &region.instructions[id].effects.reads {
-                for read in analysis.reads.iter().filter(|r| {
-                    r.operation == owner
-                        && r.register == access.register
-                        && access.mask & (1 << r.component) != 0
-                }) {
+                for read in analysis
+                    .reads_of(access.register)
+                    .filter(|r| r.operation == owner && access.mask & (1 << r.component) != 0)
+                {
                     reads_by.insert((id, read.register, read.component), read);
                 }
             }

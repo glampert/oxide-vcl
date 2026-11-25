@@ -500,12 +500,17 @@ pub fn graph_metrics(problem: &SchedulingProblem) -> Result<Vec<PriorityMetrics>
     validate(problem, &ScheduleOptions::default())?;
     let order = topological_order(problem)?;
     let mut result = vec![PriorityMetrics::default(); problem.operations.len()];
+    // Each operation's ordinary dependencies out of it, in order.
+    let mut outgoing = vec![Vec::new(); problem.operations.len()];
+    for edge in problem
+        .dependencies
+        .iter()
+        .filter(|edge| edge.distance == 0)
+    {
+        outgoing[edge.from].push(edge);
+    }
     for &index in &order {
-        for edge in problem
-            .dependencies
-            .iter()
-            .filter(|edge| edge.from == index && edge.distance == 0)
-        {
+        for &edge in &outgoing[index] {
             result[edge.to].depth = result[edge.to]
                 .depth
                 .max(result[index].depth.saturating_add(i32::from(edge.latency)));
@@ -516,11 +521,7 @@ pub fn graph_metrics(problem: &SchedulingProblem) -> Result<Vec<PriorityMetrics>
     }
     for &index in order.iter().rev() {
         let mut consumers = BTreeSet::new();
-        for edge in problem
-            .dependencies
-            .iter()
-            .filter(|edge| edge.from == index && edge.distance == 0)
-        {
+        for &edge in &outgoing[index] {
             result[index].height = result[index].height.max(
                 result[edge.to]
                     .height
@@ -620,20 +621,40 @@ struct Search<'a> {
     occupied: Vec<[Option<usize>; 2]>,
     nodes: usize,
     horizon: u16,
+    /// Each operation's dependencies into it, by index, in order.
+    incoming: Vec<Vec<usize>>,
+    /// Each operation's dependencies from or into it, by index, in order.
+    incident: Vec<Vec<usize>>,
 }
 
 impl Search<'_> {
+    /// The dependencies by operation, for [`Search`].
+    fn edge_lists(problem: &SchedulingProblem) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
+        let count = problem.operations.len();
+        let mut incoming = vec![Vec::new(); count];
+        let mut incident = vec![Vec::new(); count];
+        for (at, edge) in problem.dependencies.iter().enumerate() {
+            incoming[edge.to].push(at);
+            incident[edge.to].push(at);
+            if edge.from != edge.to {
+                incident[edge.from].push(at);
+            }
+        }
+        for edges in &mut incident {
+            edges.sort_unstable();
+        }
+        (incoming, incident)
+    }
+
     fn row(&self, cycle: u16) -> u16 {
         self.problem.period.map_or(cycle, |period| cycle % period)
     }
 
     fn earliest(&self, index: usize) -> Option<u16> {
         let mut time = u32::from(self.problem.operations[index].earliest);
-        for edge in self
-            .problem
-            .dependencies
+        for edge in self.incoming[index]
             .iter()
-            .filter(|edge| edge.to == index)
+            .map(|&at| &self.problem.dependencies[at])
         {
             let Some(placed) = self.placements[edge.from] else {
                 if edge.distance == 0 {
@@ -679,7 +700,13 @@ impl Search<'_> {
             return false;
         }
         let period = i64::from(self.problem.period.unwrap_or(0));
-        for edge in &self.problem.dependencies {
+        // Only the dependencies of this operation: one between two others
+        // already placed held when the later of them was placed, and
+        // placements only change by being taken back.
+        for edge in self.incident[index]
+            .iter()
+            .map(|&at| &self.problem.dependencies[at])
+        {
             let source = if edge.from == index {
                 Some(placement)
             } else {
@@ -729,18 +756,13 @@ impl Search<'_> {
         true
     }
 
-    fn visit(&mut self, placed_count: usize) -> Result<bool, ScheduleError> {
+    /// Places the rest after `placed_count` operations, the latest of them
+    /// at `cursor` (0 with none).
+    fn visit(&mut self, placed_count: usize, cursor: u16) -> Result<bool, ScheduleError> {
         if placed_count == self.placements.len() {
             return Ok(true);
         }
         let remaining = self.placements.len() - placed_count;
-        let cursor = self
-            .placements
-            .iter()
-            .flatten()
-            .map(|placement| placement.cycle)
-            .max()
-            .unwrap_or(0);
         let mut candidates = Vec::new();
         for (index, operation) in self.problem.operations.iter().enumerate() {
             if self.placements[index].is_some()
@@ -803,7 +825,7 @@ impl Search<'_> {
                     }
                     self.placements[index] = Some(placement);
                     self.occupied[row][pipe.index()] = Some(index);
-                    if self.visit(placed_count + 1)? {
+                    if self.visit(placed_count + 1, cursor.max(cycle))? {
                         return Ok(true);
                     }
                     self.occupied[row][pipe.index()] = None;
@@ -835,16 +857,19 @@ pub fn schedule(
             .max_cycle
             .min((u32::from(period) * 17 - 1).min(29999) as u16)
     });
+    let (incoming, incident) = Search::edge_lists(problem);
     let mut search = Search {
         problem,
         options,
         metrics,
         placements: vec![None; problem.operations.len()],
+        incoming,
+        incident,
         occupied: vec![[None; 2]; problem.period.map_or(usize::from(horizon) + 1, usize::from)],
         nodes: 0,
         horizon,
     };
-    if !search.visit(0)? {
+    if !search.visit(0, 0)? {
         return Err(ScheduleError::NoSchedule);
     }
     let placements: Vec<_> = search

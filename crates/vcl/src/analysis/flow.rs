@@ -17,28 +17,114 @@ type Component = (RegisterId, u8);
 /// The definitions reaching one component, shared between states until a
 /// join adds to them: copying a state copies no sets.
 type Definitions = Rc<BTreeSet<Definition>>;
-type State = BTreeMap<Component, Definitions>;
+
+/// The components one analysis tracks, each given a slot of a [`State`].
+#[derive(Debug)]
+struct Slots {
+    /// For each register, the slot of each of its parts (`u32::MAX`: not
+    /// tracked).
+    of: Vec<[u32; 8]>,
+    count: usize,
+}
+
+impl Slots {
+    fn new(components: &BTreeSet<Component>) -> Self {
+        let registers = components.last().map_or(0, |&(register, _)| register + 1);
+        let mut of = vec![[u32::MAX; 8]; registers];
+        for (slot, &(register, part)) in components.iter().enumerate() {
+            of[register][usize::from(part)] = slot as u32;
+        }
+        Slots {
+            of,
+            count: components.len(),
+        }
+    }
+
+    fn slot(&self, (register, part): Component) -> Option<usize> {
+        let slot = *self.of.get(register)?.get(usize::from(part))?;
+        (slot != u32::MAX).then_some(slot as usize)
+    }
+}
+
+/// The definitions reaching each tracked component: a slot per component,
+/// so copying a state copies a vector of shared sets.
+#[derive(Clone, Debug)]
+struct State {
+    slots: Rc<Slots>,
+    values: Vec<Option<Definitions>>,
+    /// How many components have definitions; none for a block not reached.
+    present: usize,
+}
+
+impl State {
+    fn new(slots: &Rc<Slots>) -> Self {
+        State {
+            slots: Rc::clone(slots),
+            values: vec![None; slots.count],
+            present: 0,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.present == 0
+    }
+
+    fn get(&self, component: &Component) -> Option<&Definitions> {
+        let slot = self.slots.slot(*component)?;
+        self.values[slot].as_ref()
+    }
+
+    fn insert(&mut self, component: Component, definitions: Definitions) {
+        let slot = self
+            .slots
+            .slot(component)
+            .expect("every written component is tracked");
+        if self.values[slot].replace(definitions).is_none() {
+            self.present += 1;
+        }
+    }
+
+    /// Joins `more` into the definitions of the component in `slot`.
+    fn join_slot(&mut self, slot: usize, more: &Definitions) {
+        match &mut self.values[slot] {
+            Some(into) => add_definitions(into, more),
+            empty => {
+                *empty = Some(Rc::clone(more));
+                self.present += 1;
+            }
+        }
+    }
+
+    fn join(&mut self, component: Component, more: &Definitions) {
+        let slot = self
+            .slots
+            .slot(component)
+            .expect("every written component is tracked");
+        self.join_slot(slot, more);
+    }
+}
+
+impl PartialEq for State {
+    fn eq(&self, other: &Self) -> bool {
+        self.present == other.present
+            && self
+                .values
+                .iter()
+                .zip(&other.values)
+                .all(|pair| match pair {
+                    (Some(a), Some(b)) => Rc::ptr_eq(a, b) || a == b,
+                    (None, None) => true,
+                    _ => false,
+                })
+    }
+}
+
+impl Eq for State {}
 
 /// Adds `more` to `into`, copying `into` only when it gains a definition.
 fn add_definitions(into: &mut Definitions, more: &Definitions) {
     if !Rc::ptr_eq(into, more) && !more.is_subset(into) {
         Rc::make_mut(into).extend(more.iter().copied());
-    }
-}
-
-/// Joins `more` into the definitions at `entry`, sharing them when the entry
-/// is new.
-fn join_into<K: Ord>(
-    entry: std::collections::btree_map::Entry<'_, K, Definitions>,
-    more: &Definitions,
-) {
-    match entry {
-        std::collections::btree_map::Entry::Vacant(vacant) => {
-            vacant.insert(Rc::clone(more));
-        }
-        std::collections::btree_map::Entry::Occupied(mut occupied) => {
-            add_definitions(occupied.get_mut(), more);
-        }
     }
 }
 
@@ -84,13 +170,21 @@ pub struct Timing {
 /// Reaching definitions plus writes in flight: (landing cycle relative to
 /// the block start, component) to definitions, and whether every incoming
 /// path carries that write.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct FlowState {
     defs: State,
     pending: BTreeMap<(u32, Component), (Definitions, bool)>,
 }
 
 impl FlowState {
+    /// No definitions: a block not reached yet.
+    fn new(slots: &Rc<Slots>) -> Self {
+        FlowState {
+            defs: State::new(slots),
+            pending: BTreeMap::new(),
+        }
+    }
+
     /// Apply in-flight writes landing at or before `cycle` (all if `None`).
     fn land(&mut self, cycle: Option<u32>) {
         let due: Vec<_> = self
@@ -104,16 +198,22 @@ impl FlowState {
             if complete {
                 self.defs.insert(key.1, definitions);
             } else {
-                join_into(self.defs.entry(key.1), &definitions);
+                self.defs.join(key.1, &definitions);
             }
         }
     }
 
-    fn join(states: &[&FlowState]) -> FlowState {
-        let mut result = FlowState::default();
+    fn join(slots: &Rc<Slots>, states: &[&FlowState]) -> FlowState {
+        let mut result = match states {
+            // One source: its state, sharing every set.
+            [only] if only.pending.is_empty() => return (*only).clone(),
+            _ => FlowState::new(slots),
+        };
         for state in states {
-            for (&component, defs) in &state.defs {
-                join_into(result.defs.entry(component), defs);
+            for (slot, defs) in state.defs.values.iter().enumerate() {
+                if let Some(defs) = defs {
+                    result.defs.join_slot(slot, defs);
+                }
             }
             for (&key, (defs, _)) in &state.pending {
                 match result.pending.entry(key) {
@@ -210,6 +310,26 @@ pub struct Analysis {
     /// both are (block, register, component).
     pub hazard_reads: BTreeSet<(BlockId, RegisterId, u8)>,
     pub hazard_writes: BTreeSet<(BlockId, RegisterId, u8)>,
+    /// `reads`' indices by register, in order, made on first use.
+    by_register: std::cell::OnceCell<BTreeMap<RegisterId, Vec<usize>>>,
+}
+
+impl Analysis {
+    /// The reads of `register`, in the order of `reads`.
+    pub fn reads_of(&self, register: RegisterId) -> impl Iterator<Item = &Read> {
+        let index = self.by_register.get_or_init(|| {
+            let mut index: BTreeMap<RegisterId, Vec<usize>> = BTreeMap::new();
+            for (at, read) in self.reads.iter().enumerate() {
+                index.entry(read.register).or_default().push(at);
+            }
+            index
+        });
+        index
+            .get(&register)
+            .into_iter()
+            .flatten()
+            .map(|&at| &self.reads[at])
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -497,6 +617,7 @@ impl Graph {
             copy_live_out,
             hazard_reads,
             hazard_writes,
+            by_register: std::cell::OnceCell::new(),
         })
     }
 
@@ -553,20 +674,17 @@ impl Graph {
             .flat_map(parts)
             .collect();
         let initialized: BTreeSet<_> = self.inputs.iter().copied().flat_map(parts).collect();
-        keys.iter()
-            .map(|&component| {
-                let defined =
-                    initialized.contains(&component) || self.constants.contains(&component.0);
-                (
-                    component,
-                    Rc::new(BTreeSet::from([if defined {
-                        Definition::Input
-                    } else {
-                        Definition::Uninitialized
-                    }])),
-                )
-            })
-            .collect()
+        let slots = Rc::new(Slots::new(&keys));
+        let mut state = State::new(&slots);
+        // One set for each kind of start: the states share them.
+        let input = Rc::new(BTreeSet::from([Definition::Input]));
+        let uninitialized = Rc::new(BTreeSet::from([Definition::Uninitialized]));
+        for &component in &keys {
+            let defined = initialized.contains(&component) || self.constants.contains(&component.0);
+            let definitions = if defined { &input } else { &uninitialized };
+            state.insert(component, Rc::clone(definitions));
+        }
+        state
     }
 
     /// Iterate to a fixed point and return the state on entry to each block.
@@ -576,7 +694,8 @@ impl Graph {
         predecessors: &[Vec<BlockId>],
         seed: &State,
     ) -> Vec<FlowState> {
-        let mut incoming: Vec<FlowState> = vec![FlowState::default(); self.blocks.len()];
+        let slots = Rc::clone(&seed.slots);
+        let mut incoming: Vec<FlowState> = vec![FlowState::new(&slots); self.blocks.len()];
         let mut outgoing = incoming.clone();
         let entry_state = FlowState {
             defs: seed.clone(),
@@ -598,7 +717,7 @@ impl Graph {
                     sources.push(&outgoing[pred]);
                 }
             }
-            let next = FlowState::join(&sources);
+            let next = FlowState::join(&slots, &sources);
             // Wait until this block has at least one initialized predecessor.
             if next.defs.is_empty() && !seed.is_empty() {
                 continue;
@@ -901,6 +1020,7 @@ impl Analysis {
             copy_live_out,
             hazard_reads: hazards(self.hazard_reads),
             hazard_writes: hazards(self.hazard_writes),
+            by_register: std::cell::OnceCell::new(),
         }
     }
 }

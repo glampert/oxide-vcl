@@ -28,27 +28,24 @@ pub(super) fn plan_wrangled_tables(
         .collect();
     let mut optimized = BTreeSet::new();
     let mut pending: Vec<usize> = tables.keys().copied().collect();
+    // Each block's fixed rows as positions and a length: a block's rows
+    // change only when it is optimized, which empties them.
+    let mut fixed: Vec<(BTreeMap<usize, usize>, usize)> = placed_rows
+        .iter()
+        .enumerate()
+        .map(|(b, rows)| {
+            let rows = rows.clone().unwrap_or_default();
+            (table_positions(region, &live_of[b], &rows), rows.len())
+        })
+        .collect();
     while !pending.is_empty() {
-        let fixed: Vec<Vec<[Option<usize>; 2]>> = placed_rows
-            .iter()
-            .enumerate()
-            .map(|(b, rows)| {
-                if optimized.contains(&b) {
-                    Vec::new()
-                } else {
-                    rows.clone().unwrap_or_default()
-                }
-            })
-            .collect();
         let selector = TableSelector {
             program,
-            region,
             context: &context,
             local_of: &local_of,
-            live_of: &live_of,
             tables: &tables,
             optimized: &optimized,
-            fixed,
+            fixed: &fixed,
         };
         let b = selector.pick(&pending);
         pending.retain(|&p| p != b);
@@ -72,6 +69,7 @@ pub(super) fn plan_wrangled_tables(
                 .collect(),
         );
         optimized.insert(b);
+        fixed[b] = (BTreeMap::new(), 0);
         tables.insert(b, table);
     }
 
@@ -223,14 +221,13 @@ fn raw_block_rows(region: &Region, live: &[usize]) -> Vec<[Option<usize>; 2]> {
 /// The view of the planning state the optimization order is chosen from.
 struct TableSelector<'a> {
     program: &'a Source,
-    region: &'a Region,
     context: &'a TimingContext<'a>,
     local_of: &'a BTreeMap<usize, (usize, usize)>,
-    live_of: &'a [Vec<usize>],
     tables: &'a BTreeMap<usize, WrangledTable>,
     optimized: &'a BTreeSet<usize>,
-    /// The rows of each block whose layout is fixed, empty once optimized.
-    fixed: Vec<Vec<[Option<usize>; 2]>>,
+    /// The row of each instruction of each block whose layout is fixed,
+    /// and the block's row count; empty once optimized.
+    fixed: &'a [(BTreeMap<usize, usize>, usize)],
 }
 
 /// A pending table with the maxima of its statics.
@@ -418,10 +415,8 @@ impl TableSelector<'_> {
     /// or fixed instructions have no optimized image.
     fn row_in(&self, id: usize) -> Option<(usize, usize)> {
         let &(b, _) = self.local_of.get(&id)?;
-        let table = self.fixed.get(b)?;
-        table_positions(self.region, &self.live_of[b], table)
-            .get(&id)
-            .map(|&row| (row, table.len()))
+        let (positions, length) = self.fixed.get(b)?;
+        positions.get(&id).map(|&row| (row, *length))
     }
 
     /// The statics of an instruction in a table not yet optimized.
