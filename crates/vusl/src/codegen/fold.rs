@@ -27,7 +27,9 @@
 
 use std::collections::HashMap;
 
-use crate::sema::hir::{BinOp, Const, Expr, ExprKind, Local, LocalId, LoopKind, Program, Stmt};
+use crate::sema::hir::{
+    BinOp, Builtin, Const, Count, Expr, ExprKind, Local, LocalId, LoopKind, Place, Program, Stmt,
+};
 use crate::sema::types::Type;
 
 /// `program` with the folds applied; `bits_read` marks the locals whose
@@ -41,6 +43,9 @@ pub fn run(program: &Program, bits_read: &[bool]) -> Program {
     folder.stmts(&mut program.body);
     let locals = program.locals.clone();
     merge_copies(&mut program.body, &locals, bits_read);
+    let mut reads = vec![0; locals.len()];
+    count_reads(&program.body, &mut reads);
+    merge_random(&mut program.body, &reads);
     program
 }
 
@@ -144,6 +149,7 @@ impl Folder<'_> {
                 self.negations = head;
             }
             Stmt::Call { .. } => self.negations.clear(),
+            Stmt::Random { value, .. } => self.expr(value),
             Stmt::Copy { .. }
             | Stmt::Kick { .. }
             | Stmt::Break { .. }
@@ -488,4 +494,149 @@ fn jumps_out(stmts: &[Stmt]) -> bool {
         } => jumps_out(then) || jumps_out(otherwise),
         _ => false,
     })
+}
+
+/// `t = rnext(); s(t);` is `s(rnext());` when `s` is the next statement,
+/// its whole value is `t`, and nothing else reads `t`: RNEXT or RGET then
+/// writes the lane the local or store wants instead of a lane to move from.
+/// Each `rnext()` and `rget()` is a statement of its own that sets a local
+/// (so that R's reads and writes keep the source's order); this keeps the
+/// common `v.y = rnext();` one instruction.
+fn merge_random(stmts: &mut Vec<Stmt>, reads: &[usize]) {
+    for stmt in stmts.iter_mut() {
+        match stmt {
+            Stmt::If {
+                then, otherwise, ..
+            } => {
+                merge_random(then, reads);
+                merge_random(otherwise, reads);
+            }
+            Stmt::Loop { kind, body, .. } => {
+                merge_random(body, reads);
+                if let LoopKind::Condition {
+                    cond_stmts, step, ..
+                } = kind
+                {
+                    merge_random(cond_stmts, reads);
+                    merge_random(step, reads);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut index = 0;
+    while index + 1 < stmts.len() {
+        let Stmt::SetLocal {
+            local,
+            column: None,
+            components: None,
+            value: random,
+            ..
+        } = &stmts[index]
+        else {
+            index += 1;
+            continue;
+        };
+        let is_random = matches!(
+            random.kind,
+            ExprKind::Call {
+                builtin: Builtin::Rnext | Builtin::Rget,
+                ..
+            }
+        );
+        let random = random.clone();
+        let local = *local;
+        let value = match &mut stmts[index + 1] {
+            Stmt::SetLocal { value, .. } | Stmt::Store { value, .. } => Some(value),
+            _ => None,
+        };
+        match value {
+            Some(value)
+                if is_random
+                    && reads[local] == 1
+                    && matches!(value.kind, ExprKind::Local(id) if id == local) =>
+            {
+                *value = random;
+                stmts.remove(index);
+            }
+            _ => index += 1,
+        }
+    }
+}
+
+/// How many times each local is read in `stmts`, at any depth.
+fn count_reads(stmts: &[Stmt], reads: &mut [usize]) {
+    fn expr(e: &Expr, reads: &mut [usize]) {
+        match &e.kind {
+            ExprKind::Local(id) => reads[*id] += 1,
+            ExprKind::Load(at) | ExprKind::Address(at) => place(at, reads),
+            _ => {}
+        }
+        e.each_child(&mut |child| expr(child, reads));
+    }
+    fn place(at: &Place, reads: &mut [usize]) {
+        for (index, _) in &at.offset.indices {
+            expr(index, reads);
+        }
+    }
+    for stmt in stmts {
+        match stmt {
+            Stmt::SetLocal { value, .. } | Stmt::Random { value, .. } => expr(value, reads),
+            Stmt::Store {
+                place: at, value, ..
+            } => {
+                place(at, reads);
+                expr(value, reads);
+            }
+            Stmt::Copy { to, from, .. } => {
+                place(to, reads);
+                place(from, reads);
+            }
+            Stmt::Kick { place: at, .. } => place(at, reads),
+            Stmt::If {
+                cond,
+                then,
+                otherwise,
+                ..
+            } => {
+                expr(cond, reads);
+                count_reads(then, reads);
+                count_reads(otherwise, reads);
+            }
+            Stmt::Loop { kind, body, .. } => {
+                match kind {
+                    LoopKind::Condition {
+                        cond_stmts,
+                        cond,
+                        step,
+                        ..
+                    } => {
+                        count_reads(cond_stmts, reads);
+                        expr(cond, reads);
+                        count_reads(step, reads);
+                    }
+                    LoopKind::Range { count, .. } => {
+                        if let Count::Member(at) = count {
+                            place(at, reads);
+                        }
+                    }
+                }
+                count_reads(body, reads);
+            }
+            Stmt::Call {
+                setup, args, body, ..
+            } => {
+                count_reads(setup, reads);
+                count_reads(body, reads);
+                for input in args.iter().filter_map(|arg| arg.input.as_ref()) {
+                    expr(input, reads);
+                }
+            }
+            Stmt::Break { .. }
+            | Stmt::Continue { .. }
+            | Stmt::Exit { .. }
+            | Stmt::Yield { .. }
+            | Stmt::Barrier { .. } => {}
+        }
+    }
 }

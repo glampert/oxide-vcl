@@ -1,0 +1,4 @@
+input.vusl(5): error: 'rnext' takes no arguments, but is given 1
+   5 |     block.out0.x = rnext(block.bound);
+     |                    ^^^^^
+oxide-vusl: 1 error; no output written

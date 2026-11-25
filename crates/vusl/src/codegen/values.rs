@@ -368,6 +368,7 @@ impl Effects {
                     self.stores.push(Region::anywhere());
                 }
                 Stmt::Kick { .. }
+                | Stmt::Random { .. }
                 | Stmt::Break { .. }
                 | Stmt::Continue { .. }
                 | Stmt::Exit { .. }
@@ -485,7 +486,12 @@ fn write_key(expr: &Expr, out: &mut String, local: LocalName) -> bool {
         } => {
             if matches!(
                 builtin,
-                Builtin::ClipW | Builtin::Any | Builtin::Adc | Builtin::Clipped
+                Builtin::ClipW
+                    | Builtin::Any
+                    | Builtin::Adc
+                    | Builtin::Clipped
+                    | Builtin::Rnext
+                    | Builtin::Rget
             ) {
                 return false;
             }
@@ -640,7 +646,9 @@ impl Invariants<'_> {
     fn stmts<'s>(&self, stmts: &'s [Stmt], out: &mut Vec<&'s Expr>) {
         for stmt in stmts {
             match stmt {
-                Stmt::SetLocal { value, .. } | Stmt::Store { value, .. } => self.expr(value, out),
+                Stmt::SetLocal { value, .. }
+                | Stmt::Store { value, .. }
+                | Stmt::Random { value, .. } => self.expr(value, out),
                 // What only one branch reads would hold a register on every
                 // path for some of them: it stays where it is. What both
                 // read is read on every path.
@@ -798,6 +806,8 @@ impl Invariants<'_> {
                         | Builtin::Adc
                         | Builtin::Clipped
                         | Builtin::Xitop
+                        | Builtin::Rnext
+                        | Builtin::Rget
                 ) && args.iter().all(|arg| self.invariant(arg))
             }
             ExprKind::Construct(args) => args.iter().all(|arg| self.invariant(arg)),

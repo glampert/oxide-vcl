@@ -1,0 +1,4 @@
+input.vusl(5): error: 'rinit' needs a float, int32 or uint32, not int16
+   5 |     rinit(block.seed);
+     |           ^
+oxide-vusl: 1 error; no output written

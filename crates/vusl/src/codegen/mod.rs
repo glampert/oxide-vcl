@@ -297,6 +297,7 @@ fn bit_read_locals(program: &Program) -> Vec<bool> {
                     place(from, read);
                 }
                 Stmt::Kick { place: at, .. } => place(at, read),
+                Stmt::Random { value, .. } => expr(value, read),
                 Stmt::If {
                     cond,
                     then,
@@ -635,6 +636,11 @@ impl Lowering<'_> {
                 .line(format!("in_{kind}  {name}({})", register.name()));
             kept.push(name);
         }
+        // R carries over between runs: a program that does not seed it
+        // continues the last run's sequence, and leaves its own for the next.
+        if program.uses.random {
+            self.out.line("in_hw_r r");
+        }
         self.out.line("--endenter");
         let saves = !saved.is_empty();
         for ((register, (qword, lane)), name) in saved.iter().zip(&kept) {
@@ -673,6 +679,9 @@ impl Lowering<'_> {
         self.label_here(&exit);
         let Some(entry) = &program.entry else {
             self.out.line("--exit");
+            if program.uses.random {
+                self.out.line("out_hw_r r");
+            }
             self.out.line("--endexit");
             return Ok(());
         };
@@ -729,6 +738,9 @@ impl Lowering<'_> {
             }
         }
         self.out.line("--return vi15");
+        if self.program.uses.random {
+            lines.push("out_hw_r r".into());
+        }
         for line in lines {
             self.out.line(line);
         }
@@ -1002,6 +1014,14 @@ impl Lowering<'_> {
                 };
                 let name = self.iname(address);
                 self.out.inst("xgkick", None, &[name]);
+                Ok(())
+            }
+            Stmt::Random { xor, value, pos } => {
+                self.out.pos = Some(*pos);
+                let value = self.vf(value)?;
+                let mnemonic = if *xor { "rxor" } else { "rinit" };
+                let operand = self.field(value);
+                self.out.inst(mnemonic, None, &["r".into(), operand]);
                 Ok(())
             }
             Stmt::If {
@@ -3542,6 +3562,21 @@ impl Lowering<'_> {
                 self.out.inst(mnemonic, None, &["p".into(), operand]);
                 Ok(self.p_to_lane(dest, lane))
             }
+            Builtin::Rnext | Builtin::Rget => {
+                let reg = self.dest(dest);
+                let mnemonic = if builtin == Builtin::Rnext {
+                    "rnext"
+                } else {
+                    "rget"
+                };
+                let name = self.name(reg);
+                self.out.inst(
+                    mnemonic,
+                    Some(&lane.letter().to_string()),
+                    &[name, "r".into()],
+                );
+                Ok(Fv::scalar(reg, lane))
+            }
             _ => self.not_yet("this built-in as a VF value"),
         }
     }
@@ -3756,6 +3791,8 @@ fn any_lane(expr: &Expr) -> bool {
                 | Builtin::Esin
                 | Builtin::Eatan
                 | Builtin::Eexp
+                | Builtin::Rnext
+                | Builtin::Rget
         ),
         ExprKind::Convert {
             conversion: Conversion::IntToLane | Conversion::IntToFloat,

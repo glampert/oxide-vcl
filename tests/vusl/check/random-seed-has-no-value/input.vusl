@@ -1,0 +1,6 @@
+// RINIT and RXOR set R and give nothing back.
+struct Block { uint32 seed; vec4 out0; };
+void main(layout(address = 0) inout Block block)
+{
+    block.out0.x = rinit(block.seed);
+}

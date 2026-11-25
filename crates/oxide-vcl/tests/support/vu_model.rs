@@ -1062,14 +1062,16 @@ impl Program {
                 });
             }
             "rget" | "rnext" => {
-                // RNEXT steps a 23-bit shift register; the model's feedback
-                // is a deterministic stand-in for the hardware's.
+                // RNEXT steps R's 23-bit shift register: the manual's M
+                // series, p(x) = x^23 + x^5 + 1, so bit 22 XOR bit 4 shifts
+                // in (VU User's Manual, 1.1.2).
                 let r = if name == "rnext" {
                     let mantissa = state.r & 0x7f_ffff;
                     let feedback = ((mantissa >> 22) ^ (mantissa >> 4)) & 1;
                     0x3f80_0000 | (((mantissa << 1) | feedback) & 0x7f_ffff)
                 } else {
-                    state.r
+                    // R is 23 bits; RGET gives them the exponent of 1.0.
+                    0x3f80_0000 | (state.r & 0x7f_ffff)
                 };
                 if name == "rnext" {
                     effect.r = Some(r);

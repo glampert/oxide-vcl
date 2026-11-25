@@ -58,7 +58,12 @@ unless it changes only `vcl::Options`, which then make `vusl::Options::vcl`. `--
    program alone, so `--check` can write it.
 6. **Lower** (`codegen`). `codegen/fold.rs` first folds `0.0 + x`, `a + (-b)` and copies a local's
    next statement overwrites (see VUSL.md, "What the compiler does for you"); the interpreter runs
-   the program as written. The checked program then becomes VCL text, with a source place per line.
+   the program as written. Elaboration makes each `rnext()` and `rget()` a `SetLocal` of a
+   temporary of its own, so R's reads and steps keep the source's order and are never shared,
+   hoisted or dropped (`expr_key` and the invariant finder also refuse them); `merge_random` then
+   computes the call in its consumer when the next statement's whole value is that temporary and
+   nothing else reads it, so `v.y = rnext()` is one `rnext.y`. A program that uses the random unit
+   declares `in_hw_r` and `out_hw_r`, which keeps R live across runs. The checked program then becomes VCL text, with a source place per line.
 7. **Assemble** (`vusl::assemble`). `vcl::compile` on the text, in oxide mode by default, with `-u`
    set to the program's name so generated labels are unique to it. vcl's diagnostics on the
    generated code are mapped back to VUSL lines through the line origins.
@@ -358,6 +363,7 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `int-constants` | `int16` immediates, `isubiu` for small negatives, 0x8000 in two instructions |
 | `gif-tag` | The `isw.x` NLOOP/EOP patch of a host template |
 | `loop-invariants` | Invariants hoisted, and the end-pointer exit test |
+| `random` | `rinit`, `rnext` and `rget` written into the lanes of the qword they fill, and `rxor` reusing the seed's load |
 | `shared-pointers` | Two arrays stepped by one pointer |
 | `multiply-add` | A sum of products as one ACC chain |
 | `qword-assembly` | Lane stores built in one register and stored once |

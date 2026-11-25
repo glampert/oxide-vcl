@@ -454,6 +454,26 @@ program begins with `fcset 0` when it judges.
 | `eatan(s)` | atan s, for s in [−1, 1] |
 | `eexp(s)` | e^−s, for s ≥ 0 |
 
+**Random numbers** (the random unit's R register, 23 bits):
+
+| Built-in | Lowering |
+|---|---|
+| `rinit(s);` | `rinit`: R becomes the low 23 bits of `s`, a `float`, `int32` or `uint32` |
+| `rxor(s);` | `rxor`: R becomes R XOR the low 23 bits of `s` |
+| `rnext()` | `rnext`: R steps to its next value, read as a `float` in [1, 2) |
+| `rget()` | `rget`: R read as `rnext` reads it, R unchanged |
+
+R is a shift register over p(x) = x²³ + x⁵ + 1 (VU User's Manual, 1.1.2): each step shifts it left
+and brings in bit 22 XOR bit 4. Every non-zero R comes round again after 2²³ − 1 steps; a zero R
+stays zero, and its value reads as 1.0. The float's sign and exponent are 1.0's and R is its
+mantissa, so `rnext() - 1.0` is in [0, 1). `rinit` and `rxor` are statements, with no value.
+
+Calls read and step R in the order the source makes them, and two calls are never one value: each
+`rnext()` and `rget()` costs its instruction, written straight into the lane its store or local
+wants when it is that statement's whole value. R keeps its value from one run to the next. A
+program that does not seed it continues the sequence the last run left. A loop with a random call
+is not pipelined.
+
 ### Contraction and precision
 
 A sum of two or more products is one ACC chain: `mula`, `madda` and `msuba` for all but the last,
@@ -493,6 +513,7 @@ The most instructions each construct emits. Value reuse, hoisting and the peepho
 | A function call | 0: inlined. An `in` argument that is a local the call leaves alone, or a constant, is not copied |
 | A library call | A move per argument and result, the entry address, the JALR and its delay slot, the entry table's branch and its delay slot, the library's saves and restores, its JR and its delay slot |
 | `xgkick` | 1, plus the address when it is not in a register |
+| `rinit`, `rxor`, `rnext()`, `rget()` | 1 |
 
 ## What the compiler does for you
 
@@ -581,7 +602,8 @@ applies to the loop right after it.
 
 A loop without a pipeline pragma gets no hint, and oxide-vcl's `loops` optimization decides
 whether to pipeline it (`--no-opt=loops` turns it off, [The command line](#the-command-line)). A loop is pipelined only when it is one block (no `if`, `break` or
-`continue`) that ends in its exit branch, with no `xgkick`, XTOP, XITOP or barrier inside. Unknown
+`continue`) that ends in its exit branch, with no `xgkick`, XTOP, XITOP, random-unit call or
+barrier inside. Unknown
 pragmas are warnings.
 
 ## Libraries
@@ -686,8 +708,8 @@ Schema version 1 (`"vusl": 1`):
 
 - `program`: the name, the source file, the start and end symbols, and the instruction count
   (`null` under `--check`).
-- `uses`: the features the program uses, from `xtop`, `xitop`, `clipw`, `efu`, `xgkick` and
-  `yield`.
+- `uses`: the features the program uses, from `xtop`, `xitop`, `clipw`, `efu`, `xgkick`,
+  `yield` and `random`.
 - `parameters`: for each parameter of `main`:
   - its name, qualifier and type, and its placement (`address`, or `xtop` with `vif_base` and
     `vif_offset`);

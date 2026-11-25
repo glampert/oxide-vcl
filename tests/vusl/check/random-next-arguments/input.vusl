@@ -1,0 +1,6 @@
+// RNEXT takes no operand: R is the only state it reads.
+struct Block { float bound; vec4 out0; };
+void main(layout(address = 0) inout Block block)
+{
+    block.out0.x = rnext(block.bound);
+}

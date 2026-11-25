@@ -285,6 +285,11 @@ pub enum VuslMessage {
     },
     /// An assignment or increment inside a larger expression.
     NestedAssignment,
+    /// A built-in with no value (`xgkick`, `rinit`, `rxor`) inside an
+    /// expression.
+    NoValue {
+        name: String,
+    },
     /// A condition that is not `bool`.
     NotBool {
         found: String,
@@ -771,6 +776,11 @@ fn wording(message: &VuslMessage) -> Wording {
             "an assignment or increment inside an expression".into(),
             None,
             Some("write it as a statement of its own"),
+        ),
+        NoValue { name } => (
+            format!("'{name}' has no value"),
+            Some(name.clone()),
+            Some("call it as a statement of its own"),
         ),
         NotBool { found } => plain(format!("a condition needs a bool, not {found}")),
         PlacementMerge {

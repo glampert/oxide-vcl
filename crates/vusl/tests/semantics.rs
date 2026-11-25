@@ -1164,6 +1164,89 @@ fn values_that_do_not_fit_spill_to_the_work_area() {
 }
 
 #[test]
+fn random_numbers_follow_r() {
+    // Each call reads or steps R in the source's order: in one expression,
+    // in a condition, in a loop and as a statement of its own.
+    let source = "struct Block {\n\
+                  \x20   uint32 seed; uint32 mix;\n\
+                  \x20   vec4 out0; vec4 out1; vec4 out2;\n\
+                  };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   rinit(block.seed);\n\
+                  \x20   rnext();\n\
+                  \x20   block.out0.x = rnext();\n\
+                  \x20   block.out0.y = rnext() - 1.0;\n\
+                  \x20   block.out0.z = rget();\n\
+                  \x20   block.out0.w = rnext() * 2.0;\n\
+                  \x20   rxor(block.mix);\n\
+                  \x20   vec4 v;\n\
+                  \x20   v.x = rnext(); v.y = rnext(); v.z = rget(); v.w = rnext();\n\
+                  \x20   block.out1 = v;\n\
+                  \x20   float a = rnext();\n\
+                  \x20   float b = rnext();\n\
+                  \x20   block.out2.x = b - a;\n\
+                  \x20   int16 i = 0;\n\
+                  \x20   while (i < 3) { block.out2.y = rnext(); i = i + 1; }\n\
+                  \x20   if (rnext() < 1.5) { block.out2.z = 1.0; } else { block.out2.z = 2.0; }\n\
+                  \x20   block.out2.w = rget();\n\
+                  }\n";
+    agree(source, 4, |memory, _, _| {
+        let seed = memory[3][0];
+        memory[0][0] = 0x2a_5f31 ^ (seed & 0xffff);
+        memory[0][1] = 0x13_579b;
+    });
+}
+
+#[test]
+fn r_carries_over_between_runs() {
+    // Without RINIT the program continues the sequence R holds, and leaves
+    // R where its last RNEXT put it.
+    let source = "struct Block { vec4 out0; };\n\
+                  void main(layout(address = 0) out Block block)\n\
+                  {\n\
+                  \x20   block.out0.x = rnext();\n\
+                  \x20   block.out0.y = rget();\n\
+                  \x20   block.out0.z = rnext() - 1.0;\n\
+                  }\n";
+    let compiled = compile(source);
+    assert!(compiled.vcl.contains("in_hw_r r") && compiled.vcl.contains("out_hw_r r"));
+    let program = vu_model::Program::parse(&compiled.assembly).unwrap();
+    for r in [1, 0x40_0000, 0x2a_5f31] {
+        let mut machine = Machine::new(vec![[0; 4]; 1024], 0, 0);
+        machine.r = r;
+        interp::run(&compiled.checked.program, &mut machine, 1000).unwrap();
+        let state = vu_model::State {
+            memory: vec![[0; 4]; 1024],
+            r,
+            ..vu_model::State::default()
+        };
+        let execution = program.run(state, vu_model::Config::TIMED, 1000).unwrap();
+        assert_eq!(execution.state.memory[0], machine.memory[0], "R {r:#x}");
+        assert_eq!(execution.state.r & 0x7f_ffff, machine.r, "R {r:#x}");
+        assert_eq!(machine.r, interp::next_random(interp::next_random(r)));
+    }
+}
+
+#[test]
+fn the_random_sequence_has_the_full_period() {
+    // p(x) = x^23 + x^5 + 1 is primitive: every non-zero R comes round
+    // again after 2^23 - 1 steps, and 0 stays 0.
+    let mut r = 1;
+    let mut steps = 0_u32;
+    loop {
+        r = interp::next_random(r);
+        steps += 1;
+        if r == 1 {
+            break;
+        }
+    }
+    assert_eq!(steps, (1 << 23) - 1);
+    assert_eq!(interp::next_random(0), 0);
+    assert_eq!(interp::random_float(0), 1.0_f32.to_bits());
+}
+
+#[test]
 fn efu_results() {
     let source = "struct Block {\n\
                   \x20   vec3 a; float s;\n\

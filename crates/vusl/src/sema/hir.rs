@@ -83,6 +83,7 @@ fn erase_stmts(stmts: &mut [Stmt]) {
                 from.erase_enums();
             }
             Stmt::Kick { place, .. } => place.erase_enums(),
+            Stmt::Random { value, .. } => value.erase_enums(),
             Stmt::If {
                 cond,
                 then,
@@ -308,6 +309,7 @@ pub struct Uses {
     pub efu: bool,
     pub xgkick: bool,
     pub yield_: bool,
+    pub random: bool,
 }
 
 impl Uses {
@@ -319,6 +321,7 @@ impl Uses {
         self.efu |= other.efu;
         self.xgkick |= other.xgkick;
         self.yield_ |= other.yield_;
+        self.random |= other.random;
     }
 }
 
@@ -450,6 +453,13 @@ pub enum Stmt {
         place: Place,
         pos: Pos,
     },
+    /// `rinit(value)` (RINIT) or `rxor(value)` (RXOR): R set to, or
+    /// XORed with, the low 23 bits of a one-lane value.
+    Random {
+        xor: bool,
+        value: Expr,
+        pos: Pos,
+    },
     If {
         cond: Expr,
         then: Vec<Stmt>,
@@ -579,6 +589,10 @@ pub enum Builtin {
     Eexp,
     /// The count VIF ITOP sent (XITOP).
     Xitop,
+    /// R advanced to its next value, as a float in (1, 2) (RNEXT).
+    Rnext,
+    /// R's value as a float in (1, 2), R unchanged (RGET).
+    Rget,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

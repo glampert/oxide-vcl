@@ -1,0 +1,5 @@
+input.vusl(5): error: 'rinit' has no value
+   5 |     block.out0.x = rinit(block.seed);
+     |                    ^^^^^
+     = help: call it as a statement of its own
+oxide-vusl: 1 error; no output written

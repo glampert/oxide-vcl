@@ -308,6 +308,7 @@ pub fn reflect(
         (program.uses.efu, "efu"),
         (program.uses.xgkick, "xgkick"),
         (program.uses.yield_, "yield"),
+        (program.uses.random, "random"),
     ] {
         if used {
             uses.push(name);

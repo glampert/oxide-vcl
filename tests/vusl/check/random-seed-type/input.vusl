@@ -1,0 +1,7 @@
+// RINIT reads one VF lane: an int16 seed must be converted first.
+struct Block { layout(lane = x) int16 seed; vec4 out0; };
+void main(layout(address = 0) inout Block block)
+{
+    rinit(block.seed);
+    block.out0.x = rnext();
+}

@@ -22,6 +22,8 @@ pub struct Machine {
     pub itop: u16,
     /// Each XGKICK's address.
     pub kicks: Vec<u16>,
+    /// The random unit's R register: 23 bits, kept from run to run.
+    pub r: u32,
     /// The clip flags: the last four judgements, 6 bits each, newest
     /// lowest.
     clip: u32,
@@ -47,6 +49,7 @@ impl Default for Machine {
             top: 0,
             itop: 0,
             kicks: Vec::new(),
+            r: 0,
             clip: 0,
             judgements: 0,
         }
@@ -199,6 +202,10 @@ impl Interpreter<'_, '_> {
             Stmt::Kick { place, .. } => {
                 let address = self.address(place)?;
                 self.machine.kicks.push(address);
+            }
+            Stmt::Random { xor, value, .. } => {
+                let bits = self.vf(value)?[0] & 0x7f_ffff;
+                self.machine.r = if *xor { self.machine.r ^ bits } else { bits };
             }
             Stmt::If {
                 cond,
@@ -848,6 +855,11 @@ impl Interpreter<'_, '_> {
             Builtin::Eatan => scalar(float(self.vf(&args[0])?[0]).atan()),
             Builtin::Eexp => scalar((-float(self.vf(&args[0])?[0])).exp()),
             Builtin::Xitop => Value::Int(self.machine.itop),
+            Builtin::Rnext => {
+                self.machine.r = next_random(self.machine.r);
+                Value::Vf(vec![random_float(self.machine.r)])
+            }
+            Builtin::Rget => Value::Vf(vec![random_float(self.machine.r)]),
         })
     }
 
@@ -886,6 +898,20 @@ impl Interpreter<'_, '_> {
             Conversion::Bits => self.eval(operand)?,
         })
     }
+}
+
+/// R's next value: the VU's M series, p(x) = x^23 + x^5 + 1 (VU User's
+/// Manual, 1.1.2): R shifts left one bit and takes bit 22 XOR bit 4 as its
+/// new low bit. 0 stays 0.
+pub fn next_random(r: u32) -> u32 {
+    let feedback = ((r >> 22) ^ (r >> 4)) & 1;
+    ((r << 1) | feedback) & 0x7f_ffff
+}
+
+/// R as RNEXT and RGET read it: its 23 bits as the mantissa of a float in
+/// [1, 2).
+pub fn random_float(r: u32) -> u32 {
+    0x3f80_0000 | (r & 0x7f_ffff)
 }
 
 #[cfg(test)]

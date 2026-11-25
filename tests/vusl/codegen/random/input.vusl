@@ -1,0 +1,16 @@
+// The random unit: RINIT and RXOR set R from a lane's low 23 bits, RNEXT
+// steps it and RGET reads it, each a float in [1, 2) written to the lane
+// its store wants. R is declared in and out, so a program that does not
+// seed it continues the last run's sequence.
+struct Block { uint32 seed; vec4 jitter; vec4 noise; };
+
+void main(layout(address = 0) inout Block block)
+{
+    rinit(block.seed);
+    vec4 j;
+    j.x = rnext(); j.y = rnext(); j.z = rnext(); j.w = rget();
+    block.jitter = j;
+    block.noise.y = rnext() - 1.0;
+    block.noise.z = rget();
+    rxor(block.seed);
+}

@@ -2396,6 +2396,40 @@ impl Elaborator<'_, '_> {
                 );
             }
             Ast::Call { callee, args }
+                if matches!(callee.name.name.as_str(), "rinit" | "rxor")
+                    && callee.argument.is_none()
+                    && !self.decls.functions.contains_key(&callee.name.name) =>
+            {
+                let name = callee.name.name.as_str();
+                let [arg] = args.as_slice() else {
+                    return err(
+                        VuslMessage::WrongArgumentCount {
+                            name: name.into(),
+                            expected: "1 argument".into(),
+                            found: args.len(),
+                        },
+                        expr.pos,
+                    );
+                };
+                let value = self.rvalue(arg)?;
+                // RINIT and RXOR read one lane's low 23 bits.
+                self.expect_type(
+                    &value,
+                    matches!(value.ty, Type::Float | Type::Int32 | Type::Uint32),
+                    &format!("'{name}'"),
+                    "a float, int32 or uint32",
+                )?;
+                self.uses.random = true;
+                self.emit(
+                    out,
+                    Stmt::Random {
+                        xor: name == "rxor",
+                        value,
+                        pos: expr.pos,
+                    },
+                );
+            }
+            Ast::Call { callee, args }
                 if callee.argument.is_none()
                     && self.decls.functions.contains_key(&callee.name.name) =>
             {
@@ -4482,8 +4516,8 @@ impl Elaborator<'_, '_> {
                 ),
             };
         }
-        if name == "xgkick" {
-            return err(VuslMessage::NestedAssignment, pos);
+        if matches!(name, "xgkick" | "rinit" | "rxor") {
+            return err(VuslMessage::NoValue { name: name.into() }, pos);
         }
         let args: Vec<Expr> = args
             .iter()
@@ -4639,6 +4673,38 @@ impl Elaborator<'_, '_> {
                     self.uses.efu = true;
                 }
                 call(builtin, args, Type::Float, None)
+            }
+            "rnext" | "rget" => {
+                // R changes under the value, so each call is a statement
+                // of its own that sets a local, in the source's order:
+                // never merged with another call, hoisted or dropped.
+                self.count(name, "no arguments", &args, 0..=0, pos)?;
+                self.uses.random = true;
+                let builtin = if name == "rnext" {
+                    Builtin::Rnext
+                } else {
+                    Builtin::Rget
+                };
+                let local = self.new_local(name, Type::Float, None, false, pos);
+                self.pending.push(Stmt::SetLocal {
+                    local,
+                    column: None,
+                    components: None,
+                    value: Expr {
+                        kind: ExprKind::Call { builtin, args },
+                        ty: Type::Float,
+                        placement: None,
+                        pos,
+                    },
+                    pos,
+                });
+                self.state[local].set = full_mask(&Type::Float);
+                Ok(Expr {
+                    kind: ExprKind::Local(local),
+                    ty: Type::Float,
+                    placement: None,
+                    pos,
+                })
             }
             "esadd" | "ersadd" | "eleng" | "erleng" | "esum" => {
                 self.count(name, "1 argument", &args, 1..=1, pos)?;
