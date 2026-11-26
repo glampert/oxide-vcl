@@ -28,9 +28,23 @@ use vu_model::{Config, Program};
 
 const HEADING: &str = "\
 The public corpus in each mode: the listing's instruction pairs; over the
-seeded states, how many runs finish, their cycles and stall cycles; and
-the compile's work: search nodes, wrangler steps and checks, flow analyses
-and the blocks they walk. Written by crates/oxide-vcl/tests/bench.rs.";
+seeded states, how many runs finish, their cycles and stall cycles, the
+stalls by what they waited for (fmac, lq, ilw, fdiv, efu, waitq, waitp:
+the need ready last, written when nonzero); and the compile's work: how
+many times the program and its regions were compiled, search nodes,
+wrangler steps and checks, flow analyses and the blocks they walk
+(work.txt has them by phase). Written by crates/oxide-vcl/tests/bench.rs.";
+
+const WORK_HEADING: &str = "\
+The public corpus's compile work in each mode by phase, a row for each
+phase that did any: source (parsing, the source checks and the rewrites
+that compile the program again, whose compiles count to the other
+phases), loops (software-pipelined loop expansion and its modulo
+search), prepare (a region's pruning, copies, flow analyses and webs),
+schedule (each block's table), allocate (register assignment and
+allocation) and tables (the table work after allocation, and emission).
+The values are corpus.txt's work counts. Written by
+crates/oxide-vcl/tests/bench.rs (corpus).";
 
 fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
@@ -84,41 +98,43 @@ fn jobs(cases: &[corpus::Case]) -> Vec<(&'static str, &corpus::Case)> {
         .collect()
 }
 
-/// A row for `case` in `mode`: what its compile did and how it runs.
-fn measure(case: &corpus::Case, mode: &str) -> Row {
+/// The rows for `case` in `mode`: what its compile did and how it runs,
+/// then its work by phase.
+fn measure(case: &corpus::Case, mode: &str) -> Vec<Row> {
     let row = Row::new(&[mode, &case.name]);
     let Some(compiled) = compile(case, mode) else {
-        return row.value("rejected", 1);
+        return vec![row.value("rejected", 1)];
     };
     let row = row.value("pairs", compiled.instruction_pairs as u64);
-    let (mut runs, mut cycles, mut stalls) = (0, 0, 0);
+    let mut executions = Vec::new();
     if let Ok(program) = Program::parse(&compiled.assembly) {
         for seed in 0..SEEDS {
-            let Ok(execution) = program.run(seeded_state(seed), Config::TIMED, MAX_STEPS) else {
-                continue;
-            };
-            runs += 1;
-            cycles += execution.cycles;
-            stalls += execution
-                .profile
-                .iter()
-                .map(|&(_, stall)| stall)
-                .sum::<u64>();
+            if let Ok(execution) = program.run(seeded_state(seed), Config::TIMED, MAX_STEPS) {
+                executions.push(execution);
+            }
         }
     }
     let row = row
-        .value("runs", runs)
-        .value("cycles", cycles)
-        .value("stalls", stalls);
-    bench::work(row, &compiled.stats)
+        .value("runs", executions.len() as u64)
+        .value("cycles", executions.iter().map(|run| run.cycles).sum());
+    let row = bench::stalls(row, &bench::run_causes(&executions));
+    let mut rows = vec![bench::work(row, &compiled.stats)];
+    rows.extend(bench::phase_rows(&[mode, &case.name], &compiled.stats));
+    rows
 }
 
 #[test]
 #[ignore = "a benchmark: run it with --ignored"]
 fn corpus() {
     let cases = corpus::cases(&root().join("tests/corpus"));
-    let rows = measure_all(&jobs(&cases), |&(mode, case)| vec![measure(case, mode)]);
+    let rows = measure_all(&jobs(&cases), |&(mode, case)| measure(case, mode));
+    let (phases, rows): (Vec<Row>, Vec<Row>) = rows.into_iter().partition(|row| {
+        row.key
+            .last()
+            .is_some_and(|word| word.starts_with("phase:"))
+    });
     bench::compare_or_update(&root().join("tests/bench/corpus.txt"), HEADING, &rows);
+    bench::compare_or_update(&root().join("tests/bench/work.txt"), WORK_HEADING, &phases);
 }
 
 /// The trip counts the loop sweep runs: every count seed's, and larger
@@ -187,8 +203,8 @@ c48). Each table of the listing the runs entered is a row: a loop's
 kernel, its prologue, its epilogues together and its exit, or a table of
 its own (table:, such as a loop scheduled as straight-line code). A row
 gives how often it was entered (issues of its first pair: a kernel's
-iterations), its cycles and stall cycles over the sweep, and its cycles
-per entry in hundredths (per100: a kernel's cycles per iteration).
+iterations), its cycles and stall cycles over the sweep with their causes
+as in corpus.txt, and its cycles per entry in hundredths (per100: a kernel's cycles per iteration).
 Written by crates/oxide-vcl/tests/bench.rs (loops).";
     bench::compare_or_update(&root().join("tests/bench/loops.txt"), heading, &rows);
 }
@@ -222,6 +238,35 @@ fn tables_report_what_changed() {
     );
     assert_eq!(bench::report(&old, &new[..2]).lines().count(), 4);
     assert_eq!(bench::parse(&old)["oxide a"]["pairs"], 10);
+}
+
+#[test]
+fn totals_keep_kinds_apart_and_count_absent_values_as_zero() {
+    let old = bench::format(
+        "a table",
+        &[
+            Row::new(&["oxide", "a"]).value("stalls", 4).value("lq", 4),
+            Row::new(&["oxide", "a", "kernel:top"]).value("stalls", 4),
+        ],
+    );
+    let causes = [0, 3, 0, 0, 0, 0, 0];
+    let new = [
+        bench::stalls(Row::new(&["oxide", "a"]), &[2, 0, 0, 0, 0, 0, 0]),
+        bench::stalls(Row::new(&["oxide", "a", "kernel:top"]), &causes),
+    ];
+    assert_eq!(new[1].values, [("stalls", 3), ("lq", 3)]);
+    assert_eq!(
+        bench::report(&old, &new),
+        "changed  oxide a: stalls 4 -> 2, fmac - -> 2, lq 4 -> -\n\
+         changed  oxide a kernel:top: stalls 4 -> 3, lq - -> 3\n\
+         total    oxide:\n\
+         \x20          fmac 0 -> 2\n\
+         \x20          lq 4 -> 0 (-100.0%)\n\
+         \x20          stalls 4 -> 2 (-50.0%)\n\
+         total    oxide kernel:\n\
+         \x20          lq 0 -> 3\n\
+         \x20          stalls 4 -> 3 (-25.0%)\n"
+    );
 }
 
 #[test]

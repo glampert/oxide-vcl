@@ -268,7 +268,11 @@ follows:
   after termination.
 - XGKICK records its address and the GIF packet there: each tag and its
   data (PACKED, REGLIST or IMAGE sizes) up to the tag with EOP.
-- RNEXT steps a deterministic stand-in for the hardware's random generator.
+- RNEXT steps R by the manual's generator (x^23 + x^5 + 1, §1.1.2), and
+  RNEXT and RGET return R's 23 bits as a float in [1, 2).
+- Each pair's stall cycles are recorded with their cause, the need ready
+  last: an FMAC result, a load, an ILW result, a busy FDIV or EFU, WAITQ or
+  WAITP (`Execution::stall_causes`, `vu_model::Stall`).
 
 Not modeled: the stall of an XGKICK after an XGKICK, and the VU's exact
 rounding. The manuals say an XGKICK issued during a PATH1 transfer stalls
@@ -277,7 +281,8 @@ Manual §7.1.1), but not how long a transfer takes, so the model does not
 time it.
 
 The model's unit tests check field interlocks, Q landing and WAITQ, flag
-timing, ILW interlocks, GIF packet capture and saturating arithmetic, and
+timing, ILW interlocks, stall causes, GIF packet capture and saturating
+arithmetic, and
 the tests named `figure_3_*` run the manual's worked examples of §3.4 with
 the stalls and values it shows:
 
@@ -385,7 +390,9 @@ against tables committed in `tests/bench`, one line per measurement:
   mode, and run in the timed model from the twelve seeded states of
   [Listing equivalence](#listing-equivalence). A row gives the listing's
   instruction pairs; how many runs finish, and their cycles and stall
-  cycles; and the compile's work. A rejected program is `rejected=1`.
+  cycles, with the stalls by cause; and the compile's work. A rejected
+  program is `rejected=1`. The same run writes `tests/bench/work.txt`, the
+  compile's work by phase.
 - `crates/oxide-vcl/tests/bench.rs`, `loops` (`tests/bench/loops.txt`): the
   same programs over a sweep of trip counts, 1 to 48, from count states
   whose memory's low 16 bits and VI01 to VI15 hold the count; a program that
@@ -399,29 +406,61 @@ against tables committed in `tests/bench`, one line per measurement:
   entered (its first pair's issues, a prologue's first table's: a kernel's
   iterations), its cycles and stall cycles, and its cycles per entry in
   hundredths: a kernel's `per100` is its cycles per iteration, measured
-  apart from its prologue and epilogues. Programs whose counts come from
+  apart from its prologue and epilogues. Its stalls are given by cause too. Programs whose counts come from
   elsewhere, such as sprite's constant 2, run at their own count throughout.
 - `crates/vusl/tests/programs.rs`, `bench` (`tests/bench/scenes.txt`): the
   VUSL ports and their hand-written programs, compiled in oxide mode, with
-  their pairs and work, their cycles and stall cycles on each
-  [renderer scene](#renderer-scenes), and their pipelined loops' parts over
-  all the scenes, as in `loops`. A port's work counts all its hoist
-  attempts, and the clipper library has a row of its own.
+  their pairs and work, with a `phase:` row for each phase, their cycles
+  and stall cycles on each [renderer scene](#renderer-scenes), and their
+  pipelined loops' parts over all the scenes, as in `loops`. A port's work
+  counts all its hoist attempts, and the clipper library has a row of its
+  own.
+
+Every stall is attributed to what the pair waited for. When it waited on
+several things, the cause is the one that was ready last, which set the
+cycle it issued in; a tie goes to the first in this list. The causes are
+written only when nonzero:
+
+| Value | The pair waited for |
+| --- | --- |
+| `fmac` | a VF field an FMAC operation has not written yet: upper arithmetic, or a lower move such as MFIR, MFP or MOVE |
+| `lq` | a VF field an LQ, LQI or LQD has not loaded yet |
+| `ilw` | a VI register an ILW or ILWR has not loaded yet |
+| `fdiv` | the FDIV unit, busy with an earlier DIV, SQRT or RSQRT |
+| `efu` | the EFU, busy with an earlier operation |
+| `waitq` | Q, at a WAITQ |
+| `waitp` | P, at a WAITP |
 
 The compile's work is `vcl::Compiled::stats` (`crates/vcl/src/stats.rs`):
-the list scheduler's search nodes, the wrangler's steps and checks, and the
-flow analyses with the blocks they walk to their fixed points. These depend
+how many times the whole program was compiled (`programs`: one, plus one
+for each rewrite that compiles it again) and how many region compiles that
+took (`regions`, retries included); the list scheduler's search nodes, the
+wrangler's steps and checks, and the flow analyses with the blocks they
+walk to their fixed points. The counts are also split by the phase that
+did them:
+
+| Phase | Work |
+| --- | --- |
+| `source` | Parsing, the source checks, and the rewrites that compile the program again (`unswitch`, loop entry waits, the fixes' rounds, spills); the compiles a rewrite starts count to the other phases and to `programs` |
+| `loops` | Expanding software-pipelined loops, with the modulo search for each loop's period |
+| `prepare` | The rest of a region's preparation: pruning, copies, the flow analyses and webs |
+| `schedule` | Each block's table: list scheduling and wrangling |
+| `allocate` | Register assignment and allocation |
+| `tables` | The table work after allocation (raw reduction, merged streams wrangled again, scratch choices) and emission |
+ These depend
 only on the program and the options, so they measure a compile-time change
 exactly where time, on a shared machine, does not; a change that alters
 them changed what the searches do, not just how fast they run. The cycles
 are the timed model's, so they are as good as the model is.
 
 A benchmark prints what changed against its table: each changed row with
-its old and new values, rows added or gone, and per group (the first word
-of a key: the mode, or `vusl` and `hand`) the totals of each value over
-the rows both have. `BENCH_UPDATE=1` writes the table instead, to commit
-with the change it measures, so that the diff shows the change program by
-program:
+its old and new values, rows added or gone, and per group the totals of
+each value over the rows both have, a value a row lacks counting as 0. A
+row's group is the first word of its key (the mode, or `vusl` and `hand`)
+and, for a loop part or phase row, its kind (`kernel`, `phase`), so those
+rows total apart from the rows they are parts of. `BENCH_UPDATE=1` writes
+the table instead, to commit with the change it measures, so that the diff
+shows the change program by program:
 
 ```sh
 cargo test --release -p oxide-vcl --test bench -- --ignored --nocapture

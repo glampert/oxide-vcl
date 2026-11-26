@@ -394,8 +394,60 @@ pub struct Execution {
     /// For each pair of the program: how often it issued, and the stall
     /// cycles before those issues.
     pub profile: Vec<(u64, u64)>,
+    /// For each pair, its stall cycles by what they waited for, indexed by
+    /// [`Stall`]; each pair's add up to its stall cycles in `profile`.
+    pub stall_causes: Vec<[u64; Stall::COUNT]>,
     /// The pair after the E delay slot, where MSCNT resumes.
     pub resume: usize,
+}
+
+/// What a stalled pair waited for. A pair that waits on several needs is
+/// attributed to the one ready last, which set its issue cycle; a tie goes
+/// to the first in this order.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Stall {
+    /// A VF field an FMAC operation (upper, or a lower move such as MFIR,
+    /// MFP or MOVE) has not written yet.
+    #[default]
+    Fmac,
+    /// A VF field an LQ, LQI or LQD has not loaded yet.
+    Load,
+    /// A VI register an ILW or ILWR has not loaded yet.
+    Ilw,
+    /// The FDIV unit, busy with an earlier DIV, SQRT or RSQRT.
+    Fdiv,
+    /// The EFU, busy with an earlier operation.
+    Efu,
+    /// WAITQ, for Q to land.
+    WaitQ,
+    /// WAITP, for P to land.
+    WaitP,
+}
+
+impl Stall {
+    pub const COUNT: usize = 7;
+    pub const ALL: [Stall; Stall::COUNT] = [
+        Stall::Fmac,
+        Stall::Load,
+        Stall::Ilw,
+        Stall::Fdiv,
+        Stall::Efu,
+        Stall::WaitQ,
+        Stall::WaitP,
+    ];
+
+    /// The cause's value name in the benchmark tables.
+    pub fn name(self) -> &'static str {
+        match self {
+            Stall::Fmac => "fmac",
+            Stall::Load => "lq",
+            Stall::Ilw => "ilw",
+            Stall::Fdiv => "fdiv",
+            Stall::Efu => "efu",
+            Stall::WaitQ => "waitq",
+            Stall::WaitP => "waitp",
+        }
+    }
 }
 
 /// A non-interlocked result that changes its register or flag later.
@@ -419,6 +471,8 @@ enum Late {
 #[derive(Default)]
 struct Pipeline {
     vf_ready: [[u64; 4]; 32],
+    /// What wrote each VF field last: an FMAC operation or a load.
+    vf_source: [[Stall; 4]; 32],
     vi_ready: [u64; 16],
     fdiv_free: u64,
     efu_free: u64,
@@ -433,9 +487,17 @@ struct Pipeline {
 }
 
 impl Pipeline {
-    /// The cycle at which a pair can issue, at the earliest `earliest`.
-    fn issue_cycle(&self, needs: [&Needs; 2], earliest: u64) -> u64 {
+    /// The cycle at which a pair can issue, at the earliest `earliest`, and
+    /// what it waited for when that is later ([`Stall`]).
+    fn issue_cycle(&self, needs: [&Needs; 2], earliest: u64) -> (u64, Stall) {
         let mut cycle = earliest;
+        let mut cause = Stall::Fmac;
+        let mut wait = |ready: u64, why: Stall| {
+            if ready > cycle {
+                cycle = ready;
+                cause = why;
+            }
+        };
         for needs in needs {
             for &(register, mask) in &needs.vf {
                 if register == 0 {
@@ -443,28 +505,28 @@ impl Pipeline {
                 }
                 for (lane, ready) in self.vf_ready[register].iter().enumerate() {
                     if mask & (1 << lane) != 0 {
-                        cycle = cycle.max(*ready);
+                        wait(*ready, self.vf_source[register][lane]);
                     }
                 }
             }
             for &register in &needs.vi {
-                cycle = cycle.max(self.vi_ready[register]);
+                wait(self.vi_ready[register], Stall::Ilw);
             }
             if needs.fdiv.is_some() {
-                cycle = cycle.max(self.fdiv_free);
+                wait(self.fdiv_free, Stall::Fdiv);
             }
             if needs.efu.is_some() {
-                cycle = cycle.max(self.efu_free);
+                wait(self.efu_free, Stall::Efu);
             }
             if needs.wait_q {
-                cycle = cycle.max(self.q_landing);
+                wait(self.q_landing, Stall::WaitQ);
             }
             if needs.wait_p {
                 // The EFU's stall clears at Nn, a cycle before P lands.
-                cycle = cycle.max(self.p_landing.saturating_sub(1));
+                wait(self.p_landing.saturating_sub(1), Stall::WaitP);
             }
         }
-        cycle
+        (cycle, cause)
     }
 
     fn defer(&mut self, cycle: u64, late: Late) {
@@ -621,6 +683,7 @@ impl Program {
         }
         let mut pipeline = Pipeline::default();
         let mut profile = vec![(0, 0); self.pairs.len()];
+        let mut stall_causes = vec![[0; Stall::COUNT]; self.pairs.len()];
         let mut next_cycle = 0;
         let mut pc = start;
         let mut delayed_branch = None;
@@ -634,15 +697,17 @@ impl Program {
                         steps: step,
                         cycles: next_cycle,
                         profile,
+                        stall_causes,
                         resume: pc,
                     });
                 }
                 return Err(format!("PC {pc} left program before E termination"));
             };
             let cycle = if config.timed {
-                let cycle =
+                let (cycle, cause) =
                     pipeline.issue_cycle([&upper.needs(true), &lower.needs(false)], next_cycle);
                 pipeline.land(cycle, &mut state);
+                stall_causes[pc][cause as usize] += cycle - next_cycle;
                 cycle
             } else {
                 next_cycle
@@ -707,6 +772,7 @@ impl Program {
                     steps: step + 1,
                     cycles: next_cycle,
                     profile,
+                    stall_causes,
                     resume: pc + 1,
                 });
             }
@@ -924,6 +990,7 @@ impl Program {
                     effect
                         .vf
                         .push((register(op(0)?, "vf", 32)?, inst.mask, memory));
+                    effect.vf_load = true;
                 } else if name.starts_with("sq") {
                     effect
                         .memory
@@ -1168,6 +1235,8 @@ struct Effect {
     vi: Vec<(usize, u16)>,
     /// The cycles before a VI result can be read: 4 for ILW, 1 otherwise.
     vi_latency: u64,
+    /// The VF result is a load's (LQ, LQI, LQD), not an FMAC operation's.
+    vf_load: bool,
     memory: Vec<(usize, u8, [u32; 4])>,
     acc: Option<(u8, [u32; 4])>,
     q: Option<u32>,
@@ -1255,10 +1324,16 @@ impl Effect {
             }
             return;
         };
+        let source = if self.vf_load {
+            Stall::Load
+        } else {
+            Stall::Fmac
+        };
         for (register, mask, _) in &self.vf {
-            for (lane, ready) in pipeline.vf_ready[*register].iter_mut().enumerate() {
+            for lane in 0..4 {
                 if mask & (1 << lane) != 0 {
-                    *ready = cycle + FMAC_LATENCY;
+                    pipeline.vf_ready[*register][lane] = cycle + FMAC_LATENCY;
+                    pipeline.vf_source[*register][lane] = source;
                 }
             }
         }
@@ -2056,6 +2131,54 @@ mod tests {
         // The third DIV issues at cycle 15, its delay slot at 16.
         assert_eq!(execution.cycles, 17);
         assert_eq!(execution.state.q, 1.0_f32.to_bits());
+    }
+
+    #[test]
+    fn timed_stalls_are_attributed_to_what_they_waited_for() {
+        let mut state = State::default();
+        state.set_vector(5, [2.0; 4]);
+        let execution = timed(
+            &[
+                ("NOP", "lq VF01,0(VI00)"),
+                ("add VF02,VF01,VF01", "NOP"),
+                ("add VF03,VF02,VF02", "NOP"),
+                ("NOP", "ilw.x VI01,0(VI00)"),
+                ("NOP", "iadd VI02,VI01,VI01"),
+                ("NOP", "div Q,VF05x,VF05x"),
+                ("NOP", "div Q,VF05x,VF05x"),
+                ("NOP", "waitq"),
+                ("NOP", "esqrt P,VF05x"),
+                ("NOP", "esqrt P,VF05x"),
+                ("NOP[E]", "waitp"),
+                NOP,
+            ],
+            state,
+        );
+        let expected = [
+            None,
+            Some(Stall::Load),
+            Some(Stall::Fmac),
+            None,
+            Some(Stall::Ilw),
+            None,
+            Some(Stall::Fdiv),
+            Some(Stall::WaitQ),
+            None,
+            Some(Stall::Efu),
+            Some(Stall::WaitP),
+            None,
+        ];
+        for (pc, cause) in expected.into_iter().enumerate() {
+            let stalled = execution.profile[pc].1;
+            let mut by_cause = [0; Stall::COUNT];
+            if let Some(cause) = cause {
+                assert!(stalled > 0, "pair {pc} should stall");
+                by_cause[cause as usize] = stalled;
+            }
+            assert_eq!(execution.stall_causes[pc], by_cause, "pair {pc}");
+        }
+        // A load or FMAC result is ready four cycles on, an ILW's too.
+        assert_eq!(stalls(&execution)[1..5], [3, 3, 0, 3]);
     }
 
     #[test]

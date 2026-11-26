@@ -1,108 +1,111 @@
 # The public corpus in each mode: the listing's instruction pairs; over the
-# seeded states, how many runs finish, their cycles and stall cycles; and
-# the compile's work: search nodes, wrangler steps and checks, flow analyses
-# and the blocks they walk. Written by crates/oxide-vcl/tests/bench.rs.
-vcl doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough                                    pairs=6 runs=12 cycles=72 stalls=0 nodes=0 steps=5 checks=14 analyses=13 walks=13
-vcl doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm                                       pairs=936 runs=11 cycles=531091 stalls=138005 nodes=0 steps=3834 checks=50527 analyses=13 walks=4095
-vcl doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips                                   pairs=670 runs=12 cycles=131457 stalls=37301 nodes=0 steps=3160 checks=27431 analyses=13 walks=2587
-vcl openvcl__examples_sprite_vu1Sprite                                                      pairs=25 runs=12 cycles=828 stalls=408 nodes=0 steps=27 checks=390 analyses=13 walks=52
-vcl openvcl__examples_triangle-gasp_vu1Triangle                                             pairs=25 runs=12 cycles=1152 stalls=612 nodes=0 steps=27 checks=391 analyses=13 walks=52
-vcl openvcl__examples_triangle_strip_vu1TriangleStrip                                       pairs=25 runs=12 cycles=1476 stalls=816 nodes=0 steps=27 checks=390 analyses=13 walks=52
-vcl openvcl__examples_triangle_vu1Triangle                                                  pairs=25 runs=12 cycles=1152 stalls=612 nodes=0 steps=27 checks=390 analyses=13 walks=52
+# seeded states, how many runs finish, their cycles and stall cycles, the
+# stalls by what they waited for (fmac, lq, ilw, fdiv, efu, waitq, waitp:
+# the need ready last, written when nonzero); and the compile's work: how
+# many times the program and its regions were compiled, search nodes,
+# wrangler steps and checks, flow analyses and the blocks they walk
+# (work.txt has them by phase). Written by crates/oxide-vcl/tests/bench.rs.
+vcl doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough                                    pairs=6 runs=12 cycles=72 stalls=0 programs=1 regions=1 nodes=0 steps=5 checks=14 analyses=13 walks=13
+vcl doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm                                       pairs=936 runs=11 cycles=531091 stalls=138005 fmac=101187 lq=14910 ilw=16245 fdiv=527 waitq=5136 programs=1 regions=1 nodes=0 steps=3834 checks=50527 analyses=13 walks=4095
+vcl doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips                                   pairs=670 runs=12 cycles=131457 stalls=37301 fmac=27694 lq=3416 ilw=2927 fdiv=84 waitq=3180 programs=1 regions=1 nodes=0 steps=3160 checks=27431 analyses=13 walks=2587
+vcl openvcl__examples_sprite_vu1Sprite                                                      pairs=25 runs=12 cycles=828 stalls=408 fmac=192 lq=72 waitq=144 programs=1 regions=1 nodes=0 steps=27 checks=390 analyses=13 walks=52
+vcl openvcl__examples_triangle-gasp_vu1Triangle                                             pairs=25 runs=12 cycles=1152 stalls=612 fmac=288 lq=108 waitq=216 programs=1 regions=1 nodes=0 steps=27 checks=391 analyses=13 walks=52
+vcl openvcl__examples_triangle_strip_vu1TriangleStrip                                       pairs=25 runs=12 cycles=1476 stalls=816 fmac=384 lq=144 waitq=288 programs=1 regions=1 nodes=0 steps=27 checks=390 analyses=13 walks=52
+vcl openvcl__examples_triangle_vu1Triangle                                                  pairs=25 runs=12 cycles=1152 stalls=612 fmac=288 lq=108 waitq=216 programs=1 regions=1 nodes=0 steps=27 checks=390 analyses=13 walks=52
 vcl openvcl__repros_clip_join                                                               rejected=1
 vcl openvcl__repros_clip_loop_entry                                                         rejected=1
 vcl openvcl__repros_clipw_implicit_w                                                        rejected=1
-vcl openvcl__repros_crossloop_4regs                                                         pairs=20 runs=12 cycles=732 stalls=108 nodes=0 steps=42 checks=110 analyses=13 walks=143
-vcl openvcl__repros_ilw_branch_label                                                        pairs=16 runs=12 cycles=192 stalls=24 nodes=0 steps=25 checks=35 analyses=13 walks=78
-vcl openvcl__repros_immediates_out_of_range                                                 pairs=8 runs=12 cycles=132 stalls=36 nodes=0 steps=48 checks=127 analyses=13 walks=13
-vcl openvcl__repros_loop_pointer                                                            pairs=16 runs=12 cycles=1848 stalls=360 nodes=0 steps=18 checks=109 analyses=13 walks=104
-vcl openvcl__repros_mac_join                                                                pairs=14 runs=12 cycles=180 stalls=24 nodes=0 steps=33 checks=32 analyses=13 walks=52
-vcl openvcl__repros_masked_write_branch                                                     pairs=11 runs=12 cycles=156 stalls=24 nodes=0 steps=20 checks=25 analyses=13 walks=39
-vcl openvcl__repros_seed_store_order                                                        pairs=10 runs=12 cycles=120 stalls=0 nodes=0 steps=33 checks=139 analyses=13 walks=13
-vcl openvcl__repros_store_load_alias                                                        pairs=7 runs=12 cycles=132 stalls=48 nodes=0 steps=48 checks=242 analyses=13 walks=13
-vcl openvcl__repros_store_store_alias                                                       pairs=6 runs=12 cycles=132 stalls=60 nodes=0 steps=42 checks=168 analyses=13 walks=13
-vcl openvcl__test_fixtures_fast                                                             pairs=211 runs=12 cycles=1009 stalls=115 nodes=0 steps=81814 checks=3059550 analyses=17 walks=521
-vcl openvcl__test_fixtures_fast_nolights                                                    pairs=139 runs=12 cycles=336 stalls=12 nodes=0 steps=101162 checks=9021192 analyses=17 walks=463
-vcl openvcl__test_fixtures_general                                                          pairs=660 runs=12 cycles=60 stalls=0 nodes=0 steps=309662 checks=29108849 analyses=20 walks=1380
-vcl openvcl__test_fixtures_general_nospec                                                   pairs=450 runs=12 cycles=60 stalls=0 nodes=0 steps=122479 checks=23388578 analyses=20 walks=1380
-vcl openvcl__test_fixtures_general_nospec_quad                                              pairs=485 runs=12 cycles=60 stalls=0 nodes=0 steps=436902 checks=162561437 analyses=20 walks=1108
-vcl openvcl__test_fixtures_general_nospec_tri                                               pairs=383 runs=12 cycles=60 stalls=0 nodes=0 steps=343602 checks=291832334 analyses=20 walks=1084
-vcl openvcl__test_fixtures_general_pv_diff                                                  pairs=654 runs=12 cycles=60 stalls=0 nodes=0 steps=267428 checks=29279917 analyses=20 walks=1380
-vcl openvcl__test_fixtures_general_pv_diff_quad                                             pairs=613 runs=12 cycles=60 stalls=0 nodes=0 steps=521346 checks=52855109 analyses=20 walks=1084
-vcl openvcl__test_fixtures_general_pv_diff_tri                                              pairs=586 runs=12 cycles=60 stalls=0 nodes=0 steps=488552 checks=297723921 analyses=20 walks=1084
-vcl openvcl__test_fixtures_general_quad                                                     pairs=695 runs=12 cycles=60 stalls=0 nodes=0 steps=624085 checks=168281708 analyses=20 walks=1108
-vcl openvcl__test_fixtures_general_tri                                                      pairs=591 runs=12 cycles=60 stalls=0 nodes=0 steps=530785 checks=297552872 analyses=20 walks=1084
-vcl openvcl__test_fixtures_indexed                                                          pairs=637 runs=12 cycles=60 stalls=0 nodes=0 steps=332424 checks=20334254 analyses=19 walks=955
+vcl openvcl__repros_crossloop_4regs                                                         pairs=20 runs=12 cycles=732 stalls=108 ilw=108 programs=1 regions=1 nodes=0 steps=42 checks=110 analyses=13 walks=143
+vcl openvcl__repros_ilw_branch_label                                                        pairs=16 runs=12 cycles=192 stalls=24 ilw=24 programs=1 regions=1 nodes=0 steps=25 checks=35 analyses=13 walks=78
+vcl openvcl__repros_immediates_out_of_range                                                 pairs=8 runs=12 cycles=132 stalls=36 ilw=36 programs=1 regions=1 nodes=0 steps=48 checks=127 analyses=13 walks=13
+vcl openvcl__repros_loop_pointer                                                            pairs=16 runs=12 cycles=1848 stalls=360 ilw=360 programs=1 regions=1 nodes=0 steps=18 checks=109 analyses=13 walks=104
+vcl openvcl__repros_mac_join                                                                pairs=14 runs=12 cycles=180 stalls=24 ilw=24 programs=1 regions=1 nodes=0 steps=33 checks=32 analyses=13 walks=52
+vcl openvcl__repros_masked_write_branch                                                     pairs=11 runs=12 cycles=156 stalls=24 ilw=24 programs=1 regions=1 nodes=0 steps=20 checks=25 analyses=13 walks=39
+vcl openvcl__repros_seed_store_order                                                        pairs=10 runs=12 cycles=120 stalls=0 programs=1 regions=1 nodes=0 steps=33 checks=139 analyses=13 walks=13
+vcl openvcl__repros_store_load_alias                                                        pairs=7 runs=12 cycles=132 stalls=48 fmac=24 lq=24 programs=1 regions=1 nodes=0 steps=48 checks=242 analyses=13 walks=13
+vcl openvcl__repros_store_store_alias                                                       pairs=6 runs=12 cycles=132 stalls=60 fmac=24 lq=36 programs=1 regions=1 nodes=0 steps=42 checks=168 analyses=13 walks=13
+vcl openvcl__test_fixtures_fast                                                             pairs=211 runs=12 cycles=1009 stalls=115 lq=52 ilw=63 programs=1 regions=1 nodes=0 steps=81814 checks=3059550 analyses=17 walks=521
+vcl openvcl__test_fixtures_fast_nolights                                                    pairs=139 runs=12 cycles=336 stalls=12 fmac=12 programs=1 regions=1 nodes=0 steps=101162 checks=9021192 analyses=17 walks=463
+vcl openvcl__test_fixtures_general                                                          pairs=660 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=309662 checks=29108849 analyses=20 walks=1380
+vcl openvcl__test_fixtures_general_nospec                                                   pairs=450 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=122479 checks=23388578 analyses=20 walks=1380
+vcl openvcl__test_fixtures_general_nospec_quad                                              pairs=485 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=436902 checks=162561437 analyses=20 walks=1108
+vcl openvcl__test_fixtures_general_nospec_tri                                               pairs=383 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=343602 checks=291832334 analyses=20 walks=1084
+vcl openvcl__test_fixtures_general_pv_diff                                                  pairs=654 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=267428 checks=29279917 analyses=20 walks=1380
+vcl openvcl__test_fixtures_general_pv_diff_quad                                             pairs=613 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=521346 checks=52855109 analyses=20 walks=1084
+vcl openvcl__test_fixtures_general_pv_diff_tri                                              pairs=586 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=488552 checks=297723921 analyses=20 walks=1084
+vcl openvcl__test_fixtures_general_quad                                                     pairs=695 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=624085 checks=168281708 analyses=20 walks=1108
+vcl openvcl__test_fixtures_general_tri                                                      pairs=591 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=530785 checks=297552872 analyses=20 walks=1084
+vcl openvcl__test_fixtures_indexed                                                          pairs=637 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=332424 checks=20334254 analyses=19 walks=955
 vcl openvcl__test_repro_quad_adc_bug                                                        rejected=1
 vcl openvcl__test_repro_quad_adc_bug_fjtrujy                                                rejected=1
-vcl ps2gl__examples_tricked_out_billboard_renderer                                          pairs=128 runs=12 cycles=192 stalls=36 nodes=0 steps=80699 checks=44204612 analyses=17 walks=217
-vcl ps2gl__vu1_scei                                                                         pairs=204 runs=12 cycles=805 stalls=127 nodes=0 steps=83144 checks=2600306 analyses=17 walks=521
-vcl quake2-ps2__src_ps2_renderer_vu1progs_particles                                         pairs=60 runs=12 cycles=6420 stalls=2250 nodes=0 steps=381 checks=2468 analyses=13 walks=52
-vcl quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles                                pairs=998 runs=12 cycles=34732 stalls=9302 nodes=0 steps=6179 checks=56905 analyses=13 walks=3185
-vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1                pairs=80 runs=8 cycles=2970 stalls=484 nodes=0 steps=1280 checks=6287 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_d_vu1                pairs=137 runs=8 cycles=5154 stalls=46 nodes=0 steps=369197 checks=35454 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_tc_vu1               pairs=98 runs=8 cycles=3232 stalls=108 nodes=0 steps=1689 checks=9935 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1               pairs=155 runs=8 cycles=6022 stalls=276 nodes=0 steps=434929 checks=95262 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1          pairs=48 runs=8 cycles=1564 stalls=322 nodes=0 steps=246 checks=4153 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1            pairs=99 runs=12 cycles=87553 stalls=9450 nodes=0 steps=1601 checks=6932 analyses=13 walks=234
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_c_vu1     pairs=60 runs=8 cycles=1580 stalls=46 nodes=0 steps=284 checks=3811 analyses=13 walks=325
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_d_vu1     pairs=96 runs=8 cycles=3330 stalls=184 nodes=0 steps=5462 checks=8397 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_tc_vu1    pairs=71 runs=8 cycles=1888 stalls=0 nodes=0 steps=101 checks=2543 analyses=13 walks=325
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_td_vu1    pairs=103 runs=8 cycles=3500 stalls=184 nodes=0 steps=221411 checks=12681 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_c_vu1       pairs=84 runs=8 cycles=2586 stalls=138 nodes=0 steps=1547 checks=5084 analyses=13 walks=325
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_d_vu1       pairs=120 runs=8 cycles=4152 stalls=92 nodes=0 steps=8569 checks=18429 analyses=13 walks=130
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_tc_vu1      pairs=90 runs=8 cycles=2710 stalls=138 nodes=0 steps=1573 checks=7946 analyses=13 walks=325
-vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_td_vu1      pairs=128 runs=8 cycles=4368 stalls=92 nodes=0 steps=15558 checks=18756 analyses=13 walks=130
-vcl tyra__engine_src_renderer_core_paths_path1_draw_finish                                  pairs=5 runs=12 cycles=60 stalls=0 nodes=0 steps=4 checks=4 analyses=13 walks=13
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough                                  pairs=5 runs=12 cycles=60 stalls=0 nodes=0 steps=5 checks=14 analyses=13 walks=13
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm                                     pairs=1019 runs=11 cycles=525892 stalls=135524 nodes=0 steps=137474 checks=914072 analyses=18 walks=5150
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips                                 pairs=695 runs=12 cycles=131038 stalls=37221 nodes=0 steps=132834 checks=446608 analyses=17 walks=3233
-oxide openvcl__examples_sprite_vu1Sprite                                                    pairs=97 runs=12 cycles=600 stalls=180 nodes=0 steps=405393 checks=3789066 analyses=17 walks=131
-oxide openvcl__examples_triangle-gasp_vu1Triangle                                           pairs=97 runs=12 cycles=720 stalls=192 nodes=0 steps=405393 checks=3789102 analyses=17 walks=131
-oxide openvcl__examples_triangle_strip_vu1TriangleStrip                                     pairs=97 runs=12 cycles=828 stalls=216 nodes=0 steps=405393 checks=3789066 analyses=17 walks=131
-oxide openvcl__examples_triangle_vu1Triangle                                                pairs=97 runs=12 cycles=720 stalls=192 nodes=0 steps=405393 checks=3789066 analyses=17 walks=131
-oxide openvcl__repros_clip_join                                                             pairs=14 runs=12 cycles=180 stalls=24 nodes=0 steps=33 checks=36 analyses=16 walks=64
-oxide openvcl__repros_clip_loop_entry                                                       pairs=17 runs=12 cycles=708 stalls=72 nodes=0 steps=172 checks=557 analyses=36 walks=207
-oxide openvcl__repros_clipw_implicit_w                                                      pairs=8 runs=12 cycles=132 stalls=36 nodes=0 steps=5 checks=9 analyses=16 walks=16
-oxide openvcl__repros_crossloop_4regs                                                       pairs=20 runs=12 cycles=732 stalls=108 nodes=0 steps=381135 checks=53758 analyses=17 walks=177
-oxide openvcl__repros_ilw_branch_label                                                      pairs=16 runs=12 cycles=192 stalls=24 nodes=0 steps=25 checks=35 analyses=13 walks=78
+vcl ps2gl__examples_tricked_out_billboard_renderer                                          pairs=128 runs=12 cycles=192 stalls=36 fmac=36 programs=1 regions=1 nodes=0 steps=80699 checks=44204612 analyses=17 walks=217
+vcl ps2gl__vu1_scei                                                                         pairs=204 runs=12 cycles=805 stalls=127 lq=64 ilw=63 programs=1 regions=1 nodes=0 steps=83144 checks=2600306 analyses=17 walks=521
+vcl quake2-ps2__src_ps2_renderer_vu1progs_particles                                         pairs=60 runs=12 cycles=6420 stalls=2250 fmac=1800 lq=450 programs=1 regions=1 nodes=0 steps=381 checks=2468 analyses=13 walks=52
+vcl quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles                                pairs=998 runs=12 cycles=34732 stalls=9302 fmac=6904 lq=790 ilw=720 waitq=888 programs=1 regions=1 nodes=0 steps=6179 checks=56905 analyses=13 walks=3185
+vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1                pairs=80 runs=8 cycles=2970 stalls=484 fmac=422 lq=62 programs=1 regions=1 nodes=0 steps=1280 checks=6287 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_d_vu1                pairs=137 runs=8 cycles=5154 stalls=46 lq=46 programs=1 regions=1 nodes=0 steps=369197 checks=35454 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_tc_vu1               pairs=98 runs=8 cycles=3232 stalls=108 fmac=46 lq=62 programs=1 regions=1 nodes=0 steps=1689 checks=9935 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1               pairs=155 runs=8 cycles=6022 stalls=276 fmac=230 lq=46 programs=1 regions=1 nodes=0 steps=434929 checks=95262 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1          pairs=48 runs=8 cycles=1564 stalls=322 fmac=46 lq=230 fdiv=46 programs=1 regions=1 nodes=0 steps=246 checks=4153 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1            pairs=99 runs=12 cycles=87553 stalls=9450 lq=9450 programs=1 regions=1 nodes=0 steps=1601 checks=6932 analyses=13 walks=234
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_c_vu1     pairs=60 runs=8 cycles=1580 stalls=46 lq=46 programs=1 regions=1 nodes=0 steps=284 checks=3811 analyses=13 walks=325
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_d_vu1     pairs=96 runs=8 cycles=3330 stalls=184 fmac=92 lq=92 programs=1 regions=1 nodes=0 steps=5462 checks=8397 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_tc_vu1    pairs=71 runs=8 cycles=1888 stalls=0 programs=1 regions=1 nodes=0 steps=101 checks=2543 analyses=13 walks=325
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_td_vu1    pairs=103 runs=8 cycles=3500 stalls=184 fmac=92 lq=92 programs=1 regions=1 nodes=0 steps=221411 checks=12681 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_c_vu1       pairs=84 runs=8 cycles=2586 stalls=138 lq=138 programs=1 regions=1 nodes=0 steps=1547 checks=5084 analyses=13 walks=325
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_d_vu1       pairs=120 runs=8 cycles=4152 stalls=92 lq=92 programs=1 regions=1 nodes=0 steps=8569 checks=18429 analyses=13 walks=130
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_tc_vu1      pairs=90 runs=8 cycles=2710 stalls=138 lq=138 programs=1 regions=1 nodes=0 steps=1573 checks=7946 analyses=13 walks=325
+vcl tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_td_vu1      pairs=128 runs=8 cycles=4368 stalls=92 lq=92 programs=1 regions=1 nodes=0 steps=15558 checks=18756 analyses=13 walks=130
+vcl tyra__engine_src_renderer_core_paths_path1_draw_finish                                  pairs=5 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=4 checks=4 analyses=13 walks=13
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough                                  pairs=5 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=5 checks=14 analyses=13 walks=13
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm                                     pairs=1019 runs=11 cycles=525892 stalls=135524 fmac=99613 lq=14530 ilw=16245 waitq=5136 programs=1 regions=1 nodes=0 steps=137474 checks=914072 analyses=18 walks=5150
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips                                 pairs=695 runs=12 cycles=131038 stalls=37221 fmac=27698 lq=3416 ilw=2927 waitq=3180 programs=1 regions=1 nodes=0 steps=132834 checks=446608 analyses=17 walks=3233
+oxide openvcl__examples_sprite_vu1Sprite                                                    pairs=97 runs=12 cycles=600 stalls=180 fmac=132 lq=24 waitq=24 programs=1 regions=1 nodes=0 steps=405393 checks=3789066 analyses=17 walks=131
+oxide openvcl__examples_triangle-gasp_vu1Triangle                                           pairs=97 runs=12 cycles=720 stalls=192 fmac=168 lq=24 programs=1 regions=1 nodes=0 steps=405393 checks=3789102 analyses=17 walks=131
+oxide openvcl__examples_triangle_strip_vu1TriangleStrip                                     pairs=97 runs=12 cycles=828 stalls=216 fmac=192 lq=24 programs=1 regions=1 nodes=0 steps=405393 checks=3789066 analyses=17 walks=131
+oxide openvcl__examples_triangle_vu1Triangle                                                pairs=97 runs=12 cycles=720 stalls=192 fmac=168 lq=24 programs=1 regions=1 nodes=0 steps=405393 checks=3789066 analyses=17 walks=131
+oxide openvcl__repros_clip_join                                                             pairs=14 runs=12 cycles=180 stalls=24 ilw=24 programs=2 regions=1 nodes=0 steps=33 checks=36 analyses=16 walks=64
+oxide openvcl__repros_clip_loop_entry                                                       pairs=17 runs=12 cycles=708 stalls=72 fmac=48 lq=24 programs=3 regions=2 nodes=0 steps=172 checks=557 analyses=36 walks=207
+oxide openvcl__repros_clipw_implicit_w                                                      pairs=8 runs=12 cycles=132 stalls=36 lq=36 programs=2 regions=1 nodes=0 steps=5 checks=9 analyses=16 walks=16
+oxide openvcl__repros_crossloop_4regs                                                       pairs=20 runs=12 cycles=732 stalls=108 ilw=108 programs=1 regions=1 nodes=0 steps=381135 checks=53758 analyses=17 walks=177
+oxide openvcl__repros_ilw_branch_label                                                      pairs=16 runs=12 cycles=192 stalls=24 ilw=24 programs=1 regions=1 nodes=0 steps=25 checks=35 analyses=13 walks=78
 oxide openvcl__repros_immediates_out_of_range                                               rejected=1
-oxide openvcl__repros_loop_pointer                                                          pairs=16 runs=12 cycles=1848 stalls=360 nodes=0 steps=18 checks=109 analyses=13 walks=104
-oxide openvcl__repros_mac_join                                                              pairs=14 runs=12 cycles=180 stalls=24 nodes=0 steps=33 checks=32 analyses=13 walks=52
-oxide openvcl__repros_masked_write_branch                                                   pairs=11 runs=12 cycles=156 stalls=24 nodes=0 steps=20 checks=25 analyses=13 walks=39
-oxide openvcl__repros_seed_store_order                                                      pairs=10 runs=12 cycles=120 stalls=0 nodes=0 steps=33 checks=139 analyses=13 walks=13
-oxide openvcl__repros_store_load_alias                                                      pairs=7 runs=12 cycles=192 stalls=108 nodes=0 steps=48 checks=275 analyses=13 walks=13
-oxide openvcl__repros_store_store_alias                                                     pairs=6 runs=12 cycles=144 stalls=72 nodes=0 steps=42 checks=191 analyses=13 walks=13
-oxide openvcl__test_fixtures_fast                                                           pairs=210 runs=12 cycles=1009 stalls=115 nodes=0 steps=81814 checks=3059550 analyses=17 walks=521
-oxide openvcl__test_fixtures_fast_nolights                                                  pairs=138 runs=12 cycles=336 stalls=12 nodes=0 steps=101162 checks=9021192 analyses=17 walks=463
-oxide openvcl__test_fixtures_general                                                        pairs=659 runs=12 cycles=60 stalls=0 nodes=0 steps=309662 checks=29108849 analyses=20 walks=1380
-oxide openvcl__test_fixtures_general_nospec                                                 pairs=449 runs=12 cycles=60 stalls=0 nodes=0 steps=122479 checks=23388578 analyses=20 walks=1380
-oxide openvcl__test_fixtures_general_nospec_quad                                            pairs=484 runs=12 cycles=60 stalls=0 nodes=0 steps=436902 checks=162561437 analyses=20 walks=1108
-oxide openvcl__test_fixtures_general_nospec_tri                                             pairs=382 runs=12 cycles=60 stalls=0 nodes=0 steps=343602 checks=291832334 analyses=20 walks=1084
-oxide openvcl__test_fixtures_general_pv_diff                                                pairs=653 runs=12 cycles=60 stalls=0 nodes=0 steps=267428 checks=29279917 analyses=20 walks=1380
-oxide openvcl__test_fixtures_general_pv_diff_quad                                           pairs=612 runs=12 cycles=60 stalls=0 nodes=0 steps=521346 checks=52855109 analyses=20 walks=1084
-oxide openvcl__test_fixtures_general_pv_diff_tri                                            pairs=585 runs=12 cycles=60 stalls=0 nodes=0 steps=488552 checks=297723921 analyses=20 walks=1084
-oxide openvcl__test_fixtures_general_quad                                                   pairs=694 runs=12 cycles=60 stalls=0 nodes=0 steps=624085 checks=168281708 analyses=20 walks=1108
-oxide openvcl__test_fixtures_general_tri                                                    pairs=590 runs=12 cycles=60 stalls=0 nodes=0 steps=530785 checks=297552872 analyses=20 walks=1084
+oxide openvcl__repros_loop_pointer                                                          pairs=16 runs=12 cycles=1848 stalls=360 ilw=360 programs=1 regions=1 nodes=0 steps=18 checks=109 analyses=13 walks=104
+oxide openvcl__repros_mac_join                                                              pairs=14 runs=12 cycles=180 stalls=24 ilw=24 programs=1 regions=1 nodes=0 steps=33 checks=32 analyses=13 walks=52
+oxide openvcl__repros_masked_write_branch                                                   pairs=11 runs=12 cycles=156 stalls=24 ilw=24 programs=1 regions=1 nodes=0 steps=20 checks=25 analyses=13 walks=39
+oxide openvcl__repros_seed_store_order                                                      pairs=10 runs=12 cycles=120 stalls=0 programs=1 regions=1 nodes=0 steps=33 checks=139 analyses=13 walks=13
+oxide openvcl__repros_store_load_alias                                                      pairs=7 runs=12 cycles=192 stalls=108 fmac=36 lq=72 programs=1 regions=1 nodes=0 steps=48 checks=275 analyses=13 walks=13
+oxide openvcl__repros_store_store_alias                                                     pairs=6 runs=12 cycles=144 stalls=72 fmac=36 lq=36 programs=1 regions=1 nodes=0 steps=42 checks=191 analyses=13 walks=13
+oxide openvcl__test_fixtures_fast                                                           pairs=210 runs=12 cycles=1009 stalls=115 lq=52 ilw=63 programs=1 regions=1 nodes=0 steps=81814 checks=3059550 analyses=17 walks=521
+oxide openvcl__test_fixtures_fast_nolights                                                  pairs=138 runs=12 cycles=336 stalls=12 fmac=12 programs=1 regions=1 nodes=0 steps=101162 checks=9021192 analyses=17 walks=463
+oxide openvcl__test_fixtures_general                                                        pairs=659 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=309662 checks=29108849 analyses=20 walks=1380
+oxide openvcl__test_fixtures_general_nospec                                                 pairs=449 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=122479 checks=23388578 analyses=20 walks=1380
+oxide openvcl__test_fixtures_general_nospec_quad                                            pairs=484 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=436902 checks=162561437 analyses=20 walks=1108
+oxide openvcl__test_fixtures_general_nospec_tri                                             pairs=382 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=343602 checks=291832334 analyses=20 walks=1084
+oxide openvcl__test_fixtures_general_pv_diff                                                pairs=653 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=267428 checks=29279917 analyses=20 walks=1380
+oxide openvcl__test_fixtures_general_pv_diff_quad                                           pairs=612 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=521346 checks=52855109 analyses=20 walks=1084
+oxide openvcl__test_fixtures_general_pv_diff_tri                                            pairs=585 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=488552 checks=297723921 analyses=20 walks=1084
+oxide openvcl__test_fixtures_general_quad                                                   pairs=694 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=624085 checks=168281708 analyses=20 walks=1108
+oxide openvcl__test_fixtures_general_tri                                                    pairs=590 runs=12 cycles=60 stalls=0 programs=1 regions=1 nodes=0 steps=530785 checks=297552872 analyses=20 walks=1084
 oxide openvcl__test_fixtures_indexed                                                        rejected=1
-oxide openvcl__test_repro_quad_adc_bug                                                      pairs=21 runs=12 cycles=276 stalls=48 nodes=0 steps=122 checks=837 analyses=16 walks=48
-oxide openvcl__test_repro_quad_adc_bug_fjtrujy                                              pairs=21 runs=12 cycles=276 stalls=48 nodes=0 steps=122 checks=837 analyses=16 walks=48
-oxide ps2gl__examples_tricked_out_billboard_renderer                                        pairs=127 runs=12 cycles=192 stalls=36 nodes=0 steps=80699 checks=44204612 analyses=17 walks=217
-oxide ps2gl__vu1_scei                                                                       pairs=203 runs=12 cycles=805 stalls=127 nodes=0 steps=83144 checks=2600306 analyses=17 walks=521
-oxide quake2-ps2__src_ps2_renderer_vu1progs_particles                                       pairs=114 runs=12 cycles=3436 stalls=84 nodes=0 steps=137422 checks=477939 analyses=17 walks=107
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles                              pairs=1212 runs=12 cycles=34097 stalls=8854 nodes=0 steps=82877 checks=856805 analyses=18 walks=4111
-oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1              pairs=165 runs=8 cycles=2000 stalls=86 nodes=0 steps=449680 checks=250410 analyses=17 walks=233
-oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_d_vu1              pairs=220 runs=8 cycles=4626 stalls=32 nodes=0 steps=2231727 checks=4166558 analyses=17 walks=209
-oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_tc_vu1             pairs=200 runs=8 cycles=2512 stalls=17 nodes=0 steps=444968 checks=1520797 analyses=17 walks=233
-oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1             pairs=243 runs=8 cycles=5102 stalls=24 nodes=0 steps=2508838 checks=1034881 analyses=17 walks=209
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1        pairs=75 runs=8 cycles=1298 stalls=24 nodes=0 steps=25655 checks=242297 analyses=17 walks=209
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1          pairs=173 runs=12 cycles=66853 stalls=600 nodes=0 steps=358810 checks=985242 analyses=17 walks=361
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_c_vu1   pairs=125 runs=8 cycles=1222 stalls=32 nodes=0 steps=90824 checks=1147695 analyses=18 walks=434
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_d_vu1   pairs=211 runs=8 cycles=2931 stalls=73 nodes=0 steps=116192 checks=868668 analyses=17 walks=233
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_tc_vu1  pairs=98 runs=8 cycles=1628 stalls=0 nodes=0 steps=262 checks=4549 analyses=18 walks=338
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_td_vu1  pairs=228 runs=8 cycles=3089 stalls=59 nodes=0 steps=87504 checks=693738 analyses=17 walks=233
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_c_vu1     pairs=192 runs=8 cycles=2098 stalls=32 nodes=0 steps=757492 checks=1436235 analyses=18 walks=434
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_d_vu1     pairs=271 runs=8 cycles=3778 stalls=58 nodes=0 steps=837957 checks=928654 analyses=17 walks=233
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_tc_vu1    pairs=259 runs=8 cycles=2268 stalls=32 nodes=0 steps=801379 checks=1526435 analyses=18 walks=458
-oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_td_vu1    pairs=282 runs=8 cycles=3932 stalls=58 nodes=0 steps=1403369 checks=877472 analyses=17 walks=233
-oxide tyra__engine_src_renderer_core_paths_path1_draw_finish                                pairs=4 runs=12 cycles=48 stalls=0 nodes=0 steps=4 checks=4 analyses=13 walks=13
+oxide openvcl__test_repro_quad_adc_bug                                                      pairs=21 runs=12 cycles=276 stalls=48 fmac=24 lq=24 programs=2 regions=1 nodes=0 steps=122 checks=837 analyses=16 walks=48
+oxide openvcl__test_repro_quad_adc_bug_fjtrujy                                              pairs=21 runs=12 cycles=276 stalls=48 fmac=24 lq=24 programs=2 regions=1 nodes=0 steps=122 checks=837 analyses=16 walks=48
+oxide ps2gl__examples_tricked_out_billboard_renderer                                        pairs=127 runs=12 cycles=192 stalls=36 fmac=36 programs=1 regions=1 nodes=0 steps=80699 checks=44204612 analyses=17 walks=217
+oxide ps2gl__vu1_scei                                                                       pairs=203 runs=12 cycles=805 stalls=127 lq=64 ilw=63 programs=1 regions=1 nodes=0 steps=83144 checks=2600306 analyses=17 walks=521
+oxide quake2-ps2__src_ps2_renderer_vu1progs_particles                                       pairs=114 runs=12 cycles=3436 stalls=84 fmac=84 programs=1 regions=1 nodes=0 steps=137422 checks=477939 analyses=17 walks=107
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles                              pairs=1212 runs=12 cycles=34097 stalls=8854 fmac=6640 lq=798 ilw=720 waitq=696 programs=1 regions=1 nodes=0 steps=82877 checks=856805 analyses=18 walks=4111
+oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_c_vu1              pairs=165 runs=8 cycles=2000 stalls=86 fmac=39 lq=39 ilw=8 programs=1 regions=1 nodes=0 steps=449680 checks=250410 analyses=17 walks=233
+oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_d_vu1              pairs=220 runs=8 cycles=4626 stalls=32 fmac=8 lq=8 ilw=16 programs=1 regions=1 nodes=0 steps=2231727 checks=4166558 analyses=17 walks=209
+oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_tc_vu1             pairs=200 runs=8 cycles=2512 stalls=17 fmac=1 lq=16 programs=1 regions=1 nodes=0 steps=444968 checks=1520797 analyses=17 walks=233
+oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1             pairs=243 runs=8 cycles=5102 stalls=24 lq=8 ilw=16 programs=1 regions=1 nodes=0 steps=2508838 checks=1034881 analyses=17 walks=209
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1        pairs=75 runs=8 cycles=1298 stalls=24 fmac=24 programs=1 regions=1 nodes=0 steps=25655 checks=242297 analyses=17 walks=209
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1          pairs=173 runs=12 cycles=66853 stalls=600 fmac=150 lq=450 programs=1 regions=1 nodes=0 steps=358810 checks=985242 analyses=17 walks=361
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_c_vu1   pairs=125 runs=8 cycles=1222 stalls=32 fmac=32 programs=1 regions=1 nodes=0 steps=90824 checks=1147695 analyses=18 walks=434
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_d_vu1   pairs=211 runs=8 cycles=2931 stalls=73 fmac=41 lq=16 ilw=16 programs=1 regions=1 nodes=0 steps=116192 checks=868668 analyses=17 walks=233
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_tc_vu1  pairs=98 runs=8 cycles=1628 stalls=0 programs=1 regions=1 nodes=0 steps=262 checks=4549 analyses=18 walks=338
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_as_is_stapip_as_is_td_vu1  pairs=228 runs=8 cycles=3089 stalls=59 fmac=27 lq=16 ilw=16 programs=1 regions=1 nodes=0 steps=87504 checks=693738 analyses=17 walks=233
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_c_vu1     pairs=192 runs=8 cycles=2098 stalls=32 fmac=16 lq=16 programs=1 regions=1 nodes=0 steps=757492 checks=1436235 analyses=18 walks=434
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_d_vu1     pairs=271 runs=8 cycles=3778 stalls=58 fmac=26 lq=16 ilw=16 programs=1 regions=1 nodes=0 steps=837957 checks=928654 analyses=17 walks=233
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_tc_vu1    pairs=259 runs=8 cycles=2268 stalls=32 fmac=16 lq=16 programs=1 regions=1 nodes=0 steps=801379 checks=1526435 analyses=18 walks=458
+oxide tyra__engine_src_renderer_3d_pipeline_static_core_programs_cull_stapip_cull_td_vu1    pairs=282 runs=8 cycles=3932 stalls=58 fmac=26 lq=16 ilw=16 programs=1 regions=1 nodes=0 steps=1403369 checks=877472 analyses=17 walks=233
+oxide tyra__engine_src_renderer_core_paths_path1_draw_finish                                pairs=4 runs=12 cycles=48 stalls=0 programs=1 regions=1 nodes=0 steps=4 checks=4 analyses=13 walks=13

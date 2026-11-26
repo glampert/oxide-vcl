@@ -1740,6 +1740,7 @@ fn compile_source(
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
+    crate::stats::count(crate::stats::Counter::Programs, 1);
     let mut output = Compiled::default();
     output.warnings.append(&mut program.warnings);
     write_prologue(&program, &mut output);

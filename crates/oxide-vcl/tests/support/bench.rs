@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write;
 use std::path::Path;
 
+use crate::vu_model::Stall;
+
 /// One measurement: its key's words and its values, in order.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
@@ -82,13 +84,24 @@ fn change(old: u64, new: u64) -> String {
     format!("{old} -> {new}{percent}")
 }
 
+/// A row's group for the totals: its key's first word (the mode, or `vusl`
+/// and `hand`), and the kind of a row whose last word has one (`kernel` in
+/// `kernel:xform_loop`, `phase` in `phase:schedule`), so that loop parts
+/// and phases total apart from what they are parts of.
+fn group(key: &[String]) -> String {
+    match key.last().and_then(|word| word.split_once(':')) {
+        Some((kind, _)) if key.len() > 1 => format!("{} {kind}", key[0]),
+        _ => key[0].clone(),
+    }
+}
+
 /// What changed from `old` to `new`: each changed row's changed values,
-/// rows only one has, and per group (a key's first word) the totals of
-/// each value over the rows both have.
+/// rows only one has, and per group ([`group`]) the totals of each value
+/// over the rows both have, a value a row lacks counting as 0.
 pub fn report(old: &str, new: &[Row]) -> String {
     let old = parse(old);
     let mut out = String::new();
-    let mut totals: BTreeMap<(String, &'static str), (u64, u64)> = BTreeMap::new();
+    let mut totals: BTreeMap<(String, String), (u64, u64)> = BTreeMap::new();
     let mut seen = Vec::new();
     for row in new {
         let key = row.key.join(" ");
@@ -99,15 +112,25 @@ pub fn report(old: &str, new: &[Row]) -> String {
         };
         let mut changed = Vec::new();
         for &(name, value) in &row.values {
+            // Values such as the stall causes are written only when nonzero.
             let earlier = before.get(name).copied();
-            if let Some(earlier) = earlier {
-                let total = totals.entry((row.key[0].clone(), name)).or_insert((0, 0));
-                total.0 += earlier;
-                total.1 += value;
-            }
+            let total = totals
+                .entry((group(&row.key), name.to_string()))
+                .or_insert((0, 0));
+            total.0 += earlier.unwrap_or(0);
+            total.1 += value;
             if earlier != Some(value) {
                 let earlier = earlier.map_or("-".to_string(), |value| value.to_string());
                 changed.push(format!("{name} {earlier} -> {value}"));
+            }
+        }
+        for (name, &earlier) in before {
+            if row.values.iter().all(|&(known, _)| known != name) {
+                let total = totals
+                    .entry((group(&row.key), name.clone()))
+                    .or_insert((0, 0));
+                total.0 += earlier;
+                changed.push(format!("{name} {earlier} -> -"));
             }
         }
         if !changed.is_empty() {
@@ -148,13 +171,70 @@ pub fn compare_or_update(path: &Path, heading: &str, rows: &[Row]) {
     print!("{}", report(&old, rows));
 }
 
-/// The work counts of a compile as values.
+/// Stall cycles by cause ([`Stall`]).
+pub type Causes = [u64; Stall::COUNT];
+
+/// The stall cycles of `runs` by cause.
+pub fn run_causes(runs: &[crate::vu_model::Execution]) -> Causes {
+    let mut causes = [0; Stall::COUNT];
+    for run in runs {
+        for pair in &run.stall_causes {
+            add(&mut causes, pair);
+        }
+    }
+    causes
+}
+
+fn add(total: &mut Causes, causes: &Causes) {
+    for (total, value) in total.iter_mut().zip(causes) {
+        *total += value;
+    }
+}
+
+/// `stalls` and, after it, the nonzero stall cycles of each cause.
+pub fn stalls(mut row: Row, causes: &Causes) -> Row {
+    row = row.value("stalls", causes.iter().sum());
+    for cause in Stall::ALL {
+        let value = causes[cause as usize];
+        if value > 0 {
+            row = row.value(cause.name(), value);
+        }
+    }
+    row
+}
+
+/// The work counts of a compile as values: its program and region
+/// compiles, then its total work ([`work_values`]).
 pub fn work(row: Row, stats: &vcl::stats::Stats) -> Row {
-    row.value("nodes", stats.search_nodes)
-        .value("steps", stats.wrangle_steps)
-        .value("checks", stats.wrangle_checks)
-        .value("analyses", stats.flow_analyses)
-        .value("walks", stats.flow_walks)
+    let row = row
+        .value("programs", stats.programs)
+        .value("regions", stats.regions);
+    work_values(row, &stats.total)
+}
+
+/// Work counts as values: search nodes, wrangler steps and checks, flow
+/// analyses and the blocks they walk.
+pub fn work_values(row: Row, work: &vcl::stats::Work) -> Row {
+    row.value("nodes", work.search_nodes)
+        .value("steps", work.wrangle_steps)
+        .value("checks", work.wrangle_checks)
+        .value("analyses", work.flow_analyses)
+        .value("walks", work.flow_walks)
+}
+
+/// A row per phase that did work, under `key` and `phase:NAME`.
+pub fn phase_rows(key: &[&str], stats: &vcl::stats::Stats) -> Vec<Row> {
+    vcl::stats::Phase::ALL
+        .into_iter()
+        .zip(&stats.phases)
+        .filter(|(_, work)| !work.is_empty())
+        .map(|(phase, work)| {
+            let name = format!("phase:{}", phase.name());
+            let mut words = key.to_vec();
+            words.push(&name);
+            work_values(Row::new(&words), work)
+        })
+        .collect()
 }
 
 /// The part of a loop a table is, from its name: a modulo-scheduled kernel,
@@ -183,8 +263,27 @@ pub fn part(table: &crate::vu_model::Table, unique: &str) -> String {
 }
 
 /// A loop part's or table's totals: its name, entries (issues of its first
-/// pair: a kernel's iterations), cycles and stall cycles.
-pub type Part = (String, u64, u64, u64);
+/// pair: a kernel's iterations), cycles and stall cycles by cause.
+#[derive(Clone, Debug)]
+pub struct Part {
+    pub name: String,
+    pub entries: u64,
+    pub cycles: u64,
+    pub causes: Causes,
+}
+
+/// Adds `part` to `parts`: to the part of the same name, with `entries`
+/// combining the two entry counts, or as a new one.
+pub fn merge(parts: &mut Vec<Part>, part: Part, entries: impl Fn(u64, u64) -> u64) {
+    match parts.iter_mut().find(|known| known.name == part.name) {
+        Some(known) => {
+            known.entries = entries(known.entries, part.entries);
+            known.cycles += part.cycles;
+            add(&mut known.causes, &part.causes);
+        }
+        None => parts.push(part),
+    }
+}
 
 /// Adds the cycles `runs` of `program` spent in each table to `parts`, by
 /// [`part`]: what a table's pairs issued and stalled, and how often its
@@ -204,61 +303,54 @@ pub fn add_parts(
         let end = tables
             .get(index + 1)
             .map_or(program.pair_count(), |next| next.start);
-        let profile: Vec<(u64, u64)> = (table.start..end.max(table.start))
-            .map(|pc| {
-                runs.iter()
-                    .map(|run| run.profile[pc])
-                    .fold((0, 0), |(a, b), (c, d)| (a + c, b + d))
-            })
-            .collect();
-        let Some(&(entries, _)) = profile.first() else {
+        let pairs = table.start..end.max(table.start);
+        if pairs.is_empty() {
             continue;
-        };
-        let issues: u64 = profile.iter().map(|&(issued, _)| issued).sum();
-        let stalls: u64 = profile.iter().map(|&(_, stalled)| stalled).sum();
+        }
+        let entries: u64 = runs.iter().map(|run| run.profile[table.start].0).sum();
+        let mut causes = [0; Stall::COUNT];
+        let mut issues = 0;
+        for pc in pairs {
+            for run in runs {
+                issues += run.profile[pc].0;
+                add(&mut causes, &run.stall_causes[pc]);
+            }
+        }
         let name = part(table, unique);
-        match these.iter_mut().find(|(known, ..)| *known == name) {
-            Some(entry) => {
-                // A prologue's tables run one after another, the first on
-                // every entry; a loop's epilogues are its exits, one each.
-                entry.1 = if name.starts_with("prologue:") {
-                    entry.1.max(entries)
-                } else {
-                    entry.1 + entries
-                };
-                entry.2 += issues + stalls;
-                entry.3 += stalls;
-            }
-            None => these.push((name, entries, issues + stalls, stalls)),
-        }
+        // A prologue's tables run one after another, the first on every
+        // entry; a loop's epilogues are its exits, one each.
+        let prologue = name.starts_with("prologue:");
+        let part = Part {
+            name,
+            entries,
+            cycles: issues + causes.iter().sum::<u64>(),
+            causes,
+        };
+        merge(
+            &mut these,
+            part,
+            |a, b| if prologue { a.max(b) } else { a + b },
+        );
     }
-    for (name, entries, cycles, stalls) in these {
-        match parts.iter_mut().find(|(known, ..)| *known == name) {
-            Some(entry) => {
-                entry.1 += entries;
-                entry.2 += cycles;
-                entry.3 += stalls;
-            }
-            None => parts.push((name, entries, cycles, stalls)),
-        }
+    for part in these {
+        merge(parts, part, |a, b| a + b);
     }
 }
 
-/// A row per part entered, under `key`: entries, cycles, stall cycles, and
-/// cycles per entry in hundredths (`per100`: a kernel's cycles per
-/// iteration).
+/// A row per part entered, under `key`: entries, cycles, stall cycles with
+/// their causes, and cycles per entry in hundredths (`per100`: a kernel's
+/// cycles per iteration).
 pub fn part_rows(key: &[&str], parts: Vec<Part>) -> Vec<Row> {
     parts
         .into_iter()
-        .filter(|&(_, entries, ..)| entries > 0)
-        .map(|(name, entries, cycles, stalls)| {
+        .filter(|part| part.entries > 0)
+        .map(|part| {
             let mut words = key.to_vec();
-            words.push(&name);
-            Row::new(&words)
-                .value("entries", entries)
-                .value("cycles", cycles)
-                .value("stalls", stalls)
-                .value("per100", cycles * 100 / entries)
+            words.push(&part.name);
+            let row = Row::new(&words)
+                .value("entries", part.entries)
+                .value("cycles", part.cycles);
+            stalls(row, &part.causes).value("per100", part.cycles * 100 / part.entries)
         })
         .collect()
 }

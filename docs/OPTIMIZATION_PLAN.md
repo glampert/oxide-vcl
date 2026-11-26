@@ -666,7 +666,11 @@ phase 0:
    change does to them (docs/TESTING.md, "Benchmarks"). The loop sweep
    runs trip counts 1 to 48 and gives each loop's kernel, prologue,
    epilogues and exit their own cycles: a kernel's cycles per iteration
-   apart from what entering and leaving the loop costs.
+   apart from what entering and leaving the loop costs. Stalls are split
+   by what they waited for (an FMAC result, a load, an ILW, a busy FDIV or
+   EFU, WAITQ or WAITP), per program and per loop part, and the compile's
+   work by phase (source, loop expansion, preparation, scheduling,
+   allocation, table work).
 
 The model runs the manual's worked timing examples (figures 3-3 to 3-17)
 as tests (docs/TESTING.md, "The timed configuration").

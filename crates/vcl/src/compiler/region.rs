@@ -2,6 +2,7 @@
 //! emission of the chosen result.
 
 use super::*;
+use crate::stats::{self, Phase};
 
 pub(super) fn compile_region(
     program: &Source,
@@ -173,6 +174,8 @@ fn compile_region_candidate(
     let region = &prepared.region;
     let graph = &prepared.graph;
     let analysis = &prepared.analysis;
+    stats::count(stats::Counter::Regions, 1);
+    let phase = stats::enter(Phase::Allocate);
     // External choices are fixed before ordinary local scheduling, rather
     // than being reconsidered by the final lifetime packing score.
     let externally_bound = if options.symbolic {
@@ -182,6 +185,8 @@ fn compile_region_candidate(
     };
     let region = &externally_bound;
 
+    drop(phase);
+    let phase = stats::enter(Phase::Schedule);
     let EmissionFolds {
         mut emission_blocks,
         to_nop,
@@ -205,6 +210,8 @@ fn compile_region_candidate(
     )
     .run()?;
 
+    drop(phase);
+    let phase = stats::enter(Phase::Allocate);
     let mappings = allocate_region(
         program,
         region,
@@ -222,6 +229,8 @@ fn compile_region_candidate(
     // kernel gets no cap and keeps VF00.
     let (mut allocated_region, mut scratched) =
         assign_scratch_destinations(program, region, options, analysis, &schedules, &mappings);
+    drop(phase);
+    let _phase = stats::enter(Phase::Tables);
     nop_folded_branches(&mut allocated_region, &to_nop)?;
     let region = &allocated_region;
     raw_reduction::reduce_tables(
@@ -326,6 +335,7 @@ fn prepare_region(
     unique: &str,
     normal_loops: bool,
 ) -> Result<PreparedRegion, CompileError> {
+    let _phase = stats::enter(Phase::Prepare);
     let (expanded_program, source_pruned) = prune_source_stage(program, region, unique)?;
     // Copies present before loop expansion; only these meet the original's pruning
     // identity check (a zero-delta `iaddiu VI03,VI03,0` that coalescing
@@ -458,8 +468,9 @@ fn expand_and_prune(
     unique: &str,
     normal_loops: bool,
 ) -> Result<(Source, Region, flow::Analysis), CompileError> {
-    let expanded_region =
-        expand_software_loops(&mut expanded_program, source_pruned, unique, normal_loops)?;
+    let expanded_region = stats::in_phase(Phase::Loops, || {
+        expand_software_loops(&mut expanded_program, source_pruned, unique, normal_loops)
+    })?;
     let expanded_region = coalesce_immediates(&mut expanded_program, &expanded_region)?;
     let program = &expanded_program;
     let region = &expanded_region;

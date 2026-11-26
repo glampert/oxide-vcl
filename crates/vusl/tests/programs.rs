@@ -220,9 +220,9 @@ struct Run {
     scene: String,
     hand: u64,
     vusl: u64,
-    /// The stall cycles of each.
-    hand_stalls: u64,
-    vusl_stalls: u64,
+    /// The stall cycles of each, by cause.
+    hand_stalls: bench::Causes,
+    vusl_stalls: bench::Causes,
     /// Where each spent its cycles: loop parts and tables.
     hand_parts: Vec<bench::Part>,
     vusl_parts: Vec<bench::Part>,
@@ -252,8 +252,8 @@ fn runs(case: &Path) -> (String, Built, Built, Vec<Run>) {
             scene: scene.name.clone(),
             hand: a.cycles,
             vusl: b.cycles,
-            hand_stalls: a.profile.iter().map(|&(_, stall)| stall).sum(),
-            vusl_stalls: b.profile.iter().map(|&(_, stall)| stall).sum(),
+            hand_stalls: bench::run_causes(std::slice::from_ref(&a)),
+            vusl_stalls: bench::run_causes(std::slice::from_ref(&b)),
             hand_parts: {
                 let mut parts = Vec::new();
                 bench::add_parts(
@@ -389,12 +389,14 @@ fn bench() {
         for (side, built) in [("vusl", vusl), ("hand", hand)] {
             let row = Row::new(&[side, name, "compile"]).value("pairs", built.instructions as u64);
             rows.push(bench::work(row, &built.stats));
+            rows.extend(bench::phase_rows(&[side, name, "compile"], &built.stats));
         }
         if let (Some(pairs), Some(stats)) = (vusl.library, vusl.library_stats)
             && libraries.is_empty()
         {
             let row = Row::new(&["vusl", "library", "compile"]).value("pairs", pairs as u64);
             libraries.push(bench::work(row, &stats));
+            libraries.extend(bench::phase_rows(&["vusl", "library", "compile"], &stats));
         }
         // Each side's loop parts over all scenes.
         for (side, parts_of) in [
@@ -406,31 +408,21 @@ fn bench() {
         ] {
             let mut parts: Vec<bench::Part> = Vec::new();
             for run in runs {
-                for (part, entries, cycles, stalls) in parts_of(run) {
-                    match parts.iter_mut().find(|(known, ..)| known == part) {
-                        Some(total) => {
-                            total.1 += entries;
-                            total.2 += cycles;
-                            total.3 += stalls;
-                        }
-                        None => parts.push((part.clone(), *entries, *cycles, *stalls)),
-                    }
+                for part in parts_of(run) {
+                    bench::merge(&mut parts, part.clone(), |a, b| a + b);
                 }
             }
-            parts.retain(|(part, ..)| !part.starts_with("table:"));
+            parts.retain(|part| !part.name.starts_with("table:"));
             rows.extend(bench::part_rows(&[side, name], parts));
         }
         for run in runs {
             for (side, cycles, stalls) in [
-                ("vusl", run.vusl, run.vusl_stalls),
-                ("hand", run.hand, run.hand_stalls),
+                ("vusl", run.vusl, &run.vusl_stalls),
+                ("hand", run.hand, &run.hand_stalls),
             ] {
                 let scene = run.scene.replace(' ', "_");
-                rows.push(
-                    Row::new(&[side, name, &scene])
-                        .value("cycles", cycles)
-                        .value("stalls", stalls),
-                );
+                let row = Row::new(&[side, name, &scene]).value("cycles", cycles);
+                rows.push(bench::stalls(row, stalls));
             }
         }
     }
@@ -438,12 +430,15 @@ fn bench() {
     rows.sort_by(|a, b| a.key.cmp(&b.key));
     let heading = "\
 The VUSL ports (vusl) and their hand-written programs (hand), compiled in
-oxide mode: instruction pairs and the compile's work (search nodes,
-wrangler steps and checks, flow analyses and the blocks they walk), then
+oxide mode: instruction pairs and the compile's work (program and region
+compiles, search nodes, wrangler steps and checks, flow analyses and the
+blocks they walk), with a row for each phase that did work (phase:, as in
+work.txt), then
 cycles and stall cycles on each scene, and over all scenes each pipelined
 loop's kernel, prologue, epilogues and exit: entries (a kernel's
 iterations), cycles, stall cycles and cycles per entry in hundredths
-(per100). A port's compile counts every hoist attempt. Written by
+(per100). Stalls are also given by what they waited for (fmac, lq, ilw,
+fdiv, efu, waitq, waitp: the need ready last), when nonzero. A port's compile counts every hoist attempt. Written by
 crates/vusl/tests/programs.rs (bench).";
     bench::compare_or_update(&root().join("tests/bench/scenes.txt"), heading, &rows);
 }
