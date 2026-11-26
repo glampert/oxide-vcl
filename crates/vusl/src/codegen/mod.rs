@@ -3070,17 +3070,34 @@ impl Lowering<'_> {
         })
     }
 
-    /// A sum of two or more products, and any other terms, as one
+    /// A sum of products and at least one other term as one
     /// MULA/MADDA/MSUBA chain: n products and k other terms take n + k
-    /// instructions instead of 2n + k - 1. VU1 rounds each product before
-    /// adding it, so the chain's value is the separate operations' exactly.
-    /// `None` when `expr` is not such a sum.
+    /// instructions instead of 2n + k - 1. With one product it is as many
+    /// instructions, but the last no longer waits for the product, as ACC
+    /// has no data hazards. VU1 rounds each product before adding it, so
+    /// the chain's value is the separate operations' exactly. `None` when
+    /// `expr` is not such a sum.
     fn contract(&mut self, expr: &Expr, dest: Option<Vf>) -> Lowered<Option<Fv>> {
         let mut terms = Vec::new();
         flatten_sum(expr, false, &mut terms);
         let is_product = |term: &Expr| matches!(term.kind, ExprKind::Binary { op: BinOp::Mul, .. });
         let products = terms.iter().filter(|(_, term)| is_product(term)).count();
-        if products < 2 || terms[0].0 {
+        if products == 0 || terms.len() < 2 {
+            return Ok(None);
+        }
+        // One product goes first when it is added, so the chain claims ACC
+        // once the product's operands are ready. With the other term first,
+        // ACC stays claimed across the product's latency, and the wrangler's
+        // searches on large tables run out of steps.
+        if products == 1
+            && let Some(at) = terms
+                .iter()
+                .position(|(negative, term)| !negative && is_product(term))
+        {
+            let product = terms.remove(at);
+            terms.insert(0, product);
+        }
+        if terms[0].0 {
             return Ok(None);
         }
         // Each term as a lane-wise operand and a broadcast or lane-wise

@@ -476,10 +476,13 @@ is not pipelined.
 
 ### Contraction and precision
 
-A sum of two or more products is one ACC chain: `mula`, `madda` and `msuba` for all but the last,
-then `madd` or `msub`. n products and k other terms take n + k instructions instead of 2n + k − 1.
-VU1 rounds each product before adding it, so the chain computes what the separate operations
-would. `precise` is accepted on declarations and changes nothing.
+A sum of products and other terms is one ACC chain: `mula`, `madda` and `msuba` for all but the
+last, then `madd` or `msub`, with a term that is not a product times VF00's w. n products and k
+other terms take n + k instructions instead of 2n + k − 1. For one product that is no fewer
+instructions, but the chain does not wait for the product: ACC has no data hazards, so the `madd`
+issues right after the `mula`. A sum's lanes must match, as for any element-wise operation, and a
+product with Q is still `mulq`. VU1 rounds each product before adding it, so the chain computes what
+the separate operations would. `precise` is accepted on declarations and changes nothing.
 
 Constant expressions fold at compile time in IEEE single precision, which differs from the VU's
 arithmetic at the edges: the VU has no denormals, infinities or NaNs.

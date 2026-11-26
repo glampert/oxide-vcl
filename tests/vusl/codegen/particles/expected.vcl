@@ -60,26 +60,26 @@ lloop_2:
         mul.xyz    ft_25, fc_23, fjudgeScale_11
         clipw.xyz  ft_25, fc_23[w]
         div        q, vf00[w], fc_23[w]
-        mul.w      ft_28, fc_23, ft_10[w]
-        add.w      ft_29, ft_28, vf00[w]
-        mulq.w     fk_27, ft_29, q
-        mulq.xyz   ft_31, fc_23, q
-        add.xyz    fw0_30, ft_20, ft_31
-        mul.xyz    ft_33, fquadOffset_9, fk_27[w]
-        add.xyz    fw1_32, fw0_30, ft_33
+        mula.w     acc, fc_23, ft_10[w]
+        madd.w     ft_28, vf00, vf00[w]
+        mulq.w     fk_27, ft_28, q
+        mulq.xyz   ft_30, fc_23, q
+        add.xyz    fw0_29, ft_20, ft_30
+        mula.xyz   acc, fquadOffset_9, fk_27[w]
+        madd.xyz   fw1_31, fw0_29, vf00[w]
         fcand      vi01, 0x00003f
         iaddiu     iflag_7, vi01, 0x7fff
         sq.x       ft_24, 0(is_5)
-        addq.y     fstore_34, vf00, q
-        sq.y       fstore_34, 0(is_5)
+        addq.y     fstore_32, vf00, q
+        sq.y       fstore_32, 0(is_5)
         isw.z      it_3, 0(is_5)
         sq.xyzw    ft_21, 1(is_5)
         sq.xyzw    ft_22, 3(is_5)
-        ftoi4.xyz  ft_35, fw0_30
-        sq.xyz     ft_35, 2(is_5)
+        ftoi4.xyz  ft_33, fw0_29
+        sq.xyz     ft_33, 2(is_5)
         isw.w      iflag_7, 2(is_5)
-        ftoi4.xyz  ft_36, fw1_32
-        sq.xyz     ft_36, 4(is_5)
+        ftoi4.xyz  ft_34, fw1_31
+        sq.xyz     ft_34, 4(is_5)
         isw.w      iflag_7, 4(is_5)
 lnext_3:
         iaddiu     ip_4, ip_4, 1

@@ -887,6 +887,32 @@ fn multiply_adds_lanes_and_shared_pointers() {
 }
 
 #[test]
+fn one_product_sums_are_chains_with_the_same_values() {
+    let source = "struct V { vec4 a; vec4 b; vec4 c; };\n\
+                  struct O { vec4 sum; vec4 difference; vec4 offset; vec4 lanes; };\n\
+                  void main(layout(address = 0) in V v, layout(address = 3) out O o)\n\
+                  {\n\
+                  \x20   o.sum = v.c + v.a * v.b;\n\
+                  \x20   o.difference = v.c - v.a * v.b.x;\n\
+                  \x20   o.offset = v.a * v.b.y - v.c;\n\
+                  \x20   o.lanes.xy = v.c.zw + v.a.zw * v.b.z;\n\
+                  \x20   o.lanes.z = v.a.x * v.b.w + v.c.y;\n\
+                  \x20   o.lanes.w = v.c.x - v.a.y * v.b.y + v.c.w;\n\
+                  }\n";
+    let compiled = compile(source);
+    // Four chains: the lanes of one qword, and scalars in different lanes,
+    // are not one.
+    assert_eq!(compiled.vcl.matches("mula").count(), 4, "{}", compiled.vcl);
+    assert_eq!(
+        compiled.vcl.matches("msub.xyzw").count(),
+        2,
+        "{}",
+        compiled.vcl
+    );
+    agree_compiled(compiled, 8, |_, _, _| {});
+}
+
+#[test]
 fn loops_keep_fewer_invariants_when_registers_run_out() {
     // 24 uniform qwords read in a loop that keeps 24 products live: with
     // every invariant in a register the VF registers do not suffice.

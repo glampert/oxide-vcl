@@ -1,0 +1,14 @@
+// One product and other terms are also one ACC chain: MULA, then MADD or
+// MSUB, with a term that is not a product times VF00's w. An added product
+// goes first, so the chain starts when its operands are ready; a subtracted
+// one goes last.
+struct In { vec4 a; vec4 b; vec4 c; };
+struct Out { vec4 sum; vec4 difference; vec4 offset; };
+
+void main(layout(address = 0) in In data,
+          layout(address = 3) out Out result)
+{
+    result.sum = data.c + data.a * data.b;
+    result.difference = data.c - data.a * data.b.x;
+    result.offset = data.a * data.b.y - data.c;
+}

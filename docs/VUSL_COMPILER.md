@@ -168,8 +168,11 @@ and XTOP read once into a register. Generated names are `f` or `i`, the source n
   `fsand` (`float_branch`). A `bool` as a value is a VI register (`bool_value`).
 - **Matrix products** are `mula`/`madda`/`madd` chains on the vector's components as broadcast
   operands. A component that is the constant 1 is VF00's w, and a 0 drops its term.
-- **Contraction** (`contract`). A sum of two or more products is one ACC chain, with `msuba` and
-  `msub` for the negative terms.
+- **Contraction** (`contract`). A sum with a product and at least one other term is one ACC chain,
+  with `msuba` and `msub` for the negative terms and a term that is not a product times `vf00[w]`.
+  A sum's only product goes first when it is added, so the chain claims ACC once the product's
+  operands are ready: with the other term first, ACC stays claimed across the product's latency,
+  and the wrangler's searches on large tables run out of steps.
 - **Q** (`q_holds`). After a `div`, `sqrt` or `rsqrt`, readers take Q directly (`mulq`, `addq`, and
   `addq`/`mulq` into a lane) until the next FDIV operation or label. Lowering still copies Q into a
   register after each one; the peephole drops the copy when nothing reads it.
@@ -370,6 +373,7 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `random` | `rinit`, `rnext` and `rget` written into the lanes of the qword they fill, and `rxor` reusing the seed's load |
 | `shared-pointers` | Two arrays stepped by one pointer |
 | `multiply-add` | A sum of products as one ACC chain |
+| `multiply-add-one` | One product and another term as one ACC chain, the added product first |
 | `qword-assembly` | Lane stores built in one register and stored once |
 | `load-reuse` | One `lq` for every lane of a qword, again after a store, and raw bits copied |
 | `ref-cursor` | A ref as an output cursor, and the count written |

@@ -8,13 +8,13 @@
 --endenter
         lq.xyzw    ft_1, 2(vi00)
         div        q, vf00[w], ft_1[w]
-        lq.xyzw    ft_3, 1(vi00)
-        mulq.xyz   ft_4, ft_1, q
-        lq.xyzw    ft_5, 0(vi00)
-        mul.xyz    ft_6, ft_4, ft_5
-        add.xyz    fscreen_2, ft_3, ft_6
-        ftoi4.xyz  ft_7, fscreen_2
-        sq.xyz     ft_7, 3(vi00)
+        mulq.xyz   ft_3, ft_1, q
+        lq.xyzw    ft_4, 0(vi00)
+        lq.xyzw    ft_5, 1(vi00)
+        mula.xyz   acc, ft_3, ft_4
+        madd.xyz   fscreen_2, ft_5, vf00[w]
+        ftoi4.xyz  ft_6, fscreen_2
+        sq.xyz     ft_6, 3(vi00)
 lexit_1:
 --exit
 --endexit

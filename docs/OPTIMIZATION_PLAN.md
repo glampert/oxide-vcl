@@ -7,7 +7,8 @@ original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
 Three optimizations exist: `exit` (part of O9), `loops` (O1 without
-O10's budget option) and `unswitch` (O11). The measuring and checking
+O10's budget option) and `unswitch` (O11); oxide-vusl also contracts
+single products (O12). The measuring and checking
 tools of section 5 exist; section 6 gives the order of the rest.
 
 The ground rules:
@@ -584,28 +585,30 @@ usual path (quake2's window flush).
 
 ### O12. Contract one product and a sum into an ACC chain (VUSL)
 
-*Evidence:* oxide-vusl's `contract` (`crates/vusl/src/codegen/mod.rs`)
-turns a sum of two or more products into one `mula`/`madda`/`madd`
-chain, but `a * b + c` stays `mul` then `add`. Both forms take two
-instructions. The `add` waits for the `mul`'s result (four cycles of FMAC
-latency), whereas ACC has no data hazards (VU User's Manual, §3.4.1), so
-`mula acc, c, vf00[w]` followed by `madd d, a, b` issues back to back. The
-product is rounded before the add in both forms, and `c` times 1.0 is `c`,
-so the result is the same bit for bit.
+*Evidence:* `a * b + c` was `mul` then `add`. Both forms take two
+instructions, but the `add` waits for the `mul`'s result (four cycles of
+FMAC latency), whereas ACC has no data hazards (VU User's Manual, §3.4.1),
+so `mula acc, a, b` followed by `madd d, c, vf00[w]` issues back to back.
+The product is rounded before the add in both forms, and `c` times 1.0 is
+`c`, so the result is the same bit for bit.
 
-*Change:* accept one product when the sum has at least one other term
-(`products < 2` becomes `products == 0 || terms.len() < 2`), with the same
-lowering for negative terms (`msub`).
+*In oxide-vusl* (`contract`, `crates/vusl/src/codegen/mod.rs`): a sum
+with one product and at least one other term is a chain too, with `msub`
+for a negative last term. An added product goes first, so the chain
+claims ACC only once the product's operands are ready. With the other
+term first (`mula acc, c, vf00[w]`, then `madd d, a, b`), ACC stays
+claimed across the product's latency. That made the wrangler's B
+strategies run out of steps on one of textured_triangles' large tables:
+its compile took six times as long, for the same cycles. A subtracted
+product (`c - a * b`) keeps `c` first and ends with `msub`.
 
-*Risk:* the one ACC register. Two chains cannot overlap, and in a
-pipelined kernel the scheduler can't interleave a chain with other ACC
-users the way it can two independent `mul`/`add` pairs. That can lengthen
-the kernel's period.
-
-*Measure before keeping it:* the scenes (`crates/vusl/tests/programs.rs`),
-the VUSL benchmarks and the semantics tests. Keep the change only where it
-saves cycles. If kernels get slower, apply it only outside pipelined
-loops, or only where the `add` would stall.
+*Measured* (`tests/bench/scenes.txt`): every scene is as fast or faster,
+−0.4% in all (model −3.0%, the world_lm floor −0.5%). Loop prologues and
+epilogues lose about 40% of their stall cycles, and the clipper's
+`ClipTriangle` loop now pipelines. Kernel periods are unchanged, so the
+shared ACC costs the pipelined loops nothing; world_strips' loop has a
+shorter prologue and runs its kernel a few more times. The ports'
+instructions go from 2,700 to 2,681 pairs.
 
 ## 4. Not in this plan
 
@@ -697,7 +700,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
 | 7 | O5 (delay slots, superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
-| 8 | O12 (single-product ACC chains in VUSL) | Small | No stall after each `a * b + c`'s multiply, if pipelined kernels don't lose more to the shared ACC |
+| 8 | O12 (single-product ACC chains in VUSL): done | Small | The VUSL scenes −0.4%, no scene slower; prologue and epilogue stalls about −40% |
 
 Why this order:
 

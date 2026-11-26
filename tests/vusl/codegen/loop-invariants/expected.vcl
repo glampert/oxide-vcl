@@ -18,9 +18,9 @@
 lloop_2:
         lq.xyzw    ft_3, 0(iitem_2)
         mul.xyzw   ft_4, ft_3, ft_0
-        mul.xyzw   ft_5, ft_4, ft_1[x]
-        add.xyzw   ft_6, ft_5, ft_2
-        sq.xyzw    ft_6, 0(iitem_2)
+        mula.xyzw  acc, ft_4, ft_1[x]
+        madd.xyzw  ft_5, ft_2, vf00[w]
+        sq.xyzw    ft_5, 0(iitem_2)
 lnext_3:
         iaddiu     iitem_2, iitem_2, 1
         ibne       iitem_2, iend_3, lloop_2
