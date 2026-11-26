@@ -6,9 +6,11 @@
 //! that alters them changed what the searches do, not only how fast they
 //! run (`docs/TESTING.md`, "Benchmarks").
 //!
-//! A compile runs on one thread, so the counters are the thread's: `measure`
-//! zeroes them at the outermost compile and returns what it counted, and
-//! [`enter`] sets the phase later work counts to.
+//! The counters are the thread's: `measure` zeroes them at the outermost
+//! compile and returns what it counted, and [`enter`] sets the phase later
+//! work counts to. The searches a compile runs on other threads
+//! (`crate::parallel`) measure their own work, and the compile's thread
+//! [`absorb`]s what the sequential search would have done.
 
 use std::cell::Cell;
 
@@ -145,18 +147,28 @@ pub(crate) enum Counter {
 
 const COUNTERS: usize = 7;
 
+/// A thread's counters: one thread-local, so that a count, which the
+/// wrangler makes for every position check, looks up one.
+struct Counters {
+    counts: [[Cell<u64>; COUNTERS]; Phase::COUNT],
+    phase: Cell<Phase>,
+    depth: Cell<usize>,
+}
+
 thread_local! {
-    static COUNTS: [[Cell<u64>; COUNTERS]; Phase::COUNT] =
-        const { [const { [const { Cell::new(0) }; COUNTERS] }; Phase::COUNT] };
-    static PHASE: Cell<Phase> = const { Cell::new(Phase::Source) };
-    static DEPTH: Cell<usize> = const { Cell::new(0) };
+    static COUNTERS_OF_THREAD: Counters = const {
+        Counters {
+            counts: [const { [const { Cell::new(0) }; COUNTERS] }; Phase::COUNT],
+            phase: Cell::new(Phase::Source),
+            depth: Cell::new(0),
+        }
+    };
 }
 
 /// Adds `amount` to `counter`, in the current phase.
 pub(crate) fn count(counter: Counter, amount: u64) {
-    let phase = PHASE.with(Cell::get);
-    COUNTS.with(|counts| {
-        let cell = &counts[phase as usize][counter as usize];
+    COUNTERS_OF_THREAD.with(|counters| {
+        let cell = &counters.counts[counters.phase.get() as usize][counter as usize];
         cell.set(cell.get() + amount);
     });
 }
@@ -165,7 +177,7 @@ pub(crate) fn count(counter: Counter, amount: u64) {
 /// before.
 pub(crate) fn enter(phase: Phase) -> PhaseGuard {
     PhaseGuard {
-        before: PHASE.with(|current| current.replace(phase)),
+        before: COUNTERS_OF_THREAD.with(|counters| counters.phase.replace(phase)),
     }
 }
 
@@ -182,26 +194,53 @@ pub(crate) struct PhaseGuard {
 
 impl Drop for PhaseGuard {
     fn drop(&mut self) {
-        PHASE.with(|current| current.set(self.before));
+        COUNTERS_OF_THREAD.with(|counters| counters.phase.set(self.before));
     }
+}
+
+/// The phase work is counted to now.
+pub(crate) fn current_phase() -> Phase {
+    COUNTERS_OF_THREAD.with(|counters| counters.phase.get())
+}
+
+/// Adds `stats`, the work another thread counted, to this thread's counts.
+pub(crate) fn absorb(stats: &Stats) {
+    COUNTERS_OF_THREAD.with(|counters| {
+        let add = |phase: usize, counter: Counter, amount: u64| {
+            let cell = &counters.counts[phase][counter as usize];
+            cell.set(cell.get() + amount);
+        };
+        for (phase, work) in stats.phases.iter().enumerate() {
+            add(phase, Counter::SearchNodes, work.search_nodes);
+            add(phase, Counter::WrangleSteps, work.wrangle_steps);
+            add(phase, Counter::WrangleChecks, work.wrangle_checks);
+            add(phase, Counter::FlowAnalyses, work.flow_analyses);
+            add(phase, Counter::FlowWalks, work.flow_walks);
+        }
+        add(Phase::Source as usize, Counter::Programs, stats.programs);
+        add(Phase::Source as usize, Counter::Regions, stats.regions);
+    });
 }
 
 /// Runs `work`, and what it counted when this is the outermost measure:
 /// what every compile in it did, when a caller measures several.
 pub fn measure<T>(work: impl FnOnce() -> T) -> (T, Stats) {
-    let outermost = DEPTH.with(|depth| {
-        depth.set(depth.get() + 1);
-        depth.get() == 1
+    COUNTERS_OF_THREAD.with(|counters| {
+        counters.depth.set(counters.depth.get() + 1);
+        if counters.depth.get() == 1 {
+            counters
+                .counts
+                .iter()
+                .flatten()
+                .for_each(|cell| cell.set(0));
+            counters.phase.set(Phase::Source);
+        }
     });
-    if outermost {
-        COUNTS.with(|counts| counts.iter().flatten().for_each(|cell| cell.set(0)));
-        PHASE.with(|phase| phase.set(Phase::Source));
-    }
     let result = work();
-    DEPTH.with(|depth| depth.set(depth.get() - 1));
     let mut stats = Stats::default();
-    COUNTS.with(|counts| {
-        for (phase, counts) in stats.phases.iter_mut().zip(counts) {
+    COUNTERS_OF_THREAD.with(|counters| {
+        counters.depth.set(counters.depth.get() - 1);
+        for (phase, counts) in stats.phases.iter_mut().zip(&counters.counts) {
             let get = |counter: Counter| counts[counter as usize].get();
             *phase = Work {
                 search_nodes: get(Counter::SearchNodes),

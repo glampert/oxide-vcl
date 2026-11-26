@@ -47,6 +47,8 @@ when the setter drags recurse, so the step budget alone does not bound the
 time on a large body. A strategy over its share fails like one out of steps.
 Once the search has spent its share, it ends with what the current period has
 found. See [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md#o1-pipeline-unannotated-loops).
+A period's strategies run on several threads, with the same result and work
+counts as one after another ([SCHEDULING.md](SCHEDULING.md#parallel-searches)).
 
 Observations from the original's runs (tools under `local/tools`, evidence
 under `local/evidence/lpgen/watchdog` and `local/evidence/native`, local, not

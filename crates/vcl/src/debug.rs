@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 
 /// Every switch: `true` when its variable is set (to anything), or the
 /// number it is set to.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Switches {
     /// `VCL_ALIAS_TRACE`: memory-order decisions between a store and earlier accesses.
     pub alias_trace: bool,
@@ -68,6 +68,14 @@ pub struct Switches {
 }
 
 /// The switches, read from the environment on first use.
+impl Switches {
+    /// Whether any switch is set: work that could run on several threads
+    /// then runs on one, so that traces come out in order.
+    pub fn any(&self) -> bool {
+        *self != Switches::default()
+    }
+}
+
 pub fn switches() -> &'static Switches {
     static SWITCHES: OnceLock<Switches> = OnceLock::new();
     SWITCHES.get_or_init(read)

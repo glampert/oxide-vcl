@@ -74,10 +74,10 @@ vusl particles compile phase:tables             nodes=0 steps=0 checks=4208 anal
 vusl particles epilogue:lloop_2                 entries=1 cycles=21 stalls=4 fmac=4 per100=2100
 vusl particles kernel:lloop_2                   entries=58 cycles=928 stalls=0 per100=1600
 vusl particles prologue:lloop_2                 entries=1 cycles=32 stalls=6 fmac=3 lq=3 per100=3200
-vusl textured_triangles compile                 pairs=1144 programs=15 regions=174 nodes=188782 steps=591472 checks=6692415 analyses=396 walks=93159
-vusl textured_triangles compile phase:loops     nodes=0 steps=321759 checks=4165161 analyses=99 walks=20013
-vusl textured_triangles compile phase:prepare   nodes=0 steps=0 checks=0 analyses=297 walks=73146
-vusl textured_triangles compile phase:schedule  nodes=188782 steps=269713 checks=2121972 analyses=0 walks=0
+vusl textured_triangles compile                 pairs=1144 programs=15 regions=126 nodes=132132 steps=526744 checks=6166092 analyses=318 walks=74361
+vusl textured_triangles compile phase:loops     nodes=0 steps=321759 checks=4165161 analyses=87 walks=17121
+vusl textured_triangles compile phase:prepare   nodes=0 steps=0 checks=0 analyses=231 walks=57240
+vusl textured_triangles compile phase:schedule  nodes=132132 steps=204985 checks=1595649 analyses=0 walks=0
 vusl textured_triangles compile phase:tables    nodes=0 steps=0 checks=405282 analyses=0 walks=0
 vusl textured_triangles epilogue:lloop_96__u0   entries=2 cycles=14 stalls=4 fmac=4 per100=700
 vusl textured_triangles kernel:lloop_96__u0     entries=3 cycles=90 stalls=0 per100=3000

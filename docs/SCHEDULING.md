@@ -447,6 +447,34 @@ keep the earlier strategy. It can stop once the result reaches the stream's
 computed lower bound. With no successful candidate it reports failure rather
 than emitting input order.
 
+### Parallel searches
+
+The port runs independent strategy searches on several threads
+(`crates/vcl/src/parallel.rs`). Each strategy's search reads only the
+problem, so the results are folded in strategy order on the calling thread,
+and the fold sees exactly what a run of one strategy after another gives:
+
+- **Loop optimization.** A period's strategies all run at once. With the
+  `loops` optimization's work budget, a strategy's check limit depends on
+  what the strategies before it spent; each runs with the per-strategy
+  limit and records its check count at every test of the limit, and the
+  limit it would have had is applied afterwards. A search with a lower limit
+  is the same search up to the first test it fails, so the fold takes "out
+  of budget" there.
+- **Linear optimization.** The first strategy runs alone, since it usually
+  reaches the lower bound. Otherwise the rest run at once, and the strategies
+  after the one the fold stops at are cancelled. Dumb does not start once a
+  table is kept.
+- **Retries after an allocation failure.** Every strategy is tried, so they
+  all run at once; the shortest is kept, the first of equals in strategy
+  order.
+
+Each search's work counts ([TESTING.md](TESTING.md#benchmarks)) are kept
+apart and added only for the searches the sequential order runs, up to the
+test where a lower check limit would have stopped one, so they are the same
+as a sequential run's. With a `VCL_*` debug switch set, everything runs on
+one thread, and traces come out in the order the search makes them.
+
 The stream merger merges adjacent optimized streams only when their
 control-flow edges, allocation modes, entry/exit classes and explicit nonmerge
 flags permit it. It requires a unique edge and no separating branch. The

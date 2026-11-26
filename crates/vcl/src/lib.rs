@@ -30,6 +30,7 @@ pub mod emit;
 pub mod isa;
 pub mod loops;
 mod options;
+mod parallel;
 pub mod parser;
 pub mod preprocessor;
 pub mod scheduler;

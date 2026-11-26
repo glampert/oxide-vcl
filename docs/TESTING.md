@@ -448,8 +448,9 @@ did them:
 | `allocate` | Register assignment and allocation |
 | `tables` | The table work after allocation (raw reduction, merged streams wrangled again, scratch choices) and emission |
  These depend
-only on the program and the options, so they measure a compile-time change
-exactly where time, on a shared machine, does not; a change that alters
+only on the program and the options, not on how many threads the searches
+ran on ([SCHEDULING.md](SCHEDULING.md#parallel-searches)), so they measure a
+compile-time change exactly where time, on a shared machine, does not; a change that alters
 them changed what the searches do, not just how fast they run. The cycles
 are the timed model's, so they are as good as the model is.
 

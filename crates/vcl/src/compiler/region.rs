@@ -19,6 +19,24 @@ pub(super) fn compile_region(
             // longer fits in VU1 micro memory or its registers no longer
             // allocate. Other errors are the program's, and are reported.
             let initial = output.clone();
+            if !pipelines(options, region) {
+                // Derived hints go only on ordinary self loops, which a
+                // round without pipelining leaves as they are: the hinted
+                // region's unpipelined round is the region's own, so the
+                // region's round is the fallback for any failure.
+                check_raw_loop_hints(options, region)?;
+                match compile_region_round(program, &hinted, unique, options, true, output) {
+                    Ok(()) if output.instruction_pairs <= program_size::MICRO_MEMORY => {
+                        return Ok(());
+                    }
+                    Ok(()) => {}
+                    Err(failure) => {
+                        crate::trace_if!(lpgen_trace, "derived loop hints failed: {failure:?}");
+                    }
+                }
+                *output = initial;
+                return compile_region_round(program, region, unique, options, false, output);
+            }
             match compile_hinted_region(program, &hinted, unique, options, output) {
                 Ok(()) if output.instruction_pairs <= program_size::MICRO_MEMORY => {
                     return Ok(());
@@ -38,14 +56,21 @@ pub(super) fn compile_region(
     compile_hinted_region(program, region, unique, options, output)
 }
 
-/// [`compile_region`] with the region's loop hints as they are.
-fn compile_hinted_region(
-    program: &Source,
-    region: &Region,
-    unique: &str,
-    options: &Options,
-    output: &mut Compiled,
-) -> Result<(), CompileError> {
+/// Whether a round of `region` as its hints stand pipelines a loop: a
+/// block of source instructions has a minimum count.
+fn pipelines(options: &Options, region: &Region) -> bool {
+    !options.disable_loops
+        && region.blocks.iter().any(|block| {
+            block.loop_hints.minimum.is_some()
+                && block
+                    .operations
+                    .iter()
+                    .all(|&id| region.instructions[id].instruction.mode == ParseMode::Vcl)
+        })
+}
+
+/// Rejects a raw self loop with a minimum count but no stages.
+fn check_raw_loop_hints(options: &Options, region: &Region) -> Result<(), CompileError> {
     if !options.disable_loops && region.blocks.iter().any(|block| {
         block.loop_hints.minimum.is_some()
             && matches!(&block.end, End::Branch { target: Some(target), conditional: true, call: false, .. }
@@ -58,14 +83,19 @@ fn compile_hinted_region(
         // This is an original rejection, not an optimization fallback.
         return Err(internal(0, "normal loop optimization requires an unscheduled source table"));
     }
-    let normal = !options.disable_loops
-        && region.blocks.iter().any(|block| {
-            block.loop_hints.minimum.is_some()
-                && block
-                    .operations
-                    .iter()
-                    .all(|&id| region.instructions[id].instruction.mode == ParseMode::Vcl)
-        });
+    Ok(())
+}
+
+/// [`compile_region`] with the region's loop hints as they are.
+fn compile_hinted_region(
+    program: &Source,
+    region: &Region,
+    unique: &str,
+    options: &Options,
+    output: &mut Compiled,
+) -> Result<(), CompileError> {
+    check_raw_loop_hints(options, region)?;
+    let normal = pipelines(options, region);
     let initial = output.clone();
     match compile_region_round(program, region, unique, options, normal, output) {
         Ok(()) => Ok(()),
@@ -112,15 +142,17 @@ pub(super) fn compile_region_round(
     };
     // Allocation is part of candidate acceptance in the original optimizer.
     // Rejecting its first shortest schedule must not reject a
-    // source that fits under another recovered scheduling priority.
-    let mut best: Option<Compiled> = None;
-    for strategy in schedule::Strategy::ALL
+    // source that fits under another recovered scheduling priority. Every
+    // strategy is tried, so they run at once; the shortest is kept, the
+    // first of equals in strategy order.
+    let strategies: Vec<_> = schedule::Strategy::ALL
         .into_iter()
         .rev()
         .filter(|s| s.allows_linear())
-    {
+        .collect();
+    let candidates = crate::parallel::map(&strategies, |&strategy| {
         let mut candidate = initial.clone();
-        if compile_region_candidate(
+        compile_region_candidate(
             &prepared,
             unique,
             options,
@@ -129,10 +161,14 @@ pub(super) fn compile_region_round(
             },
             &mut candidate,
         )
-        .is_ok()
-            && best
-                .as_ref()
-                .is_none_or(|previous| candidate.instruction_pairs < previous.instruction_pairs)
+        .ok()
+        .map(|()| candidate)
+    });
+    let mut best: Option<Compiled> = None;
+    for candidate in candidates.into_iter().flatten() {
+        if best
+            .as_ref()
+            .is_none_or(|previous| candidate.instruction_pairs < previous.instruction_pairs)
         {
             best = Some(candidate);
         }

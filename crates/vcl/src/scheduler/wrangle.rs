@@ -646,6 +646,33 @@ pub struct Work {
     pub ranked: usize,
 }
 
+/// The users of a lock that [`Table::calc_stats`] counts: the earliest
+/// line less latency, the latest line, and how many.
+#[derive(Clone, Copy, Debug)]
+struct UserWindow {
+    first_adjusted: i32,
+    last: i32,
+    count: i32,
+}
+
+impl Default for UserWindow {
+    fn default() -> Self {
+        UserWindow {
+            first_adjusted: IMPOSSIBLE,
+            last: -IMPOSSIBLE,
+            count: 0,
+        }
+    }
+}
+
+impl UserWindow {
+    fn add(&mut self, user: &Lock) {
+        self.last = self.last.max(user.line);
+        self.first_adjusted = self.first_adjusted.min(user.line - i32::from(user.latency));
+        self.count += 1;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Table<'a> {
     /// Copied on the first synthesized loop move.
@@ -665,9 +692,16 @@ pub struct Table<'a> {
     cursor: i32,
     end: i32,
     first_failure: Option<usize>,
-    /// Reader component statistics per register part.
-    reader_min: Vec<[i32; 4]>,
+    /// The latest ASAP of a reader of each register part since its last
+    /// writer, in [`Table::dynamic_stats`]'s source-order pass; -1 for none.
     reader_max: Vec<[i32; 4]>,
+    /// The registers whose `reader_max` the last pass set, to reset.
+    readers_set: Vec<usize>,
+    /// Scratch copies of the instruction lists, kept to reuse their memory.
+    scratch: Vec<usize>,
+    /// The producers [`Table::can_move_locks`] recalculated, with their
+    /// users' window to restore, kept likewise.
+    recalculated: Vec<(usize, UserWindow)>,
     /// Effective table end during extent reduction.
     end_limit: i32,
     /// Table start.
@@ -692,6 +726,12 @@ pub struct Table<'a> {
     /// Position checks after which the search gives up as out of budget
     /// (the `loops` optimization's work budget; unlimited otherwise).
     check_limit: usize,
+    /// The checks made at each test against `check_limit`, when recorded:
+    /// from them, the run with a lower limit is known (see
+    /// [`optimize_loop`]).
+    budget_points: Option<Vec<usize>>,
+    /// Set when a parallel search no longer needs this table's result.
+    stop: crate::parallel::Stop,
     /// To-do length when the search started.
     pub todo_at_start: usize,
     /// Side-effect line floors without a placed branch.
@@ -851,8 +891,10 @@ impl<'a> Table<'a> {
             cursor: 0,
             end: -1,
             first_failure: None,
-            reader_min: vec![[-1; 4]; problem.registers.len()],
             reader_max: vec![[-1; 4]; problem.registers.len()],
+            readers_set: Vec::new(),
+            scratch: Vec::new(),
+            recalculated: Vec::new(),
             end_limit: -1,
             start: 0,
             undo_log: Vec::new(),
@@ -865,6 +907,8 @@ impl<'a> Table<'a> {
             failed_trace: Vec::new(),
             work: Work::default(),
             check_limit: usize::MAX,
+            budget_points: None,
+            stop: crate::parallel::Stop::default(),
             todo_at_start: 0,
             effect_floors: [0, 0],
             reserved: None,
@@ -1178,23 +1222,36 @@ impl<'a> Table<'a> {
 
     /// Lock statistics for a linear table.
     fn calc_stats(&mut self, lock: usize, ignore: Option<usize>) {
-        let mut first_adjusted = IMPOSSIBLE;
-        let mut first = IMPOSSIBLE;
-        let mut last = -IMPOSSIBLE;
-        let mut count: i32 = 0;
+        let (window, _) = self.user_windows(lock, ignore);
+        self.apply_window(lock, window);
+    }
+
+    /// The window of `lock`'s users that are not of instruction `ignore`,
+    /// and the window of all of them, in one pass: what [`Table::calc_stats`]
+    /// computes from, with and without `ignore`.
+    fn user_windows(&self, lock: usize, ignore: Option<usize>) -> (UserWindow, UserWindow) {
+        let mut kept = UserWindow::default();
+        let mut all = UserWindow::default();
         for &user in &self.locks[lock].users {
             let u = &self.locks[user];
-            if ignore.is_some() && u.instruction() == ignore {
-                continue;
-            }
             if u.mode == 2 {
                 continue;
             }
-            last = last.max(u.line);
-            first = first.min(u.line);
-            first_adjusted = first_adjusted.min(u.line - i32::from(u.latency));
-            count += 1;
+            all.add(u);
+            if ignore.is_none() || u.instruction() != ignore {
+                kept.add(u);
+            }
         }
+        (kept, all)
+    }
+
+    /// Sets `lock`'s write, ready, use and end times from its users' window.
+    fn apply_window(&mut self, lock: usize, window: UserWindow) {
+        let UserWindow {
+            first_adjusted,
+            last,
+            mut count,
+        } = window;
         let constant = self.lists[self.locks[lock].list].constant;
         let period = self.period;
         // A constant list in a loop has no user window.
@@ -1235,7 +1292,6 @@ impl<'a> Table<'a> {
         }
         l.first_use = first_use;
         l.last_use = last_use;
-        let _ = first;
         let delta = l.folded - l.line;
         l.write_f = l.write + delta;
         let adjusted_end = {
@@ -1956,30 +2012,29 @@ impl<'a> Table<'a> {
     /// Dynamic statistics, linear.
     fn dynamic_stats(&mut self) {
         self.max_asap = -1;
-        for index in self
-            .done
-            .iter()
-            .chain(&self.todo)
-            .copied()
-            .collect::<Vec<_>>()
-        {
+        for &index in self.done.iter().chain(&self.todo) {
             let s = &mut self.slots[index];
             s.min_latest = IMPOSSIBLE;
             s.asap = -1;
             s.latest = 0;
             s.max_asap = 0;
         }
-        for register in 0..self.reader_min.len() {
-            self.reader_min[register] = [-1; 4];
+        // Only the registers the last pass set can be other than -1.
+        for &register in &self.readers_set {
             self.reader_max[register] = [-1; 4];
         }
+        self.readers_set.clear();
         for &index in &self.done {
             let line = self.slots[index].line;
             self.slots[index].latest = line;
             self.slots[index].asap = line;
             self.max_asap = self.max_asap.max(line);
         }
-        let todo = self.todo.clone();
+        // Nothing here changes the lists: the pass reads `todo` from a
+        // scratch copy, so that it may update the slots.
+        let mut todo = std::mem::take(&mut self.scratch);
+        todo.clear();
+        todo.extend_from_slice(&self.todo);
         for &index in &todo {
             let mut asap = 0;
             let insn = &self.problem.instructions[index];
@@ -2046,15 +2101,11 @@ impl<'a> Table<'a> {
                     if self.slots[index].locks[o][part].is_some_and(|l| self.locks[l].mode == 2) {
                         continue;
                     }
-                    let (min, max) = (
-                        &mut self.reader_min[operand.register][part],
-                        &mut self.reader_max[operand.register][part],
-                    );
-                    if *min == -1 {
-                        *min = asap;
+                    let max = &mut self.reader_max[operand.register][part];
+                    if *max == -1 {
                         *max = asap;
+                        self.readers_set.push(operand.register);
                     } else {
-                        *min = (*min).min(asap);
                         *max = (*max).max(asap);
                     }
                 }
@@ -2065,7 +2116,6 @@ impl<'a> Table<'a> {
                 }
                 for part in 0..4 {
                     if operand.mask & (1 << part) != 0 {
-                        self.reader_min[operand.register][part] = -1;
                         self.reader_max[operand.register][part] = -1;
                     }
                 }
@@ -2109,6 +2159,7 @@ impl<'a> Table<'a> {
             s.depth = s.asap;
             s.height = self.max_asap - s.latest;
         }
+        self.scratch = todo;
     }
 
     fn done_size(&self) -> i32 {
@@ -2730,7 +2781,6 @@ impl<'a> Table<'a> {
             problem.names.push(name);
         }
         self.list_of.push([None; 4]);
-        self.reader_min.push([-1; 4]);
         self.reader_max.push([-1; 4]);
         for part in 0..parts {
             let list = self.lists.len();
@@ -2986,7 +3036,10 @@ impl<'a> Table<'a> {
             steps += 1;
             crate::stats::count(crate::stats::Counter::WrangleSteps, 1);
             self.work.steps = steps;
-            if steps > budget || self.work.checks > self.check_limit {
+            if let Some(points) = &mut self.budget_points {
+                points.push(self.work.checks);
+            }
+            if steps > budget || self.work.checks > self.check_limit || self.stop.requested() {
                 self.failed_trace = trace;
                 return Err(Failure::Budget);
             }
@@ -3087,6 +3140,9 @@ impl<'a> Table<'a> {
                 *steps += 1;
                 crate::stats::count(crate::stats::Counter::WrangleSteps, 1);
                 self.work.steps = *steps;
+                if let Some(points) = &mut self.budget_points {
+                    points.push(self.work.checks);
+                }
                 if *steps > budget || self.work.checks > self.check_limit {
                     self.failed_trace = std::mem::take(trace);
                     return Err(Failure::Budget);
@@ -3264,7 +3320,12 @@ impl<'a> Table<'a> {
     /// Lock checks for moving a placed instruction, linear.
     fn can_move_locks(&mut self, index: usize, line: i32) -> u32 {
         let operands = self.insn(index).operands.len();
-        let mut recalculated = Vec::new();
+        // The producers' stats without `index`'s reads for the checks, then
+        // with them again. The checks only read, so the stats with them are
+        // what they were before, computed in the same pass. A reused buffer:
+        // this runs for every move a drag tries.
+        let mut recalculated = std::mem::take(&mut self.recalculated);
+        recalculated.clear();
         for o in 0..operands {
             if self.problem.instructions[index].operands[o].direction != Direction::Read {
                 continue;
@@ -3273,8 +3334,9 @@ impl<'a> Table<'a> {
                 if let Some(input) = self.slots[index].locks[o][part]
                     && let Some(producer) = self.locks[input].parent
                 {
-                    self.calc_stats(producer, Some(index));
-                    recalculated.push(producer);
+                    let (without, with) = self.user_windows(producer, Some(index));
+                    self.apply_window(producer, without);
+                    recalculated.push((producer, with));
                 }
             }
         }
@@ -3294,9 +3356,10 @@ impl<'a> Table<'a> {
                 }
             }
         }
-        for &producer in recalculated.iter().rev() {
-            self.calc_stats(producer, None);
+        for &(producer, with) in recalculated.iter().rev() {
+            self.apply_window(producer, with);
         }
+        self.recalculated = recalculated;
         result
     }
 
@@ -3563,14 +3626,14 @@ impl<'a> Table<'a> {
     /// Try `line` in each allowed pipe; lower first unless
     /// `upper_first`.
     fn try_move(&mut self, index: usize, line: i32, upper_first: bool) -> Option<Position> {
-        let order: Vec<u8> = if self.insn(index).pipes == 3 {
-            if upper_first { vec![0, 1] } else { vec![1, 0] }
+        let (order, count) = if self.insn(index).pipes == 3 {
+            (if upper_first { [0, 1] } else { [1, 0] }, 2)
         } else {
-            vec![self.slots[index].pipe]
+            ([self.slots[index].pipe, 0], 1)
         };
-        order
-            .into_iter()
-            .map(|pipe| Position { line, pipe })
+        order[..count]
+            .iter()
+            .map(|&pipe| Position { line, pipe })
             .find(|&position| self.can_move(index, position) == 0)
     }
 
@@ -5400,6 +5463,18 @@ pub struct WorkBudget {
 /// smallest maximum iteration ID, a later tie replacing an earlier one. The
 /// original's per-strategy watchdog is `budget.steps` wrangler steps.
 ///
+/// A period's strategies are independent searches, so they run on several
+/// threads and their tables are kept in strategy order, as if they had run
+/// one after another. With a work budget, each strategy's limit depends on
+/// what the ones before it spent: each runs with the per-strategy limit and
+/// records its checks at every test of it, and the limit it would have had
+/// is applied afterwards. A search with a lower limit is the same search up
+/// to the first test it fails, so the result is the sequential one. The
+/// strategies that the sequential search would not have run, or would have
+/// stopped sooner, still count their work. With a debug switch set the
+/// search runs one strategy after another, so that its traces are the
+/// search's own.
+///
 /// Not yet ported: loop local allocation (every wrangled candidate is
 /// accepted; see `docs/LPGEN_PORT.md`).
 pub fn optimize_loop(
@@ -5412,135 +5487,98 @@ pub fn optimize_loop(
 ) -> Option<LoopOutcome> {
     let statics = statics(problem);
     let mut spent = 0usize;
+    let parallel = crate::parallel::threads() > 1;
+    let strategies: Vec<Strategy> = Strategy::ALL.into_iter().rev().collect();
+    // The check limit of the next strategy, `None` once the work budget is
+    // spent.
+    let limit = |spent: usize| match budget.work {
+        Some(work) => {
+            let left = work.total.saturating_sub(spent);
+            (left != 0).then(|| work.strategy.min(left))
+        }
+        None => Some(usize::MAX),
+    };
     for period in first_period.max(2)..=last_period {
         let mut kept: Option<LoopOutcome> = None;
-        for strategy in Strategy::ALL.into_iter().rev() {
-            let mut table = Table::new_loop(problem, &statics, period, known_safe);
-            if let Some(work) = budget.work {
-                let left = work.total.saturating_sub(spent);
-                if left == 0 {
+        let run = |strategy: Strategy, check_limit: usize, record: bool, stop| {
+            loop_strategy(
+                problem,
+                &statics,
+                period,
+                known_safe,
+                strategy,
+                LoopSearch {
+                    steps: budget.steps,
+                    check_limit,
+                    record,
+                    stop,
+                },
+                pools,
+            )
+        };
+        if parallel {
+            let block = trace_block();
+            let widest = budget.work.map_or(usize::MAX, |work| work.strategy);
+            let mut spent_budget = false;
+            crate::parallel::search(
+                &strategies,
+                |&strategy, stop| {
+                    set_trace_block(block);
+                    run(strategy, widest, budget.work.is_some(), stop.clone())
+                },
+                |run, counted| {
+                    let Some(check_limit) = limit(spent) else {
+                        spent_budget = true;
+                        return false;
+                    };
+                    // The first test this limit fails ends the search there,
+                    // with the steps it had taken and the checks it had made.
+                    match run.points.iter().position(|&checks| checks > check_limit) {
+                        Some(test) => {
+                            let checks = run.points[test];
+                            crate::stats::count(
+                                crate::stats::Counter::WrangleSteps,
+                                test as u64 + 1,
+                            );
+                            crate::stats::count(
+                                crate::stats::Counter::WrangleChecks,
+                                checks as u64,
+                            );
+                            spent = spent.saturating_add(checks);
+                        }
+                        None => {
+                            if let Some(counted) = counted {
+                                crate::stats::absorb(&counted);
+                            }
+                            spent = spent.saturating_add(run.checks);
+                            keep_loop_outcome(&mut kept, run.outcome);
+                        }
+                    }
+                    true
+                },
+            );
+            if spent_budget {
+                return kept;
+            }
+        } else {
+            for &strategy in &strategies {
+                let Some(check_limit) = limit(spent) else {
                     crate::trace_if!(
                         lpgen_trace,
                         "lpgen {} period {period} work budget spent",
                         trace_block()
                     );
                     return kept;
-                }
-                table.check_limit = work.strategy.min(left);
-            }
-            let result = table.wrangle(strategy, budget.steps);
-            spent = spent.saturating_add(table.work.checks);
-            if crate::debug::switches().lpgen_trace {
-                let (status, trace) = match &result {
-                    Ok(trace) => ("ok", trace.clone()),
-                    Err(failure) => (
-                        if *failure == Failure::Budget {
-                            "budget"
-                        } else {
-                            "failed"
-                        },
-                        table.failed_trace.clone(),
-                    ),
                 };
-                crate::trace!(
-                    "lpgen {} period {period} {:?} {status} base {} trace {:?}",
-                    trace_block(),
+                let run = run(
                     strategy,
-                    problem.instructions.len(),
-                    trace
+                    check_limit,
+                    false,
+                    crate::parallel::Stop::default(),
                 );
-                let w = table.work;
-                crate::trace!(
-                    "lpwork {} period {period} {:?} {status} todo {} steps {} inserts {} undos {} checks {} ranked {}",
-                    trace_block(),
-                    strategy,
-                    table.todo_at_start,
-                    w.steps,
-                    w.inserts,
-                    w.undos,
-                    w.checks,
-                    w.ranked
-                );
+                spent = spent.saturating_add(run.checks);
+                keep_loop_outcome(&mut kept, run.outcome);
             }
-            if result.is_err() {
-                continue;
-            }
-            // Reduce extents over the folded rows.
-            table.reduce_extents();
-            // Loop local allocation rejects a candidate.
-            let mut allocation = Vec::new();
-            if let Some(pools) = pools {
-                let vf = table.allocate(1, &pools.vf_allowed, &pools.vf_through);
-                let vi = table.allocate(2, &pools.vi_allowed, &pools.vi_through);
-                let (Some(vf), Some(vi)) = (vf, vi) else {
-                    crate::trace_if!(
-                        lpgen_trace,
-                        "lpgen {} period {period} {strategy:?} allocation failed",
-                        trace_block()
-                    );
-                    continue;
-                };
-                allocation.extend(vf);
-                allocation.extend(vi);
-                if crate::debug::switches().lpgen_trace {
-                    let physical = |register: usize| {
-                        let info = &table.problem.registers[register];
-                        info.physical
-                            .or_else(|| {
-                                allocation
-                                    .iter()
-                                    .find(|&&(r, _)| r == register)
-                                    .map(|&(_, p)| p)
-                            })
-                            .map(|p| format!("{}{p:02}", if info.pool == 1 { "VF" } else { "VI" }))
-                    };
-                    let regs: Vec<Vec<String>> = table
-                        .problem
-                        .instructions
-                        .iter()
-                        .enumerate()
-                        .map(|(index, insn)| {
-                            insn.operands
-                                .iter()
-                                .filter(|_| table.slots[index].line >= 0)
-                                .filter(|o| table.problem.registers[o.register].pool != 0)
-                                .map(|o| physical(o.register).unwrap_or_else(|| "?".into()))
-                                .collect()
-                        })
-                        .collect();
-                    crate::trace!(
-                        "lpgen {} period {period} {strategy:?} regs {regs:?}",
-                        trace_block()
-                    );
-                    let placed: Vec<(i32, u8)> =
-                        table.slots.iter().map(|s| (s.line, s.pipe)).collect();
-                    crate::trace!(
-                        "lpgen {} period {period} {strategy:?} placed {placed:?}",
-                        trace_block()
-                    );
-                }
-            }
-            let max_iteration = table
-                .done
-                .iter()
-                .map(|&i| table.fold(table.slots[i].line).1)
-                .max()
-                .unwrap_or(0);
-            if kept
-                .as_ref()
-                .is_some_and(|k| k.max_iteration < max_iteration)
-            {
-                continue;
-            }
-            kept = Some(LoopOutcome {
-                strategy,
-                period,
-                rows: table.rows.clone(),
-                placements: table.placements(),
-                max_iteration,
-                problem: table.problem.clone().into_owned(),
-                allocation,
-            });
         }
         if kept.is_some() {
             return kept;
@@ -5549,8 +5587,180 @@ pub fn optimize_loop(
     None
 }
 
+/// Keeps `outcome` over `kept` unless `kept` reaches fewer iterations: a
+/// later tie replaces an earlier one.
+fn keep_loop_outcome(kept: &mut Option<LoopOutcome>, outcome: Option<LoopOutcome>) {
+    if let Some(outcome) = outcome
+        && kept
+            .as_ref()
+            .is_none_or(|k| k.max_iteration >= outcome.max_iteration)
+    {
+        *kept = Some(outcome);
+    }
+}
+
+/// How one strategy's loop search runs.
+struct LoopSearch {
+    /// The wrangler steps it may take.
+    steps: usize,
+    /// The position checks it may make.
+    check_limit: usize,
+    /// Whether to record the checks at each test of `check_limit`.
+    record: bool,
+    stop: crate::parallel::Stop,
+}
+
+/// What one strategy's search at one period found.
+struct StrategyRun {
+    /// Its table, when it wrangles and allocates.
+    outcome: Option<LoopOutcome>,
+    /// The position checks the search made.
+    checks: usize,
+    /// The checks at each test of the check limit, when recorded.
+    points: Vec<usize>,
+}
+
+/// One strategy's search at one period.
+fn loop_strategy(
+    problem: &Problem,
+    statics: &[Statics],
+    period: i32,
+    known_safe: i32,
+    strategy: Strategy,
+    search: LoopSearch,
+    pools: Option<&Pools>,
+) -> StrategyRun {
+    let mut table = Table::new_loop(problem, statics, period, known_safe);
+    table.check_limit = search.check_limit;
+    table.budget_points = search.record.then(Vec::new);
+    table.stop = search.stop;
+    let steps = search.steps;
+    let result = table.wrangle(strategy, steps);
+    if crate::debug::switches().lpgen_trace {
+        let (status, trace) = match &result {
+            Ok(trace) => ("ok", trace.clone()),
+            Err(failure) => (
+                if *failure == Failure::Budget {
+                    "budget"
+                } else {
+                    "failed"
+                },
+                table.failed_trace.clone(),
+            ),
+        };
+        crate::trace!(
+            "lpgen {} period {period} {:?} {status} base {} trace {:?}",
+            trace_block(),
+            strategy,
+            problem.instructions.len(),
+            trace
+        );
+        let w = table.work;
+        crate::trace!(
+            "lpwork {} period {period} {:?} {status} todo {} steps {} inserts {} undos {} checks {} ranked {}",
+            trace_block(),
+            strategy,
+            table.todo_at_start,
+            w.steps,
+            w.inserts,
+            w.undos,
+            w.checks,
+            w.ranked
+        );
+    }
+    let checks = table.work.checks;
+    let points = table.budget_points.take().unwrap_or_default();
+    let failed = |points| StrategyRun {
+        outcome: None,
+        checks,
+        points,
+    };
+    if result.is_err() {
+        return failed(points);
+    }
+    // Reduce extents over the folded rows.
+    table.reduce_extents();
+    // Loop local allocation rejects a candidate.
+    let mut allocation = Vec::new();
+    if let Some(pools) = pools {
+        let vf = table.allocate(1, &pools.vf_allowed, &pools.vf_through);
+        let vi = table.allocate(2, &pools.vi_allowed, &pools.vi_through);
+        let (Some(vf), Some(vi)) = (vf, vi) else {
+            crate::trace_if!(
+                lpgen_trace,
+                "lpgen {} period {period} {strategy:?} allocation failed",
+                trace_block()
+            );
+            return failed(points);
+        };
+        allocation.extend(vf);
+        allocation.extend(vi);
+        if crate::debug::switches().lpgen_trace {
+            let physical = |register: usize| {
+                let info = &table.problem.registers[register];
+                info.physical
+                    .or_else(|| {
+                        allocation
+                            .iter()
+                            .find(|&&(r, _)| r == register)
+                            .map(|&(_, p)| p)
+                    })
+                    .map(|p| format!("{}{p:02}", if info.pool == 1 { "VF" } else { "VI" }))
+            };
+            let regs: Vec<Vec<String>> = table
+                .problem
+                .instructions
+                .iter()
+                .enumerate()
+                .map(|(index, insn)| {
+                    insn.operands
+                        .iter()
+                        .filter(|_| table.slots[index].line >= 0)
+                        .filter(|o| table.problem.registers[o.register].pool != 0)
+                        .map(|o| physical(o.register).unwrap_or_else(|| "?".into()))
+                        .collect()
+                })
+                .collect();
+            crate::trace!(
+                "lpgen {} period {period} {strategy:?} regs {regs:?}",
+                trace_block()
+            );
+            let placed: Vec<(i32, u8)> = table.slots.iter().map(|s| (s.line, s.pipe)).collect();
+            crate::trace!(
+                "lpgen {} period {period} {strategy:?} placed {placed:?}",
+                trace_block()
+            );
+        }
+    }
+    let max_iteration = table
+        .done
+        .iter()
+        .map(|&i| table.fold(table.slots[i].line).1)
+        .max()
+        .unwrap_or(0);
+    let outcome = LoopOutcome {
+        strategy,
+        period,
+        rows: table.rows.clone(),
+        placements: table.placements(),
+        max_iteration,
+        problem: table.problem.clone().into_owned(),
+        allocation,
+    };
+    StrategyRun {
+        outcome: Some(outcome),
+        checks,
+        points,
+    }
+}
+
 /// Run the linear optimizer strategies, keeping strictly
 /// shorter tables and stopping at the lower bound.
+///
+/// The first strategy runs alone. When it does not reach the lower bound,
+/// the others run at once on several threads, folded in strategy order as
+/// if they had run one after another; a strategy after the point where the
+/// fold stops is cancelled, and its work is not counted.
 pub fn optimize(
     problem: &Problem,
     lower_bound: i32,
@@ -5558,90 +5768,139 @@ pub fn optimize(
     accept: &mut dyn FnMut(&Outcome) -> bool,
 ) -> Option<Outcome> {
     let statics = statics(problem);
-    let mut best: Option<Outcome> = None;
     let lower_bound = if lower_bound < 0 {
         bounds(problem, &statics).0
     } else {
         lower_bound
     };
-    for strategy in Strategy::ALL.into_iter().rev() {
-        if !strategy.allows_linear() {
-            continue;
-        }
+    let strategies: Vec<Strategy> = Strategy::ALL
+        .into_iter()
+        .rev()
+        .filter(|strategy| strategy.allows_linear())
+        .collect();
+    let mut best: Option<Outcome> = None;
+    // Whether a table is kept: then Dumb, the last strategy, does not run.
+    let found = std::sync::atomic::AtomicBool::new(false);
+    // One strategy's result taken in order: false when no later one runs.
+    let mut fold = |strategy: Strategy,
+                    result: Option<(Outcome, i32)>,
+                    counted: Option<crate::stats::Stats>| {
         if strategy == Strategy::Dumb && best.is_some() {
-            break;
+            return false;
         }
-        let mut table = Table::new(problem, &statics);
-        let budget = 20_000 + problem.instructions.len() * 2_000;
-        let trace = match table.wrangle(strategy, budget) {
-            Ok(trace) => trace,
-            Err(failure) => {
-                crate::trace_if!(
-                    wrangle_trace,
-                    "wrangle strategy {} {:?} failed {failure:?} done {:?} todo {:?}",
-                    trace_block(),
-                    strategy,
-                    table.done,
-                    table.todo
-                );
-                continue;
-            }
-        };
-        table.reduce_extents();
-        table.fiddle_branch_delay();
-        if crate::debug::switches().wrangle_trace {
-            crate::trace!(
-                "wrangle strategy {} {:?} length {} trace {:?}",
-                trace_block(),
-                strategy,
-                table.length(),
-                trace
-            );
-            crate::trace!("wrangle reduced {:?}", table.rows());
+        if let Some(counted) = counted {
+            crate::stats::absorb(&counted);
         }
-        let mut allocation = Vec::new();
-        if let Some(pools) = pools {
-            let vf = table.allocate(1, &pools.vf_allowed, &pools.vf_through);
-            let vi = table.allocate(2, &pools.vi_allowed, &pools.vi_through);
-            match (vf, vi) {
-                (Some(vf), Some(vi)) => {
-                    allocation.extend(vf);
-                    allocation.extend(vi);
-                }
-                _ => {
-                    crate::trace_if!(
-                        wrangle_trace,
-                        "wrangle strategy {} {:?} allocation failed",
-                        trace_block(),
-                        strategy
-                    );
-                    continue;
-                }
-            }
-        }
-        let outcome = Outcome {
-            strategy,
-            rows: table.rows(),
-            placements: table.placements(),
-            trace,
-            allocation,
+        let Some((outcome, length)) = result else {
+            return true;
         };
         if !accept(&outcome) {
-            continue;
+            return true;
         }
-        let length = table.length();
         if best
             .as_ref()
             .is_none_or(|previous| (length as usize) < previous.rows.len())
         {
             best = Some(outcome);
+            found.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        if best
+        !best
             .as_ref()
             .is_some_and(|b| b.rows.len() as i32 <= lower_bound.max(0))
-        {
-            break;
-        }
+    };
+    let (&first, rest) = strategies.split_first()?;
+    let result = linear_strategy(
+        problem,
+        &statics,
+        first,
+        pools,
+        crate::parallel::Stop::default(),
+    );
+    if fold(first, result, None) {
+        let block = trace_block();
+        crate::parallel::search(
+            rest,
+            |&strategy, stop| {
+                set_trace_block(block);
+                if strategy == Strategy::Dumb && found.load(std::sync::atomic::Ordering::Relaxed) {
+                    return (strategy, None);
+                }
+                (
+                    strategy,
+                    linear_strategy(problem, &statics, strategy, pools, stop.clone()),
+                )
+            },
+            |(strategy, result), counted| fold(strategy, result, counted),
+        );
     }
     best
+}
+
+/// One linear strategy's table, with its length, when it wrangles and
+/// allocates.
+fn linear_strategy(
+    problem: &Problem,
+    statics: &[Statics],
+    strategy: Strategy,
+    pools: Option<&Pools>,
+    stop: crate::parallel::Stop,
+) -> Option<(Outcome, i32)> {
+    let mut table = Table::new(problem, statics);
+    table.stop = stop;
+    let budget = 20_000 + problem.instructions.len() * 2_000;
+    let trace = match table.wrangle(strategy, budget) {
+        Ok(trace) => trace,
+        Err(failure) => {
+            crate::trace_if!(
+                wrangle_trace,
+                "wrangle strategy {} {:?} failed {failure:?} done {:?} todo {:?}",
+                trace_block(),
+                strategy,
+                table.done,
+                table.todo
+            );
+            return None;
+        }
+    };
+    table.reduce_extents();
+    table.fiddle_branch_delay();
+    if crate::debug::switches().wrangle_trace {
+        crate::trace!(
+            "wrangle strategy {} {:?} length {} trace {:?}",
+            trace_block(),
+            strategy,
+            table.length(),
+            trace
+        );
+        crate::trace!("wrangle reduced {:?}", table.rows());
+    }
+    let mut allocation = Vec::new();
+    if let Some(pools) = pools {
+        let vf = table.allocate(1, &pools.vf_allowed, &pools.vf_through);
+        let vi = table.allocate(2, &pools.vi_allowed, &pools.vi_through);
+        match (vf, vi) {
+            (Some(vf), Some(vi)) => {
+                allocation.extend(vf);
+                allocation.extend(vi);
+            }
+            _ => {
+                crate::trace_if!(
+                    wrangle_trace,
+                    "wrangle strategy {} {:?} allocation failed",
+                    trace_block(),
+                    strategy
+                );
+                return None;
+            }
+        }
+    }
+    let outcome = Outcome {
+        strategy,
+        rows: table.rows(),
+        placements: table.placements(),
+        trace,
+        allocation,
+    };
+    let length = table.length();
+    Some((outcome, length))
 }

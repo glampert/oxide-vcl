@@ -311,7 +311,7 @@ pub struct Analysis {
     pub hazard_reads: BTreeSet<(BlockId, RegisterId, u8)>,
     pub hazard_writes: BTreeSet<(BlockId, RegisterId, u8)>,
     /// `reads`' indices by register, in order, made on first use.
-    by_register: std::cell::OnceCell<BTreeMap<RegisterId, Vec<usize>>>,
+    by_register: std::sync::OnceLock<BTreeMap<RegisterId, Vec<usize>>>,
 }
 
 impl Analysis {
@@ -618,7 +618,7 @@ impl Graph {
             copy_live_out,
             hazard_reads,
             hazard_writes,
-            by_register: std::cell::OnceCell::new(),
+            by_register: std::sync::OnceLock::new(),
         })
     }
 
@@ -1022,7 +1022,7 @@ impl Analysis {
             copy_live_out,
             hazard_reads: hazards(self.hazard_reads),
             hazard_writes: hazards(self.hazard_writes),
-            by_register: std::cell::OnceCell::new(),
+            by_register: std::sync::OnceLock::new(),
         }
     }
 }
