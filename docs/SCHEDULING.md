@@ -219,6 +219,16 @@ ASAP and the height field with `max_ASAP - latest`. Heuristics using these
 fields therefore respond to the partial schedule. Physical-value liveness and
 writer reuse can constrain ASAP in addition to producer-to-consumer latency.
 
+The port recomputes them on every step too. In a straight-line table it reads
+the table's structure from a flat plan (`StatsPlan` in
+`crates/vcl/src/scheduler/wrangle.rs`): each instruction's producer edges with
+their latencies, the register parts it reads and writes, and the reuse
+constraints of the parts it both reads and writes. Building a table links every
+read to its producer, and only a loop's moves link again or change an operand
+or a lock, so a straight-line table's plan is built once. A loop table, whose
+moves change it often, walks its locks. Both give the same values: the vcl
+crate's unit tests compute both on every straight-line call and compare them.
+
 ## Eleven strategies
 
 There are eleven strategies. The decoded table is in

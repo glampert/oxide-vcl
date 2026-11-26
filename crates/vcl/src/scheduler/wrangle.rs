@@ -624,10 +624,6 @@ struct Slot {
     threshold: i32,
     delay: i32,
     earliest: i32,
-    asap: i32,
-    latest: i32,
-    min_latest: i32,
-    max_asap: i32,
     height: i32,
     depth: i32,
     /// Lock index per operand component.
@@ -644,6 +640,47 @@ pub struct Work {
     pub undos: usize,
     pub checks: usize,
     pub ranked: usize,
+}
+
+/// What [`Table::dynamic_stats`] reads of a table, flattened per
+/// instruction. It changes only when a move changes the table: building the
+/// table links every read to its producer, and only the move code links
+/// again or changes an operand, a lock's mode or its latency.
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(test, derive(PartialEq))]
+struct StatsPlan {
+    /// Each instruction's entries in the lists below.
+    of: Vec<PlanRanges>,
+    /// A read's producer in the table, and the input's latency plus the
+    /// producer's.
+    edges: Vec<(u32, i32)>,
+    /// A written register part the instruction also reads, and what the
+    /// last reader's ASAP is lowered by: 1 when the write blocks, its
+    /// latency otherwise.
+    war: Vec<(u32, u8, i32)>,
+    /// The read register parts that count as readers.
+    reads: Vec<(u32, u8)>,
+    /// The written register parts.
+    writes: Vec<(u32, u8)>,
+}
+
+/// What [`Table::dynamic_stats`] computes into: each instruction's ASAP
+/// and latest time, and the readers' state of its pass.
+struct StatsValues {
+    asap_of: Vec<i32>,
+    latest_of: Vec<i32>,
+    reader_max: Vec<[i32; 4]>,
+    readers_set: Vec<usize>,
+}
+
+/// One instruction's entries in a [`StatsPlan`].
+#[derive(Clone, Debug, Default)]
+#[cfg_attr(test, derive(PartialEq))]
+struct PlanRanges {
+    edges: std::ops::Range<usize>,
+    war: std::ops::Range<usize>,
+    reads: std::ops::Range<usize>,
+    writes: std::ops::Range<usize>,
 }
 
 /// The users of a lock that [`Table::calc_stats`] counts: the earliest
@@ -695,10 +732,15 @@ pub struct Table<'a> {
     /// The latest ASAP of a reader of each register part since its last
     /// writer, in [`Table::dynamic_stats`]'s source-order pass; -1 for none.
     reader_max: Vec<[i32; 4]>,
+    /// What [`Table::dynamic_stats`] reads of the table's structure, built
+    /// when it is first needed and dropped when a move changes it.
+    stats_plan: Option<StatsPlan>,
+    /// Each instruction's ASAP and latest time, as [`Table::dynamic_stats`]
+    /// last computed them.
+    asap_of: Vec<i32>,
+    latest_of: Vec<i32>,
     /// The registers whose `reader_max` the last pass set, to reset.
     readers_set: Vec<usize>,
-    /// Scratch copies of the instruction lists, kept to reuse their memory.
-    scratch: Vec<usize>,
     /// The producers [`Table::can_move_locks`] recalculated, with their
     /// users' window to restore, kept likewise.
     recalculated: Vec<(usize, UserWindow)>,
@@ -892,8 +934,10 @@ impl<'a> Table<'a> {
             end: -1,
             first_failure: None,
             reader_max: vec![[-1; 4]; problem.registers.len()],
+            stats_plan: None,
+            asap_of: Vec::new(),
+            latest_of: Vec::new(),
             readers_set: Vec::new(),
-            scratch: Vec::new(),
             recalculated: Vec::new(),
             end_limit: -1,
             start: 0,
@@ -2010,55 +2054,163 @@ impl<'a> Table<'a> {
     }
 
     /// Dynamic statistics, linear.
+    ///
+    /// Each unplaced instruction's ASAP, in `todo` order, from its
+    /// producers' (a placed one's line) and from the readers before it of a
+    /// register part it also writes; then each one's latest time, from its
+    /// consumers' ASAP. A straight-line table's structure does not change
+    /// once it is built, so the computation reads it from a [`StatsPlan`];
+    /// a loop's moves change it often, so a loop table walks its locks.
     fn dynamic_stats(&mut self) {
-        self.max_asap = -1;
-        for &index in self.done.iter().chain(&self.todo) {
+        // Slots are only added, and a new one starts at the defaults.
+        let count = self.slots.len();
+        if self.asap_of.len() < count {
+            self.asap_of.resize(count, 0);
+            self.latest_of.resize(count, 0);
+        }
+        let mut values = StatsValues {
+            asap_of: std::mem::take(&mut self.asap_of),
+            latest_of: std::mem::take(&mut self.latest_of),
+            reader_max: std::mem::take(&mut self.reader_max),
+            readers_set: std::mem::take(&mut self.readers_set),
+        };
+        let max_asap = if self.period > 0 {
+            self.walk_stats(&mut values)
+        } else {
+            let plan = match self.stats_plan.take() {
+                Some(plan) => plan,
+                None => self.build_stats_plan(),
+            };
+            #[cfg(test)]
+            let walked = {
+                let mut walked = StatsValues {
+                    asap_of: values.asap_of.clone(),
+                    latest_of: values.latest_of.clone(),
+                    reader_max: vec![[-1; 4]; values.reader_max.len()],
+                    readers_set: Vec::new(),
+                };
+                (self.walk_stats(&mut walked), walked)
+            };
+            let max_asap = self.planned_stats(&plan, &mut values);
+            #[cfg(test)]
+            {
+                assert!(plan == self.build_stats_plan(), "a stale stats plan");
+                assert_eq!(max_asap, walked.0);
+                assert_eq!(values.asap_of, walked.1.asap_of);
+                assert_eq!(values.latest_of, walked.1.latest_of);
+            }
+            self.stats_plan = Some(plan);
+            max_asap
+        };
+        for &index in &self.todo {
             let s = &mut self.slots[index];
-            s.min_latest = IMPOSSIBLE;
-            s.asap = -1;
-            s.latest = 0;
-            s.max_asap = 0;
+            s.depth = values.asap_of[index];
+            s.height = max_asap - values.latest_of[index];
+        }
+        self.max_asap = max_asap;
+        self.asap_of = values.asap_of;
+        self.latest_of = values.latest_of;
+        self.reader_max = values.reader_max;
+        self.readers_set = values.readers_set;
+    }
+
+    /// The placed instructions' values, and the readers of the last pass
+    /// cleared: what both computations start from.
+    fn start_stats(&self, values: &mut StatsValues) -> i32 {
+        let mut max_asap = -1;
+        for &index in self.done.iter().chain(&self.todo) {
+            values.asap_of[index] = -1;
+            values.latest_of[index] = 0;
         }
         // Only the registers the last pass set can be other than -1.
-        for &register in &self.readers_set {
-            self.reader_max[register] = [-1; 4];
+        for &register in &values.readers_set {
+            values.reader_max[register] = [-1; 4];
         }
-        self.readers_set.clear();
+        values.readers_set.clear();
         for &index in &self.done {
             let line = self.slots[index].line;
-            self.slots[index].latest = line;
-            self.slots[index].asap = line;
-            self.max_asap = self.max_asap.max(line);
+            values.latest_of[index] = line;
+            values.asap_of[index] = line;
+            max_asap = max_asap.max(line);
         }
-        // Nothing here changes the lists: the pass reads `todo` from a
-        // scratch copy, so that it may update the slots.
-        let mut todo = std::mem::take(&mut self.scratch);
-        todo.clear();
-        todo.extend_from_slice(&self.todo);
-        for &index in &todo {
+        max_asap
+    }
+
+    /// [`Table::dynamic_stats`] from the plan; the largest ASAP.
+    fn planned_stats(&self, plan: &StatsPlan, values: &mut StatsValues) -> i32 {
+        let mut max_asap = self.start_stats(values);
+        let StatsValues {
+            asap_of,
+            latest_of,
+            reader_max,
+            readers_set,
+        } = values;
+        for &index in &self.todo {
+            let ranges = &plan.of[index];
             let mut asap = 0;
+            for &(owner, latency) in &plan.edges[ranges.edges.clone()] {
+                asap = asap.max(asap_of[owner as usize] + latency);
+            }
+            for &(register, part, lowered) in &plan.war[ranges.war.clone()] {
+                let last = reader_max[register as usize][usize::from(part)];
+                if last == -1 {
+                    continue;
+                }
+                let value = last - lowered;
+                if asap <= value {
+                    asap = value + 1;
+                }
+            }
+            asap_of[index] = asap;
+            max_asap = max_asap.max(asap);
+            for &(register, part) in &plan.reads[ranges.reads.clone()] {
+                let max = &mut reader_max[register as usize][usize::from(part)];
+                if *max == -1 {
+                    *max = asap;
+                    readers_set.push(register as usize);
+                } else {
+                    *max = (*max).max(asap);
+                }
+            }
+            for &(register, part) in &plan.writes[ranges.writes.clone()] {
+                reader_max[register as usize][usize::from(part)] = -1;
+            }
+        }
+        for &index in &self.todo {
+            latest_of[index] = max_asap;
+        }
+        for &index in self.todo.iter().rev() {
+            // The bound uses the consumer's ASAP, not its own latest time:
+            // this is one level of slack, not ALAP.
+            let asap = asap_of[index];
+            for &(owner, latency) in &plan.edges[plan.of[index].edges.clone()] {
+                let latest = &mut latest_of[owner as usize];
+                *latest = (*latest).min(asap - latency);
+            }
+        }
+        max_asap
+    }
+
+    /// [`Table::dynamic_stats`] from the locks themselves; the largest ASAP.
+    fn walk_stats(&self, values: &mut StatsValues) -> i32 {
+        let mut max_asap = self.start_stats(values);
+        let StatsValues {
+            asap_of,
+            latest_of,
+            reader_max,
+            readers_set,
+        } = values;
+        for &index in &self.todo {
             let insn = &self.problem.instructions[index];
+            let mut asap = 0;
             for (o, operand) in insn.operands.iter().enumerate() {
                 if operand.direction != Direction::Read {
                     continue;
                 }
-                for part in 0..4 {
-                    let Some(input) = self.slots[index].locks[o][part] else {
-                        continue;
-                    };
-                    if self.locks[input].mode == 2 {
-                        continue;
+                for &input in self.slots[index].locks[o].iter().flatten() {
+                    if let Some((owner, latency)) = self.stats_edge(input) {
+                        asap = asap.max(owner.map_or(0, |owner| asap_of[owner] + latency));
                     }
-                    let Some(producer) = self.locks[input].parent else {
-                        continue;
-                    };
-                    let mut value = 0;
-                    if let Some(owner) = self.locks[producer].instruction() {
-                        value = self.slots[owner].asap
-                            + i32::from(self.locks[input].latency)
-                            + i32::from(self.locks[producer].latency);
-                    }
-                    asap = asap.max(value);
                 }
             }
             for operand in &insn.operands {
@@ -2071,11 +2223,8 @@ impl<'a> Table<'a> {
                     .filter(|r| r.direction == Direction::Read && r.register == operand.register)
                     .fold(0, |mask, r| mask | r.mask);
                 for part in 0..usize::from(self.problem.registers[operand.register].parts.min(4)) {
-                    if reads & (1 << part) == 0 {
-                        continue;
-                    }
-                    let last = self.reader_max[operand.register][part];
-                    if last == -1 {
+                    let last = reader_max[operand.register][part];
+                    if reads & (1 << part) == 0 || last == -1 {
                         continue;
                     }
                     let value = if operand.blocking {
@@ -2088,8 +2237,109 @@ impl<'a> Table<'a> {
                     }
                 }
             }
-            self.slots[index].asap = asap;
-            self.max_asap = self.max_asap.max(asap);
+            asap_of[index] = asap;
+            max_asap = max_asap.max(asap);
+            for (o, operand) in insn.operands.iter().enumerate() {
+                for part in 0..4 {
+                    if operand.direction != Direction::Read
+                        || operand.mask & (1 << part) == 0
+                        || self.slots[index].locks[o][part].is_some_and(|l| self.locks[l].mode == 2)
+                    {
+                        continue;
+                    }
+                    let max = &mut reader_max[operand.register][part];
+                    if *max == -1 {
+                        *max = asap;
+                        readers_set.push(operand.register);
+                    } else {
+                        *max = (*max).max(asap);
+                    }
+                }
+            }
+            for operand in &insn.operands {
+                for part in 0..4 {
+                    if operand.direction == Direction::Write && operand.mask & (1 << part) != 0 {
+                        reader_max[operand.register][part] = -1;
+                    }
+                }
+            }
+        }
+        for &index in &self.todo {
+            latest_of[index] = max_asap;
+        }
+        for &index in self.todo.iter().rev() {
+            // The bound uses the consumer's ASAP, not its own latest time:
+            // this is one level of slack, not ALAP.
+            let insn = &self.problem.instructions[index];
+            for (o, operand) in insn.operands.iter().enumerate() {
+                if operand.direction != Direction::Read {
+                    continue;
+                }
+                for &input in self.slots[index].locks[o].iter().flatten() {
+                    if let Some((Some(owner), latency)) = self.stats_edge(input) {
+                        latest_of[owner] = latest_of[owner].min(asap_of[index] - latency);
+                    }
+                }
+            }
+        }
+        max_asap
+    }
+
+    /// The producer that the dynamic statistics use for the read lock
+    /// `input`, with the input's latency plus the producer's: none in mode 2
+    /// or with no producer, `None` for a producer outside the table.
+    fn stats_edge(&self, input: usize) -> Option<(Option<usize>, i32)> {
+        let lock = &self.locks[input];
+        if lock.mode == 2 {
+            return None;
+        }
+        let producer = &self.locks[lock.parent?];
+        let latency = i32::from(lock.latency) + i32::from(producer.latency);
+        Some((producer.instruction(), latency))
+    }
+
+    /// The table's structure as [`Table::dynamic_stats`] reads it.
+    fn build_stats_plan(&self) -> StatsPlan {
+        let mut plan = StatsPlan::default();
+        for (index, insn) in self.problem.instructions.iter().enumerate() {
+            let start = (
+                plan.edges.len(),
+                plan.war.len(),
+                plan.reads.len(),
+                plan.writes.len(),
+            );
+            for (o, operand) in insn.operands.iter().enumerate() {
+                if operand.direction != Direction::Read {
+                    continue;
+                }
+                for &input in self.slots[index].locks[o].iter().flatten() {
+                    // A producer outside the table counts as 0, which the
+                    // ASAP starts at.
+                    if let Some((Some(owner), latency)) = self.stats_edge(input) {
+                        plan.edges.push((owner as u32, latency));
+                    }
+                }
+            }
+            for operand in &insn.operands {
+                if operand.direction != Direction::Write {
+                    continue;
+                }
+                let reads: u8 = insn
+                    .operands
+                    .iter()
+                    .filter(|r| r.direction == Direction::Read && r.register == operand.register)
+                    .fold(0, |mask, r| mask | r.mask);
+                let lowered = if operand.blocking {
+                    1
+                } else {
+                    i32::from(operand.latency)
+                };
+                for part in 0..self.problem.registers[operand.register].parts.min(4) {
+                    if reads & (1 << part) != 0 {
+                        plan.war.push((operand.register as u32, part, lowered));
+                    }
+                }
+            }
             for (o, operand) in insn.operands.iter().enumerate() {
                 if operand.direction != Direction::Read {
                     continue;
@@ -2101,65 +2351,27 @@ impl<'a> Table<'a> {
                     if self.slots[index].locks[o][part].is_some_and(|l| self.locks[l].mode == 2) {
                         continue;
                     }
-                    let max = &mut self.reader_max[operand.register][part];
-                    if *max == -1 {
-                        *max = asap;
-                        self.readers_set.push(operand.register);
-                    } else {
-                        *max = (*max).max(asap);
-                    }
+                    plan.reads.push((operand.register as u32, part as u8));
                 }
             }
             for operand in &insn.operands {
                 if operand.direction != Direction::Write {
                     continue;
                 }
-                for part in 0..4 {
+                for part in 0..4u8 {
                     if operand.mask & (1 << part) != 0 {
-                        self.reader_max[operand.register][part] = -1;
+                        plan.writes.push((operand.register as u32, part));
                     }
                 }
             }
+            plan.of.push(PlanRanges {
+                edges: start.0..plan.edges.len(),
+                war: start.1..plan.war.len(),
+                reads: start.2..plan.reads.len(),
+                writes: start.3..plan.writes.len(),
+            });
         }
-        for &index in &todo {
-            self.slots[index].latest = self.max_asap;
-        }
-        for &index in todo.iter().rev() {
-            let insn = &self.problem.instructions[index];
-            for (o, operand) in insn.operands.iter().enumerate() {
-                if operand.direction != Direction::Read {
-                    continue;
-                }
-                for part in 0..4 {
-                    let Some(input) = self.slots[index].locks[o][part] else {
-                        continue;
-                    };
-                    if self.locks[input].mode == 2 {
-                        continue;
-                    }
-                    let Some(producer) = self.locks[input].parent else {
-                        continue;
-                    };
-                    let Some(owner) = self.locks[producer].instruction() else {
-                        continue;
-                    };
-                    // The bound uses the consumer's ASAP, not its
-                    // own latest time: this is one level of slack, not ALAP.
-                    let value = self.slots[index].asap
-                        - (i32::from(self.locks[input].latency)
-                            + i32::from(self.locks[producer].latency));
-                    if value < self.slots[owner].latest {
-                        self.slots[owner].latest = value;
-                    }
-                }
-            }
-        }
-        for &index in &todo {
-            let s = &mut self.slots[index];
-            s.depth = s.asap;
-            s.height = self.max_asap - s.latest;
-        }
-        self.scratch = todo;
+        plan
     }
 
     fn done_size(&self) -> i32 {
@@ -2256,7 +2468,7 @@ impl<'a> Table<'a> {
                 line = line.max(floor);
                 // Wrangler A also bounds by the dynamic latest time.
                 if limit == 4 && self.slots[index].height != 0 {
-                    line = line.max(self.slots[index].latest - 2 * self.period);
+                    line = line.max(self.latest_of[index] - 2 * self.period);
                 }
             }
             let mut found = line;
@@ -2519,6 +2731,8 @@ impl<'a> Table<'a> {
 
     /// Move one pending input lock to another list and producer.
     fn relink_input(&mut self, input: usize, list: usize, producer: usize) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         unlink_input(&mut self.locks, input);
         self.locks[input].list = list;
         link_input(&mut self.locks, input, producer);
@@ -2526,6 +2740,8 @@ impl<'a> Table<'a> {
 
     /// Move one pending output lock to another register's list.
     fn relink_output(&mut self, output: usize, list: usize) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         let old = self.locks[output].list;
         self.lists[old].pending_outputs -= 1;
         self.lists[list].pending_outputs += 1;
@@ -2545,6 +2761,8 @@ impl<'a> Table<'a> {
     /// when the search must backtrack (the failing setter is marked), 2 for
     /// a move instruction itself and 4 when no input is movable.
     fn generate_move(&mut self, index: usize, line: i32) -> u8 {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         if self.insn(index).is_move {
             return 2;
         }
@@ -2650,6 +2868,8 @@ impl<'a> Table<'a> {
         setter: Option<usize>,
         line: i32,
     ) -> Option<bool> {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         let period = self.period;
         if self.issue_counts.iter().sum::<i32>() >= period * 2 {
             return None;
@@ -2712,6 +2932,8 @@ impl<'a> Table<'a> {
         vector: bool,
         latency: i8,
     ) -> (usize, usize) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         let parts = usize::from(self.problem.registers[old].parts.min(4));
         // The new register and its lock lists.
         let mut register = self.problem.registers[old].clone();
@@ -2803,6 +3025,8 @@ impl<'a> Table<'a> {
     /// Point the pending reads of the old register in `t` at the move's
     /// register, feeding them from the move where their producer is placed.
     fn retarget_readers(&mut self, t: usize, state: &mut MoveRetarget) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         let (mv, old, new, parts) = (state.mv, state.old, state.new, state.parts);
 
         for o in 0..self.insn(t).operands.len() {
@@ -2850,6 +3074,8 @@ impl<'a> Table<'a> {
     /// Point the writes of the old register in `t` at the move's register
     /// when the register is movable; otherwise record them as fixed writes.
     fn retarget_writers(&mut self, t: usize, state: &mut MoveRetarget) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         let (old, new, parts) = (state.old, state.new, state.parts);
 
         for o in 0..self.insn(t).operands.len() {
@@ -2877,6 +3103,8 @@ impl<'a> Table<'a> {
     /// Input lock of a move on the old register's current value and its
     /// output lock in the new register.
     fn add_move_locks(&mut self, mv: usize, old: usize, new: usize, part: usize, latency: i8) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         let old_list = self.list_of[old][part].unwrap();
         let new_list = self.list_of[new][part].unwrap();
         let input = self.locks.len();
@@ -2901,6 +3129,8 @@ impl<'a> Table<'a> {
 
     /// Release a move that was never queued.
     fn discard_move(&mut self, mv: usize, old: usize, new: usize) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         self.restore_move_targets(mv, old, new);
         for part in 0..4 {
             if let Some(input) = self.slots[mv].locks[1][part] {
@@ -2913,6 +3143,8 @@ impl<'a> Table<'a> {
     /// Give every pending reference to the new register back
     /// to the old one; a reader fed by the move reads its source again.
     fn restore_move_targets(&mut self, mv: usize, old: usize, new: usize) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         for t in self.todo.clone() {
             if t == mv {
                 continue;
@@ -2954,6 +3186,8 @@ impl<'a> Table<'a> {
     /// back at the head) and undo every pending move on the way.
     /// Placed moves are untouched.
     fn undo_moves_from(&mut self, mv: usize) {
+        // A move changes what dynamic_stats reads.
+        self.stats_plan = None;
         for last in self.todo.clone().into_iter().rev() {
             if self.insn(last).is_move {
                 let old = self.insn(last).operands[1].register;
