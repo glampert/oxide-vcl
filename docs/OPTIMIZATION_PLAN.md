@@ -6,10 +6,11 @@ sets of disassembled VU programs. This chapter asks the next question: where doe
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-Three optimizations exist: `exit` (part of O9), `loops` (O1 without
-O10's budget option) and `unswitch` (O11); oxide-vusl also contracts
-single products (O12). The measuring and checking
-tools of section 5 exist; section 6 gives the order of the rest.
+Four optimizations exist: `exit` (part of O9), `loops` (O1 without
+O10's budget option), `unswitch` (O11) and `pointers` (O4 without
+post-increment folding); oxide-vusl also contracts single products
+(O12). The measuring and checking tools of section 5 exist; section 6
+gives the order of the rest.
 
 The ground rules:
 
@@ -335,6 +336,32 @@ while independent integer work sits in later rows.
 
 *Risks:* low. The data flow is the same as the original's.
 
+*Measured, step 1.* Each installed part (prologue, epilogue, entry and
+exit point) was scheduled again by the linear wrangler, timed against the
+kernel and its other parts as ordinary streams are. The new rows were kept
+only when they were shorter, when no Q, P or flag value was in flight
+across the part's boundary, and when every read of the region still saw
+the same definitions by timed flow. The listings computed what they did
+before, but the gain was small:
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Public corpus, rows and stalls in oxide mode | 15,239 | 15,109 |
+| Local corpus, sets A and B | 26,058 | 26,047 |
+| VUSL scenes, the ports' cycles | 252,414 | 252,416 |
+| VUSL scenes, the hand-written programs' cycles | 293,419 | 293,380 |
+
+Most of the public corpus's 130 is one epilogue, ps2gl's `pt_light`
+`EPI0` (93 cycles to 57 in three programs, once per point light). In the
+cycle report most changed programs gained one to three cycles a run; tyra's
+`stapip_cull_tc` lost 2 and textured_triangles' world floor scene 10, as
+fewer rows before compression are not always fewer cycles after it. A part
+is mostly one iteration's dependency chain (`pt_light`'s `EPI2` waits on
+`esadd`, `ersqrt` and then a run of dependent `mul.w`), which no order
+within the part shortens, and raw reduction and compression already remove
+the expanded rows' slack. So step 1 is not part of oxide mode. What remains
+is overlapping a part with the code beside it, step 2, which needs O5.
+
 ### O4. Pointer increments in kernels
 
 *Evidence:* 17 kernels; in the lower-bound ones one fewer lower op is one
@@ -357,6 +384,53 @@ fewer period cycle (`general` `xform_loop` 22 → 21, `fast_nolights`
 
 *Risks:* displacement overflow, and aliasing assumptions. The two pointers
 must not be compared or stored as values.
+
+*The `pointers` optimization* (`--opt=pointers`, `--no-opt=pointers`;
+`crates/vcl/src/compiler/pointers.rs`) rewrites the parsed program before
+`unswitch` does, in two ways:
+
+- **Merged pointers.** Two registers a loop steps once an iteration by the
+  same immediate, in the block that ends with its branch back, whose
+  difference at the loop's entry is a constant, become one. A forward pass
+  over the program gives each VI register's value as a base plus a
+  constant (VI00, the register's incoming value, or what a statement last
+  wrote, which the statement's next run replaces), and every way into the
+  loop must agree. The register that goes may only be the base of `lq`,
+  `sq`, `ilw` and `isw` in the loop, must be dead where the loop exits, and
+  its accesses must keep their offsets in the signed 11-bit field.
+- **A pointer for the count.** A register stepped by as much as a pointer
+  and tested with `ibne` or `ibeq` against one the loop does not write is
+  replaced in the test by the pointer, compared with where it is when the
+  count runs out: `p + t - c` or `p + c - t` at the entry, computed on the
+  way in, which is exact in 16-bit arithmetic. The loop must be one block
+  entered only by falling into it, with the count only stepped and tested
+  and dead after it.
+
+Both apply only to loops with at least as many lower instructions as upper
+ones, and whose `--LoopCS`, if they have one, promises a minimum of 1 and
+a safe count of 0. A larger minimum or a safe count lets the pipeliner's
+schedule decide what runs at fewer iterations and how many stores run past
+the end (`mem-loop-load-store`, `--LoopCS 6,1`, stores one iteration past
+its end as written and none rewritten). The hint allows either, but the
+program would compute something else there. Each rewrite is then compiled
+on its own and kept only when the sum of the program's kernel periods
+falls and no kernel gets longer: a step less can also move the pipeliner's
+search to a deeper schedule of the same period (`loop-entry-q-in-flight`),
+or to a longer one (tyra's `dynpip_d` would go from 95 to 97; the upper
+pipe bounds its kernel). A program with candidates compiles once more for
+each.
+
+*Measured* (`tests/bench/work.txt`): one kernel of the public corpus is a
+cycle shorter, tyra's `mcpip_as_is` 23 → 22, which takes 3.3% fewer cycles
+at 48 vertices and up to four more at six or fewer, where the count's end
+costs more than the iterations save. ps2gl's lower-bound loops would gain
+too (`fast_nolights` 12 → 11, `general` and `general_nospec` `xform_loop`
+22 → 21), but they promise a safe count (`--LoopCS 1,3`). The local corpus
+and the VUSL scenes do not change; the VUSL ports already share one pointer
+where they can. The other lower-bound kernels need what this does not do:
+doom3's and quake2's fan loops count down with `ibgtz`, which no pointer
+test matches, and `stapip_as_is_c` counts down in a loop that `unswitch`
+splits. Post-increment folding is not done.
 
 ### O5. Schedule across streams
 
@@ -706,8 +780,8 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 1 | O9 (`exit`: the E row on the last instructions) | Small | A row and a cycle off 36 of 52 public programs |
 | 2 | O1 (pipeline unannotated loops) with O10 (code budget): `loops` and the `entry` fix | Large | About −22% over the 13 loops (811 → about 636 cycles per iteration), about 3× on `sprite` |
 | 2a | O11 (`unswitch`: a copy of a loop's usual path per mode) | Medium | quake2 world triangles −41%, models −15%; tyra `stapip` −15 to −20% |
-| 3 | O3 step 1 (reschedule loop prologues and epilogues) | Medium | Most of the 1,782 stall cycles in loop parts |
-| 4 | O4 (merge induction variables, post-increment folding) | Medium | One cycle per iteration in lower-bound kernels (`general` `xform_loop` 22 → 21, `fast_nolights` 12 → 11) |
+| 3 | O3 step 1 (reschedule loop prologues and epilogues): measured, not kept | Medium | 130 of the public corpus's 15,239 rows and stalls; little in the scenes |
+| 4 | O4 (merge induction variables, post-increment folding): `pointers`, without the folding | Medium | One cycle per iteration in lower-bound kernels whose hint promises nothing more (`mcpip_as_is` 23 → 22; ps2gl's would gain but promise a safe count) |
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
 | 7 | O5 (delay slots, superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
@@ -735,6 +809,8 @@ Why this order:
 - **O3 before O2 and O4** although they save more per vertex: O3 keeps the
   original's data flow, so its risk is low. It reschedules code that is
   already allocated, so reuse of physical registers limits what it finds.
+  Step 1 alone found little (O3, *Measured*): what the parts lose is
+  their overlap with the code beside them, which step 2 and O5 bring.
 - **O2 after O4**, because O4 lowers the bounds O2 aims at, and O2 needs a
   new scheduler (section 2). `--LoopExtra` stays honoured: the source asks
   for those cycles.

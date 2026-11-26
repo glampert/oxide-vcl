@@ -1418,11 +1418,11 @@ oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 
 oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 epilogue:vertexLoop                entries=12 cycles=180 stalls=0 per100=1500
 oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 table:__v_CORPUS_8                 entries=12 cycles=24 stalls=0 per100=200
 oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 table:__v_CORPUS_9                 entries=6 cycles=12 stalls=0 per100=200
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 total                         c3=106 c6=152 c9=198 c12=244 c24=428 c48=796
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 total                         c3=110 c6=154 c9=198 c12=242 c24=418 c48=770
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 table:__v_CORPUS_4            entries=6 cycles=12 stalls=0 per100=200
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 table:begin                   entries=12 cycles=468 stalls=0 per100=3900
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 kernel:vertexLoop             entries=56 cycles=1288 stalls=0 per100=2300
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 epilogue:vertexLoop           entries=12 cycles=120 stalls=36 fmac=36 per100=1000
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 kernel:vertexLoop             entries=56 cycles=1232 stalls=0 per100=2200
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 epilogue:vertexLoop           entries=12 cycles=144 stalls=72 fmac=72 per100=1200
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 table:__v_CORPUS_8            entries=12 cycles=24 stalls=0 per100=200
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 table:__v_CORPUS_9            entries=6 cycles=12 stalls=0 per100=200
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1 total                           c1=918 c2=1807 c3=2696 c4=3585 c5=4474 c6=5363 c8=7141 c9=8030 c12=10697 c16=14253 c24=21365 c32=28477 c48=42701

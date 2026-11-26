@@ -897,3 +897,166 @@ fn unswitch_leaves_a_program_that_would_not_fit_in_micro_memory() {
     assert_eq!(compile(&too_large, &[]), unchanged);
     assert!(!unchanged.contains("loop__u1"));
 }
+
+// ----------------------------------------------
+// pointers
+// ----------------------------------------------
+
+/// Runs `source`'s listings with and without `pointers` from states with
+/// trip counts 1 to 6 (VI02) and its base in VI01, and requires the same
+/// memory and VF04.
+fn pointer_results(source: &str) -> (String, String) {
+    let plain = compile(source, &["--no-opt=pointers"]);
+    let optimized = compile(source, &[]);
+    for count in 1..=6 {
+        let mut state = source_state();
+        state.vi[2] = count;
+        for (address, qword) in state.memory.iter_mut().enumerate() {
+            *qword =
+                [(address % 7 + 1) as f32, 2.0, 0.5, (address % 3 + 1) as f32].map(f32::to_bits);
+        }
+        let program = |listing: &str| Program::parse(listing).unwrap();
+        let before = program(&plain)
+            .run(state.clone(), Config::TIMED, 4096)
+            .unwrap();
+        let after = program(&optimized).run(state, Config::TIMED, 4096).unwrap();
+        assert_eq!(
+            after.state.memory, before.state.memory,
+            "count {count}\n{optimized}"
+        );
+        assert_eq!(
+            after.state.vf[4], before.state.vf[4],
+            "count {count}\n{optimized}"
+        );
+    }
+    (plain, optimized)
+}
+
+/// The kernel's period in a listing.
+fn period(listing: &str) -> u32 {
+    let line = listing
+        .lines()
+        .find(|line| line.starts_with("; _LPOPT_w=["))
+        .unwrap_or_else(|| panic!("no kernel\n{listing}"));
+    line.split(']')
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+// Two pointers from one base, both stepped by 1; the store sits between
+// the steps, so it sees the kept pointer a step on.
+const TWO_POINTERS: &str = ".init_vf_all\n\
+                            .init_vi_all\n\
+                            --enter\n\
+                            in_vi top(vi01)\n\
+                            in_vi count(vi02)\n\
+                            in_vf scale(vf02)\n\
+                            --endenter\n\
+                            iaddiu src,top,5\n\
+                            iaddiu dst,top,120\n\
+                            iadd last,src,count\n\
+                            loop:\n\
+                            lq value,0(src)\n\
+                            mul value,value,scale\n\
+                            lq other,1(src)\n\
+                            iaddiu src,src,1\n\
+                            sq value,0(dst)\n\
+                            sq.x other,2(dst)\n\
+                            iaddiu dst,dst,1\n\
+                            ibne src,last,loop\n\
+                            --exit\n\
+                            --endexit\n";
+
+#[test]
+fn pointers_merges_two_pointers_a_loop_steps_together() {
+    let (plain, optimized) = pointer_results(TWO_POINTERS);
+    assert!(period(&optimized) < period(&plain), "{plain}\n{optimized}");
+    // One pointer steps in the kernel, not two.
+    let kernel = |listing: &str| {
+        let start = listing.find("__MAIN_LOOP:").unwrap();
+        let end = listing[start..]
+            .find("__EPI")
+            .map_or(listing.len(), |at| start + at);
+        listing[start..end].matches("iaddiu").count()
+    };
+    assert_eq!(kernel(&optimized) + 1, kernel(&plain), "{optimized}");
+}
+
+#[test]
+fn pointers_leaves_pointers_whose_difference_is_not_known() {
+    // `dst` is `src` plus the count, which the loop's code cannot fold
+    // into an offset.
+    let source = TWO_POINTERS.replace("iaddiu dst,top,120\n", "iadd dst,top,count\n");
+    let (plain, optimized) = pointer_results(&source);
+    assert_eq!(plain, optimized);
+}
+
+#[test]
+fn pointers_leaves_a_pointer_the_code_after_the_loop_reads() {
+    let source = TWO_POINTERS.replace("--exit\n", "sq scale,0(dst)\n--exit\n");
+    let (plain, optimized) = pointer_results(&source);
+    assert_eq!(plain, optimized);
+}
+
+#[test]
+fn pointers_counts_down_with_a_pointer() {
+    // The count's step goes: the loop ends when the pointer reaches where
+    // it is when the count runs out, computed before the loop.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi top(vi01)\n\
+                  in_vi count(vi02)\n\
+                  in_vf scale(vf02)\n\
+                  --endenter\n\
+                  iaddiu src,top,5\n\
+                  iadd dst,src,count\n\
+                  iadd left,top,count\n\
+                  loop:\n\
+                  lq value,0(src)\n\
+                  mul value,value,scale\n\
+                  sq value,0(dst)\n\
+                  iaddiu src,src,1\n\
+                  iaddiu dst,dst,1\n\
+                  isubiu left,left,1\n\
+                  ibne left,top,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    let (plain, optimized) = pointer_results(source);
+    assert!(period(&optimized) < period(&plain), "{plain}\n{optimized}");
+    assert!(!optimized.contains("isubiu"), "{optimized}");
+}
+
+#[test]
+fn pointers_leaves_a_rewrite_that_does_not_shorten_the_kernel() {
+    // The loop waits on DIV each iteration: a step less leaves the period
+    // as it is, and the pipeliner would choose a deeper schedule.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vf a(vf01)\n\
+                  in_vi n(vi02)\n\
+                  in_vi p(vi03)\n\
+                  --endenter\n\
+                  div Q,a.x,a.y\n\
+                  loop:\n\
+                  --LoopCS 1,0\n\
+                  mulq b,a,Q\n\
+                  sq b,0(p)\n\
+                  iaddiu p,p,1\n\
+                  lq a,0(p)\n\
+                  div Q,a.x,a.y\n\
+                  isubiu n,n,1\n\
+                  ibne n,vi00,loop\n\
+                  --exit\n\
+                  --endexit\n";
+    assert_eq!(
+        compile(source, &[]),
+        compile(source, &["--no-opt=pointers"])
+    );
+}

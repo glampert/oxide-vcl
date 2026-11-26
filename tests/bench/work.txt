@@ -351,10 +351,10 @@ oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 
 oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 phase:prepare              nodes=0 steps=0 checks=0 analyses=11 walks=150
 oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 phase:schedule             nodes=0 steps=38 checks=23 analyses=0 walks=0
 oxide tyra__engine_src_renderer_3d_pipeline_dynamic_core_programs_dynpip_td_vu1 phase:tables               nodes=0 steps=0 checks=29552 analyses=0 walks=0
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:loops           nodes=0 steps=25625 checks=237840 analyses=6 walks=59
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:prepare         nodes=0 steps=0 checks=0 analyses=11 walks=150
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:schedule        nodes=0 steps=30 checks=39 analyses=0 walks=0
-oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:tables          nodes=0 steps=0 checks=4418 analyses=0 walks=0
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:loops           nodes=0 steps=66224 checks=248707 analyses=12 walks=118
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:prepare         nodes=0 steps=0 checks=0 analyses=22 walks=300
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:schedule        nodes=0 steps=62 checks=82 analyses=0 walks=0
+oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_as_is_mcpip_as_is_vu1 phase:tables          nodes=0 steps=0 checks=8636 analyses=0 walks=0
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1 phase:loops             nodes=0 steps=358538 checks=978088 analyses=6 walks=103
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1 phase:prepare           nodes=0 steps=0 checks=0 analyses=11 walks=258
 oxide tyra__engine_src_renderer_3d_pipeline_minecraft_programs_cull_mcpip_cull_vu1 phase:schedule          nodes=0 steps=272 checks=865 analyses=0 walks=0

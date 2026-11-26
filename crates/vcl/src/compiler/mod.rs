@@ -29,6 +29,7 @@ mod immediate_fields;
 mod loi_functions;
 mod loop_entry;
 mod memory_alias;
+mod pointers;
 mod program_size;
 mod raw_reduction;
 mod region;
@@ -1665,12 +1666,50 @@ impl Failure {
     }
 }
 
+/// Most rewrites the `pointers` optimization tries in one program.
+const MAX_POINTER_REWRITES: usize = 16;
+
+/// Compiles a parsed program. With the `pointers` optimization, each
+/// rewrite of a loop's pointers (`pointers`) is tried in turn and kept
+/// when the program's kernels are shorter with it, none of them longer:
+/// a step less can also move the pipeliner's search to a deeper schedule
+/// of the same period, or to a longer one.
+fn compile_parsed(
+    parsed: parser::Program,
+    filename: &str,
+    options: &Options,
+) -> Result<Compiled, Box<Failure>> {
+    if !options.optimizes(Optimization::Pointers) {
+        return compile_unswitched(parsed, filename, options);
+    }
+    let mut best = compile_unswitched(parsed.clone(), filename, options)?;
+    let mut current = parsed;
+    let mut tried = BTreeSet::new();
+    while tried.len() < MAX_POINTER_REWRITES {
+        let Some(rewrite) = pointers::rewrites(&current)
+            .into_iter()
+            .find(|rewrite| !tried.contains(&rewrite.key))
+        else {
+            break;
+        };
+        tried.insert(rewrite.key);
+        if let Ok(output) = compile_unswitched(rewrite.program.clone(), filename, options)
+            && output.instruction_pairs <= program_size::MICRO_MEMORY.max(best.instruction_pairs)
+            && pointers::shorter_kernels(&best.assembly, &output.assembly)
+        {
+            best = output;
+            current = rewrite.program;
+        }
+    }
+    Ok(best)
+}
+
 /// Compiles a parsed program. With the `unswitch` optimization, its
 /// loops are unswitched first (`unswitch`), with each copy unswitched once
 /// more where it tests another mode. When that fails to compile or no
 /// longer fits in micro memory, the loops are unswitched once only, and
 /// when that does not either, the program is compiled as written.
-fn compile_parsed(
+fn compile_unswitched(
     parsed: parser::Program,
     filename: &str,
     options: &Options,

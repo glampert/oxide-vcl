@@ -195,14 +195,19 @@ pub enum Optimization {
     /// compiled as two copies of that path, one for each outcome, without
     /// those branches (`unswitch`).
     Unswitch,
+    /// Pointers a loop steps by the same amount, whose difference is
+    /// known, become one: the accesses through one use the other with the
+    /// difference in their offsets, and its step goes (`pointers`).
+    Pointers,
 }
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 3] = [
+    pub const ALL: [Optimization; 4] = [
         Optimization::Exit,
         Optimization::Loops,
         Optimization::Unswitch,
+        Optimization::Pointers,
     ];
 
     /// The optimization's name on the command line.
@@ -211,6 +216,7 @@ impl Optimization {
             Optimization::Exit => "exit",
             Optimization::Loops => "loops",
             Optimization::Unswitch => "unswitch",
+            Optimization::Pointers => "pointers",
         }
     }
 

@@ -441,7 +441,7 @@ did them:
 
 | Phase | Work |
 | --- | --- |
-| `source` | Parsing, the source checks, and the rewrites that compile the program again (`unswitch`, loop entry waits, the fixes' rounds, spills); the compiles a rewrite starts count to the other phases and to `programs` |
+| `source` | Parsing, the source checks, and the rewrites that compile the program again (`pointers`, `unswitch`, loop entry waits, the fixes' rounds, spills); the compiles a rewrite starts count to the other phases and to `programs` |
 | `loops` | Expanding software-pipelined loops, with the modulo search for each loop's period |
 | `prepare` | The rest of a region's preparation: pruning, copies, the flow analyses and webs |
 | `schedule` | Each block's table: list scheduling and wrangling |
