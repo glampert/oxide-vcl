@@ -170,6 +170,8 @@ and XTOP read once into a register. Generated names are `f` or `i`, the source n
   operands. A component that is the constant 1 is VF00's w, and a 0 drops its term.
 - **Contraction** (`contract`). A sum with a product and at least one other term is one ACC chain,
   with `msuba` and `msub` for the negative terms and a term that is not a product times `vf00[w]`.
+  A product with the value Q holds takes the Q form (`mulaq`, `maddaq`, `msubaq`, `maddq`, `msubq`),
+  with Q as the broadcast operand.
   A sum's only product goes first when it is added, so the chain claims ACC once the product's
   operands are ready: with the other term first, ACC stays claimed across the product's latency,
   and the wrangler's searches on large tables run out of steps.
@@ -374,6 +376,7 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `shared-pointers` | Two arrays stepped by one pointer |
 | `multiply-add` | A sum of products as one ACC chain |
 | `multiply-add-one` | One product and another term as one ACC chain, the added product first |
+| `multiply-add-q` | Products with Q in ACC chains: the five Q forms |
 | `qword-assembly` | Lane stores built in one register and stored once |
 | `load-reuse` | One `lq` for every lane of a qword, again after a store, and raw bits copied |
 | `ref-cursor` | A ref as an output cursor, and the count written |

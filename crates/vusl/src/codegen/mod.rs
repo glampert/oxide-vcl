@@ -3101,7 +3101,8 @@ impl Lowering<'_> {
             return Ok(None);
         }
         // Each term as a lane-wise operand and a broadcast or lane-wise
-        // one; a term that is not a product is times VF00's w.
+        // one; a term that is not a product is times VF00's w. A product
+        // with Q takes the Q form (MULAQ, MADDAQ, MSUBAQ, MADDQ, MSUBQ).
         let mut operands = Vec::new();
         for &(negative, term) in &terms {
             let (a, b) = match &term.kind {
@@ -3111,7 +3112,8 @@ impl Lowering<'_> {
                     rhs,
                 } => {
                     let (a, b) = (self.vf(lhs)?, self.vf(rhs)?);
-                    if a.is_scalar() && !b.is_scalar() {
+                    // Q as the broadcast operand, as in the Q forms.
+                    if a.is_scalar() && (!b.is_scalar() || self.is_q(a) && !self.is_q(b)) {
                         (b, a)
                     } else {
                         (a, b)
@@ -3126,7 +3128,6 @@ impl Lowering<'_> {
             a.placement == placement
                 && (b.is_scalar() || b.placement == placement)
                 && !self.is_q(*a)
-                && !self.is_q(*b)
         });
         if !fits {
             return Ok(None);
@@ -3147,13 +3148,15 @@ impl Lowering<'_> {
             } else {
                 "acc".to_string()
             };
-            let operand = if b.is_scalar() {
-                self.field(b)
+            let (mnemonic, operand) = if self.is_q(b) {
+                (format!("{mnemonic}q"), "q".to_string())
+            } else if b.is_scalar() {
+                (mnemonic.to_string(), self.field(b))
             } else {
-                self.name(b.reg)
+                (mnemonic.to_string(), self.name(b.reg))
             };
             let operands = [target, self.name(a.reg), operand];
-            self.out.inst(mnemonic, Some(&mask), &operands);
+            self.out.inst(&mnemonic, Some(&mask), &operands);
         }
         Ok(Some(Fv { reg, placement }))
     }

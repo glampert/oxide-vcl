@@ -63,23 +63,23 @@ lloop_2:
         mula.w     acc, fc_23, ft_10[w]
         madd.w     ft_28, vf00, vf00[w]
         mulq.w     fk_27, ft_28, q
-        mulq.xyz   ft_30, fc_23, q
-        add.xyz    fw0_29, ft_20, ft_30
+        mulaq.xyz  acc, fc_23, q
+        madd.xyz   fw0_29, ft_20, vf00[w]
         mula.xyz   acc, fquadOffset_9, fk_27[w]
-        madd.xyz   fw1_31, fw0_29, vf00[w]
+        madd.xyz   fw1_30, fw0_29, vf00[w]
         fcand      vi01, 0x00003f
         iaddiu     iflag_7, vi01, 0x7fff
         sq.x       ft_24, 0(is_5)
-        addq.y     fstore_32, vf00, q
-        sq.y       fstore_32, 0(is_5)
+        addq.y     fstore_31, vf00, q
+        sq.y       fstore_31, 0(is_5)
         isw.z      it_3, 0(is_5)
         sq.xyzw    ft_21, 1(is_5)
         sq.xyzw    ft_22, 3(is_5)
-        ftoi4.xyz  ft_33, fw0_29
-        sq.xyz     ft_33, 2(is_5)
+        ftoi4.xyz  ft_32, fw0_29
+        sq.xyz     ft_32, 2(is_5)
         isw.w      iflag_7, 2(is_5)
-        ftoi4.xyz  ft_34, fw1_31
-        sq.xyz     ft_34, 4(is_5)
+        ftoi4.xyz  ft_33, fw1_30
+        sq.xyz     ft_33, 4(is_5)
         isw.w      iflag_7, 4(is_5)
 lnext_3:
         iaddiu     ip_4, ip_4, 1

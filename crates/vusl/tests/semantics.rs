@@ -913,6 +913,26 @@ fn one_product_sums_are_chains_with_the_same_values() {
 }
 
 #[test]
+fn products_with_q_are_chains_with_the_same_values() {
+    let source = "struct V { vec4 a; vec4 b; vec4 c; };\n\
+                  struct O { vec4 lerp; vec4 offset; vec4 sum; vec4 difference; vec4 mixed; };\n\
+                  void main(layout(address = 0) in V v, layout(address = 3) out O o)\n\
+                  {\n\
+                  \x20   float t = 1.0 / v.c.w;\n\
+                  \x20   o.lerp = v.a + (v.b - v.a) * t;\n\
+                  \x20   o.offset = v.c - v.a * t;\n\
+                  \x20   o.sum = v.a * v.b + v.c * t;\n\
+                  \x20   o.difference = v.a * v.b.x - v.c * t + v.b;\n\
+                  \x20   o.mixed = v.a * v.b.y + v.b * t - v.c;\n\
+                  }\n";
+    let compiled = compile(source);
+    for form in ["mulaq", "maddaq", "msubaq", "maddq", "msubq"] {
+        assert!(compiled.vcl.contains(form), "{form}: {}", compiled.vcl);
+    }
+    agree_compiled(compiled, 8, |memory, _, _| set_float(memory, 2, 3, 4.0));
+}
+
+#[test]
 fn loops_keep_fewer_invariants_when_registers_run_out() {
     // 24 uniform qwords read in a loop that keeps 24 products live: with
     // every invariant in a register the VF registers do not suffice.

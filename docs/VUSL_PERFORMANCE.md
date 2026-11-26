@@ -44,20 +44,20 @@ scene.
 
 | Program | Instructions (VUSL / hand-written) | Scene | Cycles (VUSL) | Cycles (hand-written) | Change |
 |---|---|---|---:|---:|---:|
-| quake2 particles | 109 / 114 | burst | 1018 | 1189 | −14.4% |
+| quake2 particles | 113 / 114 | burst | 1017 | 1189 | −14.5% |
 | quake2 textured_triangles | 1147 / 1212 | world wall | 1801 | 2805 | −35.8% |
-| | | world floor | 13750 | 16768 | −18.0% |
+| | | world floor | 13664 | 16768 | −18.5% |
 | | | model | 1175 | 1578 | −25.5% |
-| | | model near | 3202 | 3786 | −15.4% |
+| | | model near | 3186 | 3786 | −15.8% |
 | doom3 world_strips | 323 + 458 / 695 | wall | 2184 | 3896 | −43.9% |
-| | | floor | 40247 | 47371 | −15.0% |
-| | | side | 15863 | 19314 | −17.9% |
+| | | floor | 40107 | 47371 | −15.3% |
+| | | side | 15847 | 19314 | −18.0% |
 | doom3 world_lm | 644 + 458 / 1019 | wall | 2130 | 2259 | −5.7% |
 | | | wall lit | 3149 | 3476 | −9.4% |
-| | | floor | 40668 | 46153 | −11.9% |
-| | | floor lit | 80283 | 91197 | −12.0% |
-| | | side | 16220 | 18224 | −11.0% |
-| | | side lit | 31451 | 35403 | −11.2% |
+| | | floor | 40528 | 46153 | −12.2% |
+| | | floor lit | 80003 | 91197 | −12.3% |
+| | | side | 16204 | 18224 | −11.1% |
+| | | side lit | 31419 | 35403 | −11.3% |
 
 The doom3 programs' 458 is the clipper library, resident at 1536 and shared: the two programs and
 the library take 1,425 instructions, the two hand-written programs 1,714.

@@ -600,7 +600,10 @@ term first (`mula acc, c, vf00[w]`, then `madd d, a, b`), ACC stays
 claimed across the product's latency. That made the wrangler's B
 strategies run out of steps on one of textured_triangles' large tables:
 its compile took six times as long, for the same cycles. A subtracted
-product (`c - a * b`) keeps `c` first and ends with `msub`.
+product (`c - a * b`) keeps `c` first and ends with `msub`. A product
+with Q takes the Q form (`mulaq`, `maddaq`, `msubaq`, `maddq`, `msubq`),
+so the viewport transform (`offset + v * q`) and the clipper's
+interpolations (`cur + (next - cur) * t`) are chains too.
 
 *Measured* (`tests/bench/scenes.txt`): every scene is as fast or faster,
 −0.4% in all (model −3.0%, the world_lm floor −0.5%). Loop prologues and
@@ -609,6 +612,14 @@ epilogues lose about 40% of their stall cycles, and the clipper's
 shared ACC costs the pipelined loops nothing; world_strips' loop has a
 shorter prologue and runs its kernel a few more times. The ports'
 instructions go from 2,700 to 2,681 pairs.
+
+The Q forms take another 0.3% (−0.7% in all, 254,265 → 252,414 cycles)
+and 1.5% of the stalls, mostly in the clipper's interpolations: the
+world_lm and world_strips floors −0.3%, textured_triangles' world floor
+−0.6%. Particles' kernel keeps its 16 cycles, but the search's first
+strategies miss it now, so its loop search does nearly six times the
+checks (still a third of a second) and the program is 113 pairs, as
+before O12.
 
 ## 4. Not in this plan
 
@@ -700,7 +711,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
 | 7 | O5 (delay slots, superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
-| 8 | O12 (single-product ACC chains in VUSL): done | Small | The VUSL scenes −0.4%, no scene slower; prologue and epilogue stalls about −40% |
+| 8 | O12 (single-product ACC chains in VUSL, Q forms): done | Small | The VUSL scenes −0.7%, no scene slower; prologue and epilogue stalls about −40% |
 
 Why this order:
 
