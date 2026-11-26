@@ -88,15 +88,60 @@ pub(super) fn rewrites(parsed: &parser::Program) -> Vec<Rewrite> {
         return Vec::new();
     }
     let graph = Graph::new(statements, &labels);
-    let values = Values::of(statements, &graph);
     let mut found = Vec::new();
     for (&header, &latch) in &latches {
-        found.extend(merge_in_loop(
-            parsed, &labels, &graph, &values, header, latch,
-        ));
         found.extend(count_with_pointer(parsed, &labels, &graph, header, latch));
     }
+    // The pass over the program, only when a loop has two pointers to merge.
+    let merging: Vec<(usize, usize)> = latches
+        .iter()
+        .filter(|&(&header, &latch)| may_merge(statements, &labels, header, latch))
+        .map(|(&header, &latch)| (header, latch))
+        .collect();
+    if !merging.is_empty() {
+        let values = Values::of(statements, &graph);
+        for (header, latch) in merging {
+            found.extend(merge_in_loop(
+                parsed, &labels, &graph, &values, header, latch,
+            ));
+        }
+    }
     found
+}
+
+/// Whether the loop has the shape a merge needs, with two pointers that
+/// step by the same amount; what they hold at its entry is not looked at.
+fn may_merge(
+    statements: &[parser::Statement],
+    labels: &BTreeMap<String, usize>,
+    header: usize,
+    latch: usize,
+) -> bool {
+    let mut start = header;
+    while start > 0 && matches!(statements[start - 1].kind, StatementKind::Label(_)) {
+        start -= 1;
+    }
+    let inside = start..=latch;
+    if !ordinary_body(&statements[inside.clone()])
+        || !promises_nothing(&statements[inside.clone()])
+        || !lower_bound(&statements[inside.clone()])
+        || entered_past_header(statements, labels, header, &inside)
+    {
+        return false;
+    }
+    let tail = (start..latch)
+        .rev()
+        .find(|&index| {
+            matches!(statements[index].kind, StatementKind::Label(_))
+                || instruction_of(&statements[index]).is_some_and(|i| i.metadata.is_branch())
+        })
+        .map_or(start, |index| index + 1);
+    let pointers = loop_pointers(statements, start, latch, tail);
+    let steps: Vec<i64> = pointers.values().map(|pointer| pointer.step).collect();
+    steps
+        .iter()
+        .enumerate()
+        .any(|(at, step)| steps[at + 1..].contains(step))
 }
 
 /// Each kernel's period in a listing, by its table's name.
@@ -616,7 +661,7 @@ impl State {
     /// The state after `instruction`, the statement at `index`. A statement
     /// that runs again replaces what it wrote before, and what was computed
     /// from that.
-    fn after(&self, index: usize, instruction: &Instruction) -> State {
+    fn after(&self, index: usize, instruction: &Instruction, tracked: &BTreeSet<String>) -> State {
         let mut state = self.clone();
         let computed = immediate_add(instruction).map(|(destination, source, step)| {
             let value = match self.get(&source) {
@@ -640,7 +685,7 @@ impl State {
             state.0.insert(destination, value);
             return state;
         }
-        for register in registers_written(instruction) {
+        for register in registers_written(instruction).filter(|r| tracked.contains(r)) {
             let value = Value::Known(Affine {
                 base: Base::Written(index, register.clone()),
                 offset: 0,
@@ -679,15 +724,14 @@ struct Values {
 
 impl Values {
     fn of(statements: &[parser::Statement], graph: &Graph) -> Self {
+        // Only a register an immediate add reads or writes can be part of a
+        // pointer's value; the others are not followed.
         let registers: BTreeSet<String> = statements
             .iter()
             .filter_map(instruction_of)
-            .flat_map(|instruction| {
-                instruction
-                    .operands
-                    .iter()
-                    .filter_map(|operand| operand.register.as_deref().map(str::to_ascii_lowercase))
-            })
+            .filter_map(immediate_add)
+            .flat_map(|(destination, source, _)| [destination, source])
+            .filter(|register| register != "vi00")
             .collect();
         let mut values = Values {
             before: vec![None; statements.len()],
@@ -724,7 +768,9 @@ impl Values {
             return Vec::new();
         };
         let after = match &statements[index].kind {
-            StatementKind::Instruction(instruction) => before.after(index, instruction),
+            StatementKind::Instruction(instruction) => {
+                before.after(index, instruction, &self.registers)
+            }
             StatementKind::RawText(_) => State::unknown(&self.registers),
             _ => before.clone(),
         };
