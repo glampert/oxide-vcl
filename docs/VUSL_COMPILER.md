@@ -230,9 +230,13 @@ Lowering computes the chosen parts before the loop, and the cache finds them ins
 keeps at most `Settings::hoist_limit` values. `vusl::compile` generates the program with limits of
 16, 6, then 0 (`HOIST_LIMITS`). It stops at the first compile with no spills, and otherwise keeps
 the one with the fewest, the first of equals. A vcl error other than running out of registers or
-work area ends the attempts. When the first attempt spills or runs out of registers, the other two
-compile on their own threads at once, and their results are taken in order as if tried one after
-another, so the choice is the same.
+work area ends the attempts. All three compile at once, each on its own thread, and their results
+are taken in order as if tried one after another, so the choice is the same; the later two are
+looked at only when the first spills or runs out of registers. The work counted (`vcl::stats`) is
+that of the attempts looked at. A program that passes on its first attempt so spends about three
+times the CPU, but the extra compiles run beside it: over the 36 VUSL programs of the repository,
+a batch compiles in about 5.3 s instead of 7.3 s one program at a time, and 4.5 s instead of 6.3 s
+eight at a time, textured_triangles, which needs all three, saving the most.
 
 ## Libraries
 

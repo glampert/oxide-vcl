@@ -287,10 +287,12 @@ fn compile_library(
 
 /// `program`'s VCL compiled, as [`compile`] describes.
 ///
-/// The first attempt keeps up to [`HOIST_LIMITS`]`[0]` invariants in
-/// registers. When its result keeps values in memory or runs out of
-/// registers, the other limits are compiled at the same time, and their
-/// results are taken in order as if they had been tried one after another.
+/// Every hoist limit in [`HOIST_LIMITS`] compiles at once, each on its own
+/// thread, and the results are taken in order as if tried one after
+/// another: the first keeps up to [`HOIST_LIMITS`]`[0]` invariants in
+/// registers, and the others are looked at only when it keeps values in
+/// memory or runs out of registers. The work counted is that of the
+/// attempts the order looks at, so it does not depend on the threads.
 fn compile_program(
     checked: &Checked,
     program: &sema::hir::Program,
@@ -303,24 +305,26 @@ fn compile_program(
         let (result, work) = vcl::stats::measure(|| assemble(&vcl, &program.name, options));
         Ok((vcl, result, work))
     };
+    let attempts: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = HOIST_LIMITS
+            .iter()
+            .map(|&hoist_limit| scope.spawn(move || attempt(hoist_limit)))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    });
+    let mut attempts = attempts.into_iter();
     let mut choice = Choice::default();
-    let first = attempt(HOIST_LIMITS[0])?;
+    let first = attempts.next().expect("a first hoist limit")?;
     choice.work = first.2;
     if choice.consider(first) {
-        let others: Vec<_> = std::thread::scope(|scope| {
-            let handles: Vec<_> = HOIST_LIMITS[1..]
-                .iter()
-                .map(|&hoist_limit| scope.spawn(move || attempt(hoist_limit)))
-                .collect();
-            handles
-                .into_iter()
-                .map(|handle| {
-                    handle
-                        .join()
-                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
-                })
-                .collect()
-        });
+        let others: Vec<_> = attempts.collect();
         for other in others.iter().flatten() {
             choice.work = choice.work + other.2;
         }
@@ -330,8 +334,7 @@ fn compile_program(
             }
         }
     }
-    // The work is every attempt's that ran, chosen or not: what the
-    // compile took.
+    // The work is every attempt's the order looks at, chosen or not.
     let work = choice.work;
     match choice.best {
         Some((vcl, compiled)) => Ok((
