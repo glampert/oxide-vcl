@@ -374,6 +374,36 @@ fn clipping_and_adc() {
 }
 
 #[test]
+fn clip_bits_of_the_newest_judgement() {
+    // Each corner's six flags, and the flags all three share: a triangle
+    // wholly outside one plane has one in common. The loop reads each
+    // corner's bits after its clipw, as a pipelined transform does.
+    let source = "struct Corner { vec4 clip; int16 bits; int16 pad0; int16 pad1; int16 pad2; };\n\
+                  struct Block { Corner corners[3]; int16 common; int16 any; int16 pad0; int16 pad1; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   int16 fa = clipbits(clipw(block.corners[0].clip.xyz, block.corners[0].clip.w));\n\
+                  \x20   int16 fb = clipbits(clipw(block.corners[1].clip.xyz, block.corners[1].clip.w));\n\
+                  \x20   clipflags jc = clipw(block.corners[2].clip.xyz, block.corners[2].clip.w);\n\
+                  \x20   int16 fc = clipbits(jc);\n\
+                  \x20   block.common = fa & fb & fc;\n\
+                  \x20   block.any = fa | fb | fc;\n\
+                  \x20   for (inout Corner corner : block.corners)\n\
+                  \x20       corner.bits = clipbits(clipw(corner.clip.xyz, corner.clip.w));\n\
+                  }\n";
+    agree(source, 32, |memory, _, _| {
+        // Corners beyond each plane in turn, some sharing one.
+        for corner in 0..3 {
+            let w = f32::from_bits(memory[2 * corner][3]).abs();
+            for lane in 0..3 {
+                let value = f32::from_bits(memory[2 * corner][lane]);
+                set_float(memory, 2 * corner, lane, value * (1.0 + w));
+            }
+        }
+    });
+}
+
+#[test]
 fn folds_of_zero_and_negation_keep_values() {
     // 0.0 + x and a + (-b) fold, through locals set to a negation; where a
     // negation's operand changes before the read, or in a loop around it,

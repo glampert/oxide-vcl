@@ -834,6 +834,14 @@ impl Interpreter<'_, '_> {
                     _ => Value::Int(u16::from(any)),
                 }
             }
+            Builtin::ClipBits => {
+                let judgement = self.eval(&args[0])?;
+                if self.judgement_mask(&[judgement])? != 0x3f {
+                    return Err("clipbits() of a judgement that is not the newest".into());
+                }
+                // FCGET: the low twelve bits.
+                Value::Int((self.machine.clip & 0xfff) as u16)
+            }
             Builtin::Esadd | Builtin::Ersadd | Builtin::Eleng | Builtin::Erleng => {
                 let value = self.vf(&args[0])?;
                 let squares = Self::dot(&value, &value);

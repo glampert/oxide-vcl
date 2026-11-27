@@ -1,0 +1,5 @@
+input.vusl(6): error: clipbits() reads only the newest judgement, and a newer clipw follows this one
+   6 |     block.bits = clipbits(ja);
+     |                           ^
+     = help: read a judgement's bits before the next clipw: FCGET reads the two newest, and VU1 has no shift to bring the older one's down
+oxide-vusl: 1 error; no output written

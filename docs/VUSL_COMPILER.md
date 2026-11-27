@@ -123,11 +123,14 @@ from. A ref set from an element is normalized to its array, and one set through 
 ref's memory. Reassigning a ref compares only the base and path, and narrows the access.
 
 **The clip rule.** Each `clipw` records its block, its index among the judgements, and an epoch.
-`any`, `adc` and `clipped` take one to three judgements:
+`any`, `adc` and `clipped` take one to three judgements, and `clipbits` one:
 
 - all within four of the newest `clipw`, which is how many the flags hold;
 - the newest in the current block, since VCL waits for a judgement's flags only within its block;
-- none older than a branch that judges, and the epoch advances before every loop body.
+- none older than a branch that judges, and the epoch advances before every loop body;
+- for `clipbits`, the newest judgement itself, since FCGET puts it at bits 0-5 and the one before
+  at 6-11. It elaborates as `ClipBits(j) & 0x3f`, so the mask is an ordinary constant the value
+  cache keeps in one register and a loop hoists.
 
 Breaking any of these is an error naming the reason. A `clipflags` local, a function's result
 and a parameter hold the judgement they were set from, so these rules and lowering

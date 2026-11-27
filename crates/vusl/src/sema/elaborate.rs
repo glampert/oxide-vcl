@@ -4846,8 +4846,12 @@ impl Elaborator<'_, '_> {
                 self.clips += 1;
                 call(Builtin::ClipW, vec![judge, w], Type::ClipFlags, None)
             }
-            "any" | "adc" | "clipped" => {
-                self.count(name, "1 to 3 judgements", &args, 1..=3, pos)?;
+            "any" | "adc" | "clipped" | "clipbits" => {
+                if name == "clipbits" {
+                    self.count(name, "1 judgement", &args, 1..=1, pos)?;
+                } else {
+                    self.count(name, "1 to 3 judgements", &args, 1..=3, pos)?;
+                }
                 // The clip flags hold the last four judgements. The newest
                 // read must be in this block: VCL waits for a judgement's
                 // flags only within its block. The others may be older, if
@@ -4889,6 +4893,33 @@ impl Elaborator<'_, '_> {
                 match name {
                     "any" => call(Builtin::Any, args, Type::Bool, None),
                     "adc" => call(Builtin::Adc, args, Type::Int16, None),
+                    "clipbits" => {
+                        // FCGET reads the two newest judgements, and VU1 has
+                        // no shift to bring an older one's bits down: only
+                        // the newest can be read, masked to its six bits.
+                        if let ExprKind::Local(id) = args[0].kind
+                            && let Some(&(_, index, _)) = self.clip_judgements.get(&id)
+                            && index + 1 != self.clips
+                        {
+                            return err(VuslMessage::ClipBitsNotNewest, args[0].pos);
+                        }
+                        let flags = call(Builtin::ClipBits, args, Type::Int16, None)?;
+                        Ok(Expr {
+                            kind: ExprKind::Binary {
+                                op: BinOp::IntAnd,
+                                lhs: Box::new(flags),
+                                rhs: Box::new(Expr {
+                                    kind: ExprKind::Const(Const::Int(0x3f)),
+                                    ty: Type::Int16,
+                                    placement: None,
+                                    pos,
+                                }),
+                            },
+                            ty: Type::Int16,
+                            placement: None,
+                            pos,
+                        })
+                    }
                     _ => call(Builtin::Clipped, args, Type::Int16, None),
                 }
             }

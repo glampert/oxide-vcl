@@ -576,6 +576,9 @@ pub enum Builtin {
     Adc,
     /// 1 when any of the judgements is outside, else 0: FCAND's VI01.
     Clipped,
+    /// The clip flag's low twelve bits (FCGET): the newest judgement's six
+    /// flags, then the one before. `clipbits()` masks it to the newest's.
+    ClipBits,
     Esadd,
     Ersadd,
     Eleng,

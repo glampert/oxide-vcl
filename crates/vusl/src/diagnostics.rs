@@ -427,6 +427,8 @@ pub enum VuslMessage {
     ClipOutOfReach {
         reason: &'static str,
     },
+    /// `clipbits()` of a judgement a newer one follows.
+    ClipBitsNotNewest,
     /// A feature the compiler does not have yet.
     NotYet {
         what: &'static str,
@@ -944,7 +946,14 @@ fn wording(message: &VuslMessage) -> Wording {
             format!("the clipw judgement is no longer in the clip flags: {reason}"),
             None,
             Some(
-                "read judgements with any(), adc() or clipped() within four of them, the newest in its clipw's block, with no branch between that judges",
+                "read judgements with any(), adc(), clipped() or clipbits() within four of them, the newest in its clipw's block, with no branch between that judges",
+            ),
+        ),
+        ClipBitsNotNewest => (
+            "clipbits() reads only the newest judgement, and a newer clipw follows this one".into(),
+            None,
+            Some(
+                "read a judgement's bits before the next clipw: FCGET reads the two newest, and VU1 has no shift to bring the older one's down",
             ),
         ),
         NotYet { what } => plain(format!("{what} is not implemented yet")),

@@ -490,6 +490,7 @@ fn write_key(expr: &Expr, out: &mut String, local: LocalName) -> bool {
                     | Builtin::Any
                     | Builtin::Adc
                     | Builtin::Clipped
+                    | Builtin::ClipBits
                     | Builtin::Rnext
                     | Builtin::Rget
             ) {
@@ -805,6 +806,7 @@ impl Invariants<'_> {
                         | Builtin::Any
                         | Builtin::Adc
                         | Builtin::Clipped
+                        | Builtin::ClipBits
                         | Builtin::Xitop
                         | Builtin::Rnext
                         | Builtin::Rget

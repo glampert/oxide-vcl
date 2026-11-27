@@ -1,0 +1,19 @@
+// A judgement's six flags: FCGET, which also returns the judgement before,
+// then IAND with 0x3f. Corners wholly outside one plane share a flag, so a
+// triangle with a nonzero AND of its corners' flags is outside (a clipper's
+// trivial reject).
+struct Corner { vec4 clip; };
+struct Frame { vec3 guard; float pad; };
+struct Out { int16 common; int16 pad0; int16 pad1; int16 pad2; };
+
+void main(layout(address = 0) uniform Frame frame,
+          layout(address = 1) in Corner a,
+          layout(address = 2) in Corner b,
+          layout(address = 3) in Corner c,
+          layout(address = 4) out Out result)
+{
+    int16 fa = clipbits(clipw(a.clip.xyz * frame.guard, a.clip.w));
+    int16 fb = clipbits(clipw(b.clip.xyz * frame.guard, b.clip.w));
+    int16 fc = clipbits(clipw(c.clip.xyz * frame.guard, c.clip.w));
+    result.common = fa & fb & fc;
+}

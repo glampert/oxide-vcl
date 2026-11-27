@@ -88,7 +88,7 @@ but letters, digits and `_` made `_`. The listing exports `Name_CodeStart` and `
 | `bool` | VI, or a flag test | From comparisons, `any()`, `\|\|`, `&&` and `!` |
 | `int32`, `uint32`, `ivec2`–`ivec4`, `uvec2`–`uvec4` | VF lanes, as raw bits | Unpacked integers, `ftoi` results, packed colours. They are moved, stored and converted, never computed with: an FMAC operation would flush them as denormal floats |
 | `qword` | 128 opaque bits | GIF tags, A+D data. `.x` to `.w` read and write as `int16` |
-| `clipflags` | one CLIPW judgement | Made by `clipw()`, read by `any()`, `adc()` and `clipped()`. It can be copied, returned, and passed as an `in` or `out` parameter, and always names the `clipw` it came from |
+| `clipflags` | one CLIPW judgement | Made by `clipw()`, read by `any()`, `adc()`, `clipped()` and `clipbits()`. It can be copied, returned, and passed as an `in` or `out` parameter, and always names the `clipw` it came from |
 | `ref<T>` | a VI qword address | Explicit addressing into memory (see [refs](#refs)) |
 | A `struct` | memory, or one register per member | In memory as a parameter (see [memory](#memory)), or a variable (see [struct variables](#struct-variables)) |
 | An `enum class` | VI, as an `int16` | Named values that compare only with their own type (see [enums](#enums)) |
@@ -431,15 +431,18 @@ set to 0 or 1 around a branch.
 | `any(j1, j2, j3)` | `fcand` of the judgements' bits: true when any is outside |
 | `adc(j...)` | `fcand`, then `iaddiu t, vi01, 0x7fff`: an `int16` with bit 15 set when any is outside, the GS's ADC bit. Its other bits are unspecified |
 | `clipped(j...)` | `fcand`: VI01 itself, 1 when any is outside, else 0 |
+| `clipbits(j)` | `fcget`, then `iand` with 0x3f: an `int16` of the newest judgement's six flags, bit 0 +x, 1 −x, 2 +y, 3 −y, 4 +z, 5 −z. Corners whose flags share a bit are all outside that plane, so a triangle with `(fa & fb & fc) != 0` is wholly outside |
 
 A function may judge a corner and return the judgement, as in
 `clipflags judge(vec4 clip) { return clipw(clip.xyz, clip.w); }`; a call is inlined, so its result is
 that `clipw`'s judgement and costs nothing more.
 
 The clip flags hold the last four judgements, so these read one to three judgements within four
-of the newest `clipw`. The newest must be in the reading block, where VCL waits for its flags; the
-older ones may be in earlier blocks when no branch between judges. Anything else is an error. The
-program begins with `fcset 0` when it judges.
+of the newest `clipw`; `clipbits()` reads only the newest, since FCGET returns the two newest
+judgements' twelve bits and VU1 has no shift to bring the older one's down. The newest must be in
+the reading block, where VCL waits for its flags; the older ones may be in earlier blocks when no
+branch between judges. Anything else is an error. The program begins with `fcset 0` when it
+judges.
 
 **EFU** (VU1 only; the result lands in P and is read through `mfp`):
 

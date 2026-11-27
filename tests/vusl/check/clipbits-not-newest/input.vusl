@@ -1,0 +1,7 @@
+struct Block { vec4 a; vec4 b; int16 bits; int16 pad0; int16 pad1; int16 pad2; };
+void main(layout(address = 0) inout Block block)
+{
+    clipflags ja = clipw(block.a.xyz, block.a.w);
+    clipflags jb = clipw(block.b.xyz, block.b.w);
+    block.bits = clipbits(ja);
+}

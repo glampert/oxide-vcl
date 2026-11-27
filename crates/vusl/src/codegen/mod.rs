@@ -2800,6 +2800,24 @@ impl Lowering<'_> {
                 Ok(reg)
             }
             ExprKind::Call {
+                builtin: Builtin::ClipBits,
+                args,
+            } => {
+                // The newest judgement only (sema), at bits 0-5: FCGET puts
+                // the low twelve bits in any VI register.
+                let mask = self.clip_mask(args)?;
+                if mask != 0x3f {
+                    return Err(Box::new(problem(
+                        VuslMessage::ClipBitsNotNewest,
+                        args[0].pos,
+                    )));
+                }
+                let reg = self.idest(dest);
+                let name = self.iname(reg);
+                self.out.inst("fcget", None, &[name]);
+                Ok(reg)
+            }
+            ExprKind::Call {
                 builtin: Builtin::Xitop,
                 ..
             } => {
