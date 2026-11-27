@@ -434,36 +434,109 @@ splits. Post-increment folding is not done.
 
 ### O5. Schedule across streams
 
-*Evidence:* 1,413 stall cycles in straight-line streams, 187 leading empty
-rows, 141 of 328 empty branch delay slots, and 235 empty exit slots in the
-public corpus. In the local corpus, 773 empty delay slots. The per-light setup
-`dir_light_loop_lid` (`esadd` latency 11 → `mfp` → `ersqrt` 18 → `mfp`)
-stalls 278 cycles across the variants because nothing in its own stream
-can overlap the EFU chain.
+*Evidence, static:* 1,413 stall cycles in straight-line streams, 187
+leading empty rows, 141 of 328 empty branch delay slots, and 235 empty exit
+slots in the public corpus. In the local corpus, 773 empty delay slots. The
+per-light setup `dir_light_loop_lid` (`esadd` latency 11 → `mfp` →
+`ersqrt` 18 → `mfp`) stalls 278 cycles across the variants because nothing
+in its own stream can overlap the EFU chain. Most of this code runs once
+per batch or per light.
 
-*Design*, in increasing order of reach:
+*Evidence, at run time:* the stalls that cost cycles in the renderer scenes
+sit in loops with branches, which no pipeliner takes. The profile report of
+`crates/vusl/tests/programs.rs` (`VUSL_PROFILE=<case> cargo test --release
+-p vusl --test programs profile -- --ignored --nocapture`) gives each
+label's cycles. For the VUSL ports in oxide mode, the clip passes'
+Sutherland-Hodgman loops (`clipPass` in
+`tests/vusl/programs/include/clipper.vusl`, and textured_triangles' own)
+take:
 
-1. **Fill delay slots and exit rows.** Move an independent instruction from
-   before a branch into its slot. For an unconditional `b` or a fall-into,
-   copy the target's first instruction into the slot and retarget the
-   branch one instruction later; the target needs no other predecessor that
-   relies on it. Place final stores in the E row (they can't go in its delay
-   slot) and upper work in the delay slot.
-2. **Superblocks.** Treat a chain of streams joined by fall-through, or by
-   a branch to a block with a single predecessor, as one scheduling region,
-   with compensation copies at side entries. This is where the leading
-   empty rows and the setup chains get their independent work.
-3. **Hoist across loops.** Move work such as the light setup above the
-   preceding loop's epilogue, or overlap it with the previous light
-   iteration, when its inputs are ready.
+| Scene | Cycles | Stall cycles | In the clip-pass loops |
+| --- | ---: | ---: | --- |
+| `world_lm` floor | 40,528 | 8,651 | 27,489 cycles (68%), 8,427 stalls (97%) |
+| `world_lm` side | 16,204 | 2,571 | 2,258 stalls (88%) |
+| `textured_triangles` world floor | 13,664 | 3,013 | at least 7,819 cycles (57%), 2,638 stalls (88%) |
+| `world_lm` wall, `textured_triangles` model | 2,130, 1,175 | 9, 0 | none |
+
+The unclipped scenes have almost no stalls left, so O5's gain is on
+clipped batches. A clip pass's body is five streams: a header that loads
+the corners and computes their plane distances, a conditional store of the
+corner, a second test, a conditional intersection and the latch. On the
+usual path (corner kept, edge not cut) an iteration of the near pass costs
+39 cycles:
+
+| Stream | Cycles | Stall cycles |
+| --- | ---: | ---: |
+| Header | 23 | 8 |
+| Store the corner | 5 | 0 |
+| Second test | 7 | 3 |
+| Latch (`isubiu`, an empty row, `ibgtz`, delay slot) | 4 | 0 |
+
+The header is one dependency chain, `lq` → `mul` → `sub` → `mul` → `mul`
+→ the flag test and its branch, and no order within it is shorter. Moving
+the chain to another stream does not help: rotating `clipPass` in the
+source, so that each iteration computes the next corner's distance in the
+latch, puts the whole chain in the latch (18 cycles), adds two copies, and
+makes the floor scene slower (42,333 cycles). VU latency overlaps only with
+independent instructions issued after it, so the chain's instructions have
+to be placed in later streams and later iterations, which only a scheduler
+working across streams can do.
+
+*Design*, in decreasing order of measured value:
+
+1. **Move work between streams that run on every path, and fill delay
+   slots.** A stream dominated by another that it also post-dominates, in
+   the same loop, runs exactly when that one does (in the clip pass: the
+   header, the second test and the latch). Before scheduling, an oxide-mode
+   rewrite, like `unswitch` and `pointers`, moves independent instructions
+   up into the earlier stream: the second test's `subx.w`, the latch's
+   counter decrement and pointer increment. It also speculates
+   side-effect-free instructions of a conditional stream whose results are
+   dead on the other paths, such as the intersection's `sub`s, into the
+   header's stall cycles. Every FMAC instruction writes the MAC and status
+   flags, so each flag read (`fsand`, `fmand`) must still see its setter's
+   value at its own cycle; Q and P keep their landing order. Delay slots
+   and exit rows are then filled from the moved work: move an independent
+   instruction from before a branch into its slot; for an unconditional `b`
+   or a fall-into, copy the target's first instruction into the slot and
+   retarget the branch one instruction later when the target has no other
+   predecessor that relies on it; place final stores in the E row and upper
+   work in its delay slot. *Expected:* about 6 of the 39 cycles per corner
+   on the usual path, about −13% on the clip-pass loops and −8 to −10% on
+   the clipped scenes. Medium effort.
+2. **Pipeline loops with branches.** The streams that every iteration runs
+   form the kernel, and the conditional streams stay as holes on their
+   paths. Later corners' loads and distance chains issue in earlier
+   iterations' streams. Speculation is safe on the VU: loads do not fault
+   and addresses wrap, and an FMAC result has no side effect but the flags,
+   whose readers keep their exact timing as in step 1. In the clip pass the
+   streams every iteration runs hold about 9 upper and 8 lower instructions
+   and 3 branches per corner; with the store, the usual path would take
+   about 18 to 20 cycles instead of 39. *Expected:* at best −25 to −35% on
+   the clipped scenes; register pressure (two or three corners in flight)
+   and the flag timing will take part of that. This is a new modulo
+   scheduler, as O2 needs, so it extends O2's rather than building a second
+   one. Large to very large effort.
+3. **Superblocks and hoisting for setup code.** Treat a chain of streams
+   joined by fall-through, or by a branch to a block with a single
+   predecessor, as one scheduling region, with compensation copies at side
+   entries, and move work such as the light setup above the preceding
+   loop's epilogue, or overlap it with the previous light iteration, when
+   its inputs are ready. This is where the static stalls, the leading empty
+   rows and the setup chains get their independent work. *Expected:* little
+   in the measured scenes, since that code runs once per batch or per
+   light; ps2gl's per-light EFU chain is the best case.
 
 The port already keeps exact cross-stream timing (external minimum
-positions, end distances, the original's path rules), so a region scheduler
-can reuse it at the region boundary.
+positions, end distances, the original's path rules), so each step can
+reuse it at the boundaries of the streams it changes. All three are in
+oxide-vcl, so hand-written programs compiled in oxide mode gain too; the
+hand-written `world_lm` floor scene stalls 12,174 of its 46,153 cycles.
 
-*Risks:* code duplication at side entries, and keeping Q/P/flag landing
-order across the old stream boundaries. This is the largest piece of work
-in the plan.
+*Risks:* keeping Q, P and flag landing order across the old stream
+boundaries, register pressure from speculated values, and code duplication
+at side entries (step 3). Steps 2 and 3 are the largest pieces of work in
+the plan.
 
 ### O6. Eliminate copies
 
@@ -782,9 +855,10 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 2a | O11 (`unswitch`: a copy of a loop's usual path per mode) | Medium | quake2 world triangles −41%, models −15%; tyra `stapip` −15 to −20% |
 | 3 | O3 step 1 (reschedule loop prologues and epilogues): measured, not kept | Medium | 130 of the public corpus's 15,239 rows and stalls; little in the scenes |
 | 4 | O4 (merge induction variables, post-increment folding): `pointers`, without the folding | Medium | One cycle per iteration in lower-bound kernels whose hint promises nothing more (`mcpip_as_is` 23 → 22; ps2gl's would gain but promise a safe count) |
-| 5 | O2 (bound-reaching modulo scheduler) | Medium to large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50 |
+| 4a | O5 step 1 (move work between streams that run on every path; fill delay slots) | Medium | About −13% on the clip-pass loops, −8 to −10% on the clipped scenes |
+| 5 | O2 (bound-reaching modulo scheduler), then O5 step 2 (pipeline loops with branches) on it | Large to very large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50; the clipped scenes at best −25 to −35% |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
-| 7 | O5 (delay slots, superblocks, hoisting), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls |
+| 7 | O5 step 3 (superblocks, hoisting setup code), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls, little at run time |
 | 8 | O12 (single-product ACC chains in VUSL, Q forms): done | Small | The VUSL scenes −0.7%, no scene slower; prologue and epilogue stalls about −40% |
 
 Why this order:
@@ -799,7 +873,7 @@ Why this order:
   them whose row would empty and that nothing between reads or overwrites
   (a static estimate, flags and timing aside): the rows before a branch are
   tight dependency chains. Filling them needs work from other streams,
-  which is what O5's regions bring.
+  which is what O5 step 1 moves.
 - **O1 is the largest measured runtime gain.** vcl's own pipeliner does
   the work given `--LoopCS 1,0` (the `loops` optimization), with the
   `entry` fix for the values it does not time from before the loop. What
@@ -814,8 +888,15 @@ Why this order:
 - **O2 after O4**, because O4 lowers the bounds O2 aims at, and O2 needs a
   new scheduler (section 2). `--LoopExtra` stays honoured: the source asks
   for those cycles.
-- **O5 steps 2–3 last**: the largest piece of work, with code duplication
-  at side entries.
+- **O5 step 1 after O4**: the clip passes hold almost all the stalls left
+  in the renderer scenes (O5, *Evidence, at run time*), and step 1 needs no
+  new scheduler: it rewrites the source the original's wrangler schedules,
+  as `unswitch` and `pointers` do.
+- **O5 step 2 with O2**: both need a modulo scheduler that is not the
+  original's, and step 2 is that scheduler with conditional streams in its
+  kernel.
+- **O5 step 3 last**: the largest piece of work, with code duplication
+  at side entries, for code that runs once per batch.
 
 Each phase ends with the corpus measured on both outputs (cycles per
 iteration, per batch, code size), the equivalence harness passing, and
