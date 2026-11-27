@@ -45,22 +45,22 @@ scene.
 | Program | Instructions (VUSL / hand-written) | Scene | Cycles (VUSL) | Cycles (hand-written) | Change |
 |---|---|---|---:|---:|---:|
 | quake2 particles | 113 / 114 | burst | 1017 | 1189 | −14.5% |
-| quake2 textured_triangles | 1147 / 1212 | world wall | 1801 | 2805 | −35.8% |
-| | | world floor | 13664 | 16768 | −18.5% |
+| quake2 textured_triangles | 1132 / 1202 | world wall | 1801 | 2805 | −35.8% |
+| | | world floor | 13016 | 16336 | −20.3% |
 | | | model | 1175 | 1578 | −25.5% |
-| | | model near | 3186 | 3786 | −15.8% |
-| doom3 world_strips | 323 + 458 / 695 | wall | 2184 | 3896 | −43.9% |
-| | | floor | 40107 | 47371 | −15.3% |
-| | | side | 15847 | 19314 | −18.0% |
-| doom3 world_lm | 661 + 458 / 1019 | wall | 2131 | 2259 | −5.7% |
+| | | model near | 3081 | 3716 | −17.1% |
+| doom3 world_strips | 323 + 443 / 685 | wall | 2184 | 3896 | −43.9% |
+| | | floor | 38316 | 46177 | −17.0% |
+| | | side | 15283 | 18938 | −19.3% |
+| doom3 world_lm | 661 + 443 / 1009 | wall | 2131 | 2259 | −5.7% |
 | | | wall lit | 3152 | 3476 | −9.3% |
-| | | floor | 33839 | 46153 | −26.7% |
-| | | floor lit | 66562 | 91197 | −27.0% |
-| | | side | 8367 | 18224 | −54.1% |
-| | | side lit | 15690 | 35403 | −55.7% |
+| | | floor | 32336 | 44959 | −28.1% |
+| | | floor lit | 63556 | 88809 | −28.4% |
+| | | side | 8169 | 17848 | −54.2% |
+| | | side lit | 15294 | 34651 | −55.9% |
 
-The doom3 programs' 458 is the clipper library, resident at 1536 and shared: the two programs and
-the library take 1,442 instructions, the two hand-written programs 1,714.
+The doom3 programs' 443 is the clipper library, resident at 1536 and shared: the two programs and
+the library take 1,427 instructions, the two hand-written programs 1,694.
 
 ## Where the differences come from
 

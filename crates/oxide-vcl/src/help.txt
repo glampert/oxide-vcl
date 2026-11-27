@@ -91,6 +91,9 @@ optimizations (--mode=oxide only, which runs them all by default):
                  pointers: make pointers a loop steps together one, and
                  test a pointer instead of a count, where that shortens a
                  pipelined loop's kernel
+                 hoist: in a loop with branches, move work every path
+                 through an iteration does up into the earliest stream that
+                 runs when it does, where that shortens those streams
 
 diagnostics (file(line): severity: message, with the source line and a fix):
   -q             quiet mode: prints only warnings and errors

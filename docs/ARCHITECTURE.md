@@ -179,8 +179,10 @@ waits do (`compiler/loop_entry.rs`). When the result does not fit in micro
 memory it falls back to one level of copies, then to the program as
 written. `pointers` (`compiler/pointers.rs`) rewrites the parsed program
 before `unswitch` does: each of its rewrites is compiled on its own and
-kept when the kernels are shorter with it. `loops` and `exit`
-act inside the compiler's phases. See
+kept when the kernels are shorter with it. `hoist` (`compiler/hoist.rs`)
+rewrites the program those two settle on, compiles it once more, and keeps
+the rewrite for each loop whose moved streams get shorter. `loops` and
+`exit` act inside the compiler's phases. See
 [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
 
 Every message is a typed value in `vcl::diagnostics`, never preformatted

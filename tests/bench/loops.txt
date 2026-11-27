@@ -761,7 +761,7 @@ vcl tyra__engine_src_renderer_core_paths_path1_draw_finish total                
 vcl tyra__engine_src_renderer_core_paths_path1_draw_finish table:__v_CORPUS_4                                      entries=13 cycles=65 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough total                                                   c1=5 c2=5 c3=5 c4=5 c5=5 c6=5 c8=5 c9=5 c12=5 c16=5 c24=5 c32=5 c48=5
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough table:__v_CORPUS_4                                      entries=13 cycles=65 stalls=0 per100=500
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm total                                                      c1=5237 c2=4723 c3=8776 c4=1072 c5=18486 c6=29205 c8=17593 c9=32316 c12=42900 c16=121091 c24=52551 c32=156408
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm total                                                      c1=5093 c2=4627 c3=8572 c4=1072 c5=17992 c6=28365 c8=17209 c9=31452 c12=41748 c16=117251 c24=51399 c32=151798
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_4                                         entries=12 cycles=360 stalls=36 fmac=36 per100=3000
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm prologue:lTransform                                        entries=12 cycles=252 stalls=24 fmac=12 lq=12 per100=2100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm kernel:lTransform                                          entries=158 cycles=3318 stalls=0 per100=2100
@@ -797,7 +797,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lNearLoop         
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_58                                        entries=1947 cycles=9735 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lNearKept                                            entries=2832 cycles=8496 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_60                                        entries=4 cycles=104 stalls=48 fmac=24 waitq=24 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lNearNoCut                                           entries=2832 cycles=11328 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lNearNoCut                                           entries=2832 cycles=5664 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_62                                        entries=944 cycles=3776 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_63                                        entries=296 cycles=296 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lNearWrap                                            entries=944 cycles=1888 stalls=0 per100=200
@@ -808,7 +808,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXlLoop           
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_69                                        entries=1319 cycles=6595 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXlKept                                              entries=1945 cycles=5835 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_71                                        entries=12 cycles=312 stalls=144 fmac=72 waitq=72 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXlNoCut                                             entries=1945 cycles=7780 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXlNoCut                                             entries=1945 cycles=3890 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_73                                        entries=648 cycles=2592 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_74                                        entries=206 cycles=206 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXlWrap                                              entries=648 cycles=1296 stalls=0 per100=200
@@ -819,7 +819,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXrLoop           
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_80                                        entries=387 cycles=1935 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXrKept                                              entries=1331 cycles=3993 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_82                                        entries=4 cycles=104 stalls=48 fmac=24 waitq=24 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXrNoCut                                             entries=1331 cycles=5324 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXrNoCut                                             entries=1331 cycles=2662 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_84                                        entries=442 cycles=1768 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_85                                        entries=312 cycles=312 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lXrWrap                                              entries=442 cycles=884 stalls=0 per100=200
@@ -829,7 +829,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_89     
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYbLoop                                              entries=391 cycles=15640 stalls=5865 fmac=5083 lq=782 per100=4000
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_91                                        entries=391 cycles=1955 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYbKept                                              entries=391 cycles=1173 stalls=0 per100=300
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYbNoCut                                             entries=391 cycles=1564 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYbNoCut                                             entries=391 cycles=782 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_95                                        entries=130 cycles=520 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYbWrap                                              entries=130 cycles=260 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_98                                        entries=130 cycles=910 stalls=0 per100=700
@@ -837,7 +837,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYbOut            
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_100                                       entries=130 cycles=260 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYtLoop                                              entries=391 cycles=14858 stalls=5865 fmac=5083 lq=782 per100=3800
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYtKept                                              entries=391 cycles=1173 stalls=0 per100=300
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYtNoCut                                             entries=391 cycles=1564 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYtNoCut                                             entries=391 cycles=782 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_106                                       entries=130 cycles=520 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_107                                       entries=130 cycles=130 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lYtWrap                                              entries=130 cycles=260 stalls=0 per100=200
@@ -849,7 +849,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_121    
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_122                                       entries=11 cycles=66 stalls=0 per100=600
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_123                                       entries=11 cycles=22 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lListEnd                                             entries=11 cycles=33 stalls=0 per100=300
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips total                                                  c1=7630 c2=17123 c3=13951 c4=1280 c5=8570 c6=31208 c8=4343 c9=17122 c12=9396 c16=10622 c24=9908 c32=20334 c48=7594
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips total                                                  c1=7444 c2=16673 c3=13585 c4=1280 c5=8352 c6=30400 c8=4219 c9=16676 c12=9162 c16=10342 c24=9648 c32=19820 c48=7392
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_4                                     entries=13 cycles=260 stalls=0 per100=2000
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lTransform                                       entries=188 cycles=564 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_6                                     entries=188 cycles=7520 stalls=2632 fmac=2632 per100=4000
@@ -878,7 +878,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lNearLoop     
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_38                                    entries=236 cycles=1180 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lNearKept                                        entries=495 cycles=1485 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_40                                    entries=238 cycles=6188 stalls=2856 fmac=1428 waitq=1428 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lNearNoCut                                       entries=495 cycles=1980 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lNearNoCut                                       entries=495 cycles=990 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_42                                    entries=165 cycles=660 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_43                                    entries=27 cycles=27 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lNearWrap                                        entries=165 cycles=330 stalls=0 per100=200
@@ -889,7 +889,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXlLoop       
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_49                                    entries=268 cycles=1340 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXlKept                                          entries=472 cycles=1416 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_51                                    entries=163 cycles=4238 stalls=1956 fmac=978 waitq=978 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXlNoCut                                         entries=472 cycles=1888 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXlNoCut                                         entries=472 cycles=944 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_53                                    entries=138 cycles=552 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_54                                    entries=19 cycles=19 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXlWrap                                          entries=138 cycles=276 stalls=0 per100=200
@@ -900,7 +900,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXrLoop       
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_60                                    entries=231 cycles=1155 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXrKept                                          entries=430 cycles=1290 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_62                                    entries=120 cycles=3120 stalls=1440 fmac=720 waitq=720 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXrNoCut                                         entries=430 cycles=1720 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXrNoCut                                         entries=430 cycles=860 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_64                                    entries=119 cycles=476 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_65                                    entries=28 cycles=28 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lXrWrap                                          entries=119 cycles=238 stalls=0 per100=200
@@ -911,7 +911,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYbLoop       
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_71                                    entries=214 cycles=1070 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYbKept                                          entries=347 cycles=1041 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_73                                    entries=90 cycles=2340 stalls=1080 fmac=540 waitq=540 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYbNoCut                                         entries=347 cycles=1388 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYbNoCut                                         entries=347 cycles=694 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_75                                    entries=91 cycles=364 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_76                                    entries=12 cycles=12 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYbWrap                                          entries=91 cycles=182 stalls=0 per100=200
@@ -922,7 +922,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYtLoop       
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_82                                    entries=203 cycles=1015 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYtKept                                          entries=300 cycles=900 stalls=0 per100=300
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_84                                    entries=76 cycles=1976 stalls=912 fmac=456 waitq=456 per100=2600
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYtNoCut                                         entries=300 cycles=1200 stalls=0 per100=400
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYtNoCut                                         entries=300 cycles=600 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_86                                    entries=79 cycles=316 stalls=0 per100=400
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:__v_CORPUS_87                                    entries=11 cycles=11 stalls=0 per100=100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_strips table:lYtWrap                                          entries=79 cycles=158 stalls=0 per100=200
@@ -967,24 +967,24 @@ oxide openvcl__repros_clip_loop_entry table:__v_CORPUS_4                        
 oxide openvcl__repros_clip_loop_entry table:lLoop                                                                  entries=52 cycles=702 stalls=52 fmac=52 per100=1350
 oxide openvcl__repros_clipw_implicit_w total                                                                       c1=11 c2=11 c3=11 c4=11 c5=11 c6=11 c8=11 c9=11 c12=11 c16=11 c24=11 c32=11 c48=11
 oxide openvcl__repros_clipw_implicit_w table:__v_CORPUS_4                                                          entries=13 cycles=143 stalls=39 lq=39 per100=1100
-oxide openvcl__repros_crossloop_4regs total                                                                        c1=61 c2=61 c3=61 c4=61 c5=61 c6=61 c8=61 c9=61 c12=61 c16=61 c24=61 c32=61 c48=61
+oxide openvcl__repros_crossloop_4regs total                                                                        c1=52 c2=52 c3=52 c4=52 c5=52 c6=52 c8=52 c9=52 c12=52 c16=52 c24=52 c32=52 c48=52
 oxide openvcl__repros_crossloop_4regs table:__v_CORPUS_4                                                           entries=13 cycles=13 stalls=0 per100=100
 oxide openvcl__repros_crossloop_4regs table:lA                                                                     entries=39 cycles=195 stalls=0 per100=500
 oxide openvcl__repros_crossloop_4regs table:__v_CORPUS_6                                                           entries=13 cycles=13 stalls=0 per100=100
-oxide openvcl__repros_crossloop_4regs table:lB                                                                     entries=39 cycles=234 stalls=117 ilw=117 per100=600
+oxide openvcl__repros_crossloop_4regs table:lB                                                                     entries=39 cycles=234 stalls=39 ilw=39 per100=600
 oxide openvcl__repros_crossloop_4regs table:__v_CORPUS_8                                                           entries=39 cycles=78 stalls=0 per100=200
-oxide openvcl__repros_crossloop_4regs table:lBSkip                                                                 entries=39 cycles=260 stalls=0 per100=666
+oxide openvcl__repros_crossloop_4regs table:lBSkip                                                                 entries=39 cycles=143 stalls=0 per100=366
 oxide openvcl__repros_ilw_branch_label total                                                                       c1=16 c2=16 c3=16 c4=16 c5=16 c6=16 c8=16 c9=16 c12=16 c16=16 c24=16 c32=16 c48=16
 oxide openvcl__repros_ilw_branch_label table:__v_CORPUS_4                                                          entries=13 cycles=78 stalls=26 ilw=26 per100=600
 oxide openvcl__repros_ilw_branch_label table:__v_CORPUS_5                                                          entries=13 cycles=26 stalls=0 per100=200
 oxide openvcl__repros_ilw_branch_label table:lJ                                                                    entries=13 cycles=78 stalls=0 per100=600
 oxide openvcl__repros_ilw_branch_label table:lOut                                                                  entries=13 cycles=26 stalls=0 per100=200
 oxide openvcl__repros_immediates_out_of_range total                                                                rejected=1
-oxide openvcl__repros_loop_pointer total                                                                           c1=154 c2=154 c3=154 c4=154 c5=154 c6=154 c8=154 c9=154 c12=154 c16=154 c24=154 c32=154 c48=154
+oxide openvcl__repros_loop_pointer total                                                                           c1=134 c2=134 c3=134 c4=134 c5=134 c6=134 c8=134 c9=134 c12=134 c16=134 c24=134 c32=134 c48=134
 oxide openvcl__repros_loop_pointer table:__v_CORPUS_4                                                              entries=13 cycles=26 stalls=0 per100=200
-oxide openvcl__repros_loop_pointer table:lLoop                                                                     entries=130 cycles=780 stalls=390 ilw=390 per100=600
+oxide openvcl__repros_loop_pointer table:lLoop                                                                     entries=130 cycles=780 stalls=260 ilw=260 per100=600
 oxide openvcl__repros_loop_pointer table:__v_CORPUS_6                                                              entries=130 cycles=260 stalls=0 per100=200
-oxide openvcl__repros_loop_pointer table:lSkip                                                                     entries=130 cycles=936 stalls=0 per100=720
+oxide openvcl__repros_loop_pointer table:lSkip                                                                     entries=130 cycles=676 stalls=0 per100=520
 oxide openvcl__repros_mac_join total                                                                               c1=15 c2=15 c3=15 c4=15 c5=15 c6=15 c8=15 c9=15 c12=15 c16=15 c24=15 c32=15 c48=15
 oxide openvcl__repros_mac_join table:__v_CORPUS_4                                                                  entries=13 cycles=78 stalls=26 ilw=26 per100=600
 oxide openvcl__repros_mac_join table:__v_CORPUS_5                                                                  entries=13 cycles=26 stalls=0 per100=200
@@ -1298,7 +1298,7 @@ oxide quake2-ps2__src_ps2_renderer_vu1progs_particles prologue:lParticleLoop    
 oxide quake2-ps2__src_ps2_renderer_vu1progs_particles kernel:lParticleLoop                                         entries=145 cycles=2755 stalls=0 per100=1900
 oxide quake2-ps2__src_ps2_renderer_vu1progs_particles epilogue:lParticleLoop                                       entries=13 cycles=310 stalls=79 fmac=79 per100=2384
 oxide quake2-ps2__src_ps2_renderer_vu1progs_particles table:__v_CORPUS_7                                           entries=13 cycles=26 stalls=0 per100=200
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles total                                               c1=706 c2=160 c3=160 c4=662 c5=1769 c6=3328 c8=2230 c9=1722 c12=2461 c16=3414 c24=5178 c32=6145 c48=10714
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles total                                               c1=694 c2=160 c3=160 c4=662 c5=1729 c6=3252 c8=2178 c9=1688 c12=2415 c16=3348 c24=5066 c32=6027 c48=10490
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_4                                  entries=13 cycles=247 stalls=0 per100=1900
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_5                                  entries=13 cycles=78 stalls=13 ilw=13 per100=600
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_6                                  entries=13 cycles=13 stalls=0 per100=100
@@ -1326,7 +1326,7 @@ oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lNearLoop  
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_50                                 entries=46 cycles=230 stalls=0 per100=500
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lNearKept                                     entries=93 cycles=279 stalls=0 per100=300
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_52                                 entries=48 cycles=1296 stalls=576 fmac=288 waitq=288 per100=2700
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lNearNoCut                                    entries=93 cycles=372 stalls=0 per100=400
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lNearNoCut                                    entries=93 cycles=186 stalls=0 per100=200
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_54                                 entries=31 cycles=124 stalls=0 per100=400
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_55                                 entries=2 cycles=2 stalls=0 per100=100
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lNearWrap                                     entries=31 cycles=62 stalls=0 per100=200
@@ -1337,7 +1337,7 @@ oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXlLoop    
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_61                                 entries=48 cycles=240 stalls=0 per100=500
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXlKept                                       entries=94 cycles=282 stalls=0 per100=300
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_63                                 entries=30 cycles=810 stalls=360 fmac=180 waitq=180 per100=2700
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXlNoCut                                      entries=94 cycles=376 stalls=0 per100=400
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXlNoCut                                      entries=94 cycles=188 stalls=0 per100=200
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_65                                 entries=29 cycles=116 stalls=0 per100=400
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_66                                 entries=7 cycles=7 stalls=0 per100=100
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXlWrap                                       entries=29 cycles=58 stalls=0 per100=200
@@ -1348,7 +1348,7 @@ oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXrLoop    
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_72                                 entries=32 cycles=160 stalls=0 per100=500
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXrKept                                       entries=78 cycles=234 stalls=0 per100=300
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_74                                 entries=30 cycles=810 stalls=360 fmac=180 waitq=180 per100=2700
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXrNoCut                                      entries=78 cycles=312 stalls=0 per100=400
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXrNoCut                                      entries=78 cycles=156 stalls=0 per100=200
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_76                                 entries=22 cycles=88 stalls=0 per100=400
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_77                                 entries=6 cycles=6 stalls=0 per100=100
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lXrWrap                                       entries=22 cycles=44 stalls=0 per100=200
@@ -1359,7 +1359,7 @@ oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYbLoop    
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_83                                 entries=43 cycles=215 stalls=0 per100=500
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYbKept                                       entries=62 cycles=186 stalls=0 per100=300
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_85                                 entries=20 cycles=540 stalls=240 fmac=120 waitq=120 per100=2700
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYbNoCut                                      entries=62 cycles=248 stalls=0 per100=400
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYbNoCut                                      entries=62 cycles=124 stalls=0 per100=200
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_87                                 entries=16 cycles=64 stalls=0 per100=400
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYbWrap                                       entries=16 cycles=32 stalls=0 per100=200
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_90                                 entries=16 cycles=112 stalls=0 per100=700
@@ -1369,7 +1369,7 @@ oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYtLoop    
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_94                                 entries=41 cycles=205 stalls=0 per100=500
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYtKept                                       entries=63 cycles=189 stalls=0 per100=300
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_96                                 entries=12 cycles=324 stalls=144 fmac=72 waitq=72 per100=2700
-oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYtNoCut                                      entries=63 cycles=252 stalls=0 per100=400
+oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYtNoCut                                      entries=63 cycles=126 stalls=0 per100=200
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_98                                 entries=16 cycles=64 stalls=0 per100=400
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:__v_CORPUS_99                                 entries=3 cycles=3 stalls=0 per100=100
 oxide quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles table:lYtWrap                                       entries=16 cycles=32 stalls=0 per100=200

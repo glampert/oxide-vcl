@@ -25,6 +25,7 @@ mod clip_history;
 mod external_assignment;
 mod flow_graph;
 mod generated_rows;
+mod hoist;
 mod immediate_fields;
 mod loi_functions;
 mod loop_entry;
@@ -1666,19 +1667,76 @@ impl Failure {
     }
 }
 
-/// Most rewrites the `pointers` optimization tries in one program.
-const MAX_POINTER_REWRITES: usize = 16;
-
-/// Compiles a parsed program. With the `pointers` optimization, each
-/// rewrite of a loop's pointers (`pointers`) is tried in turn and kept
-/// when the program's kernels are shorter with it, none of them longer:
-/// a step less can also move the pipeliner's search to a deeper schedule
-/// of the same period, or to a longer one.
+/// Compiles a parsed program. With the `hoist` optimization, the program
+/// `pointers` and `unswitch` settle on then has work its loops do on every
+/// path moved up (`hoist`) where that shortens the streams it moves between:
+/// it is compiled once more with the moves, and when only some loops gain,
+/// once more with just those.
 fn compile_parsed(
     parsed: parser::Program,
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
+    let (base, program) = compile_pointers(parsed, filename, options)?;
+    if !options.optimizes(Optimization::Hoist) {
+        return Ok(base);
+    }
+    let Some(hoisted) = hoist::hoist(&program, None) else {
+        return Ok(base);
+    };
+    let before = hoist::table_cycles(&base.assembly);
+    let compile = |program: parser::Program| {
+        compile_waited(program, filename, options)
+            .ok()
+            .filter(|output| {
+                output.instruction_pairs <= program_size::MICRO_MEMORY.max(base.instruction_pairs)
+            })
+    };
+    // The loops whose moved streams take fewer cycles in all.
+    let gaining = |hoisted: &hoist::Hoisted, output: &Compiled| -> BTreeSet<String> {
+        let after = hoist::table_cycles(&output.assembly);
+        hoisted
+            .loops
+            .iter()
+            .filter(|changed| {
+                hoist::stream_cycles(changed, &before, &after).is_some_and(|(old, new)| new < old)
+            })
+            .map(|changed| changed.header.clone())
+            .collect()
+    };
+    let Some(output) = compile(hoisted.program.clone()) else {
+        return Ok(base);
+    };
+    let gains = gaining(&hoisted, &output);
+    if gains.len() == hoisted.loops.len() {
+        return Ok(output);
+    }
+    if gains.is_empty() {
+        return Ok(base);
+    }
+    let Some(fewer) = hoist::hoist(&program, Some(&gains)) else {
+        return Ok(base);
+    };
+    match compile(fewer.program.clone()) {
+        Some(output) if gaining(&fewer, &output).len() == fewer.loops.len() => Ok(output),
+        _ => Ok(base),
+    }
+}
+
+/// Most rewrites the `pointers` optimization tries in one program.
+const MAX_POINTER_REWRITES: usize = 16;
+
+/// Compiles a parsed program, and returns the program as it was compiled,
+/// before the `entry` fix's waits. With the `pointers` optimization, each
+/// rewrite of a loop's pointers (`pointers`) is tried in turn and kept
+/// when the program's kernels are shorter with it, none of them longer:
+/// a step less can also move the pipeliner's search to a deeper schedule
+/// of the same period, or to a longer one.
+fn compile_pointers(
+    parsed: parser::Program,
+    filename: &str,
+    options: &Options,
+) -> Result<(Compiled, parser::Program), Box<Failure>> {
     if !options.optimizes(Optimization::Pointers) {
         return compile_unswitched(parsed, filename, options);
     }
@@ -1694,8 +1752,9 @@ fn compile_parsed(
         };
         tried.insert(rewrite.key);
         if let Ok(output) = compile_unswitched(rewrite.program.clone(), filename, options)
-            && output.instruction_pairs <= program_size::MICRO_MEMORY.max(best.instruction_pairs)
-            && pointers::shorter_kernels(&best.assembly, &output.assembly)
+            && output.0.instruction_pairs
+                <= program_size::MICRO_MEMORY.max(best.0.instruction_pairs)
+            && pointers::shorter_kernels(&best.0.assembly, &output.0.assembly)
         {
             best = output;
             current = rewrite.program;
@@ -1704,21 +1763,23 @@ fn compile_parsed(
     Ok(best)
 }
 
-/// Compiles a parsed program. With the `unswitch` optimization, its
-/// loops are unswitched first (`unswitch`), with each copy unswitched once
-/// more where it tests another mode. When that fails to compile or no
-/// longer fits in micro memory, the loops are unswitched once only, and
-/// when that does not either, the program is compiled as written.
+/// Compiles a parsed program, and returns the program as it was compiled.
+/// With the `unswitch` optimization, its loops are unswitched first
+/// (`unswitch`), with each copy unswitched once more where it tests another
+/// mode. When that fails to compile or no longer fits in micro memory, the
+/// loops are unswitched once only, and when that does not either, the
+/// program is compiled as written.
 fn compile_unswitched(
     parsed: parser::Program,
     filename: &str,
     options: &Options,
-) -> Result<Compiled, Box<Failure>> {
+) -> Result<(Compiled, parser::Program), Box<Failure>> {
     if options.optimizes(Optimization::Unswitch) {
         let fits = |unswitched: parser::Program| {
-            compile_waited(unswitched, filename, options)
+            compile_waited(unswitched.clone(), filename, options)
                 .ok()
                 .filter(|output| output.instruction_pairs <= program_size::MICRO_MEMORY)
+                .map(|output| (output, unswitched))
         };
         if let Some((unswitched, nested)) = unswitch::unswitch_loops(&parsed, options, true) {
             if let Some(output) = fits(unswitched) {
@@ -1732,7 +1793,7 @@ fn compile_unswitched(
             }
         }
     }
-    compile_waited(parsed, filename, options)
+    Ok((compile_waited(parsed.clone(), filename, options)?, parsed))
 }
 
 /// Compiles a parsed program, with the waits of the `entry` fix.

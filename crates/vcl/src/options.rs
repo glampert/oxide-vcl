@@ -199,15 +199,20 @@ pub enum Optimization {
     /// known, become one: the accesses through one use the other with the
     /// difference in their offsets, and its step goes (`pointers`).
     Pointers,
+    /// Work a loop does on every path through an iteration moves up into
+    /// the earliest stream that runs exactly when it does, where that
+    /// shortens those streams (`hoist`).
+    Hoist,
 }
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 4] = [
+    pub const ALL: [Optimization; 5] = [
         Optimization::Exit,
         Optimization::Loops,
         Optimization::Unswitch,
         Optimization::Pointers,
+        Optimization::Hoist,
     ];
 
     /// The optimization's name on the command line.
@@ -217,6 +222,7 @@ impl Optimization {
             Optimization::Loops => "loops",
             Optimization::Unswitch => "unswitch",
             Optimization::Pointers => "pointers",
+            Optimization::Hoist => "hoist",
         }
     }
 

@@ -1060,3 +1060,158 @@ fn pointers_leaves_a_rewrite_that_does_not_shorten_the_kernel() {
         compile(source, &["--no-opt=pointers"])
     );
 }
+
+// ----------------------------------------------
+// hoist
+// ----------------------------------------------
+
+/// A clipping pass's shape: a header that tests the corner, a store when it
+/// is kept, a second test that every corner makes, a store when it holds,
+/// and the latch. The second test and the latch's steps run whenever the
+/// header does.
+const PASS: &str = ".syntax new\n\
+                    .init_vf_all\n\
+                    .init_vi_all\n\
+                    --enter\n\
+                    in_vi src(vi01)\n\
+                    in_vi count(vi02)\n\
+                    in_vi dst(vi03)\n\
+                    in_vf limit(vf02)\n\
+                    --endenter\n\
+                    iaddiu kept,vi00,0\n\
+                    lpass:\n\
+                    lq.xyzw cur,0(src)\n\
+                    lq.xyzw nxt,1(src)\n\
+                    mul.xyzw prod,cur,nxt\n\
+                    sub.w diff,cur,limit[w]\n\
+                    fsand flagA,2\n\
+                    ibne flagA,vi00,lskip\n\
+                    sq.xyzw cur,0(dst)\n\
+                    iaddiu dst,dst,1\n\
+                    iaddiu kept,kept,1\n\
+                    lskip:\n\
+                    sub.w later,prod,limit[w]\n\
+                    fsand flagB,2\n\
+                    ibeq flagB,vi00,lnext\n\
+                    add.xyzw mid,cur,nxt\n\
+                    sq.xyzw mid,0(dst)\n\
+                    iaddiu dst,dst,1\n\
+                    lnext:\n\
+                    iaddiu src,src,1\n\
+                    isubiu count,count,1\n\
+                    ibgtz count,lpass\n\
+                    --exit\n\
+                    out_vi kept(vi04)\n\
+                    --endexit\n";
+
+/// Runs `source`'s listings with and without `hoist` for 1 to 6 corners
+/// (VI02) read from VI01 and written to VI03, with corners on both sides of
+/// both tests, and requires the same memory and VI04 (the corners kept).
+fn hoist_results(source: &str, dst: u16) -> (String, String) {
+    let plain = compile(source, &["--no-opt=hoist"]);
+    let optimized = compile(source, &[]);
+    for count in 1..=6 {
+        let mut state = State::default();
+        state.vi[1] = 10;
+        state.vi[2] = count;
+        state.vi[3] = dst;
+        state.set_vector(2, [0.0, 0.0, 0.0, 2.5]);
+        for (address, qword) in state.memory.iter_mut().enumerate() {
+            let w = (address % 5) as f32 - 1.0;
+            *qword = [(address % 7) as f32 - 2.0, 1.5, -0.5, w].map(f32::to_bits);
+        }
+        let program = |listing: &str| Program::parse(listing).unwrap();
+        let before = program(&plain)
+            .run(state.clone(), Config::TIMED, 4096)
+            .unwrap();
+        let after = program(&optimized).run(state, Config::TIMED, 4096).unwrap();
+        assert_eq!(
+            after.state.memory, before.state.memory,
+            "count {count}\n{optimized}"
+        );
+        assert_eq!(after.state.vi[4], before.state.vi[4], "count {count}");
+    }
+    (plain, optimized)
+}
+
+/// The rows a table walks, stall rows included, and its code, by the name
+/// in its comment.
+fn table<'a>(listing: &'a str, name: &str) -> (u32, &'a str) {
+    let marker = format!("[{name}]");
+    let start = listing
+        .lines()
+        .position(|line| line.starts_with("; _LNOPT_w=[") && line.ends_with(&marker))
+        .unwrap_or_else(|| panic!("no table {name}\n{listing}"));
+    let lines: Vec<&str> = listing.lines().collect();
+    let walked = lines[start]
+        .split(']')
+        .nth(2)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let begin = listing.find(lines[start]).unwrap() + lines[start].len();
+    let end = listing[begin..]
+        .find("; _L")
+        .map_or(listing.len(), |at| begin + at);
+    (walked, &listing[begin..end])
+}
+
+#[test]
+fn hoist_moves_the_second_test_and_the_latch_into_the_header() {
+    let (plain, optimized) = hoist_results(PASS, 200);
+    let cycles = |listing: &str| {
+        ["lpass", "lskip", "lnext"]
+            .map(|name| table(listing, name).0)
+            .iter()
+            .sum::<u32>()
+    };
+    assert!(cycles(&optimized) < cycles(&plain), "{plain}\n{optimized}");
+    // The latch and the second test keep only their branches: a row and its
+    // delay slot each.
+    assert_eq!(table(&optimized, "lnext").0, 2, "{optimized}");
+    let (walked, test) = table(&optimized, "lskip");
+    assert_eq!(walked, 2, "{optimized}");
+    assert!(!test.contains("fsand"), "{optimized}");
+}
+
+#[test]
+fn hoist_keeps_a_flag_writer_below_a_flag_read() {
+    // The second test reads the flags of a SUB in the header, and stays where
+    // it is: the kept corner's arm writes its register. Moved into the
+    // header, the latch's MUL would be the last flag writer before it; no
+    // other FMAC instruction stands between them.
+    let source = PASS
+        .replace(
+            "ibne flagA,vi00,lskip\n",
+            "sub.w later,prod,limit[w]\nibne flagA,vi00,lskip\n",
+        )
+        .replace(
+            "iaddiu kept,kept,1\nlskip:\nsub.w later,prod,limit[w]\n",
+            "iaddiu kept,kept,1\niaddiu flagB,vi00,0\nlskip:\n",
+        )
+        .replace("add.xyzw mid,cur,nxt\nsq.xyzw mid,", "sq.xyzw nxt,")
+        .replace(
+            "iaddiu src,src,1\n",
+            "mul.w scaled,cur,limit[w]\nsq.w scaled,40(src)\niaddiu src,src,1\n",
+        );
+    let (_, optimized) = hoist_results(&source, 200);
+    // It may join the second test, after its FSAND.
+    let (_, header) = table(&optimized, "lpass");
+    assert!(!header.contains("mulw.w"), "{optimized}");
+}
+
+#[test]
+fn hoist_keeps_a_load_below_a_store() {
+    // The latch's load reads what the kept corner's store may have written
+    // (the corners are written over the ones the loop reads next).
+    let source = PASS.replace(
+        "iaddiu src,src,1\n",
+        "lq.xyzw peek,1(src)\nsq.xyzw peek,100(src)\niaddiu src,src,1\n",
+    );
+    let (_, optimized) = hoist_results(&source, 11);
+    let (_, latch) = table(&optimized, "lnext");
+    assert!(latch.contains("lq"), "{optimized}");
+}

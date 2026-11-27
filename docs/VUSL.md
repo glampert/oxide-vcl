@@ -556,8 +556,10 @@ work the source asks for.
   accesses' offsets.
 
 oxide-vcl then does the rest in its oxide mode: scheduling, pairing, register allocation, field
-narrowing and dead code, loop pipelining (`loops`) and loop unswitching on registers the loop does
-not change (`unswitch`). See `docs/OPTIMIZATION_PLAN.md`.
+narrowing and dead code, loop pipelining (`loops`), loop unswitching on registers the loop does
+not change (`unswitch`), one pointer for pointers that step together (`pointers`), and work every
+path through a loop's iteration does moved up into its earliest stream (`hoist`). See
+`docs/OPTIMIZATION_PLAN.md`.
 
 ## Rejected constructs
 

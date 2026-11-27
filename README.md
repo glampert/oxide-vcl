@@ -26,7 +26,7 @@ The syntax, every `--` annotation, `.` directive, and command line option is des
   preprocessor: [vclpp](https://github.com/glampert/vclpp)'s C directives,
   block macros and MASP mode ([VCL_REFERENCE.md](docs/VCL_REFERENCE.md#preprocessor)).
 - Oxide mode also optimizes beyond the original: `exit`, `loops`,
-  `unswitch` and `pointers`, each of which `--no-opt=NAME` turns off. They are described
+  `unswitch`, `pointers` and `hoist`, each of which `--no-opt=NAME` turns off. They are described
   in [VCL_REFERENCE.md](docs/VCL_REFERENCE.md#optimizations) and
   [OPTIMIZATION_PLAN.md](docs/OPTIMIZATION_PLAN.md).
 - [VUSL](docs/VUSL.md), a GLSL-like language for VU1 microprograms, compiles to VCL
