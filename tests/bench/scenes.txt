@@ -86,22 +86,22 @@ vusl textured_triangles model_near                                              
 vusl textured_triangles prologue:lloop_96__u0                                       entries=2 cycles=62 stalls=2 fmac=2 per100=3100
 vusl textured_triangles world_floor                                                 cycles=13664 stalls=3013 fmac=2289 lq=552 waitq=172
 vusl textured_triangles world_wall                                                  cycles=1801 stalls=60 lq=60
-vusl world_lm compile                                                               pairs=644 programs=9 regions=9 nodes=0 steps=61650 checks=1085686 analyses=130 walks=11960
-vusl world_lm compile phase:loops                                                   nodes=0 steps=59904 checks=1047005 analyses=25 walks=2150
-vusl world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=105 walks=9810
-vusl world_lm compile phase:schedule                                                nodes=0 steps=1746 checks=5376 analyses=0 walks=0
-vusl world_lm compile phase:tables                                                  nodes=0 steps=0 checks=33305 analyses=0 walks=0
+vusl world_lm compile                                                               pairs=661 programs=9 regions=9 nodes=0 steps=73381 checks=960158 analyses=130 walks=12984
+vusl world_lm compile phase:loops                                                   nodes=0 steps=71606 checks=920888 analyses=25 walks=2334
+vusl world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=105 walks=10650
+vusl world_lm compile phase:schedule                                                nodes=0 steps=1775 checks=5474 analyses=0 walks=0
+vusl world_lm compile phase:tables                                                  nodes=0 steps=0 checks=33796 analyses=0 walks=0
 vusl world_lm epilogue:EXPL_clipper_ClipTriangle_clipper_ClipTriangle_lloop_59      entries=93 cycles=465 stalls=0 per100=500
 vusl world_lm epilogue:lloop_7                                                      entries=6 cycles=144 stalls=0 per100=2400
-vusl world_lm floor                                                                 cycles=40528 stalls=8651 fmac=6536 lq=1421 ilw=134 waitq=560
-vusl world_lm floor_lit                                                             cycles=80003 stalls=17290 fmac=13066 lq=2839 ilw=265 waitq=1120
+vusl world_lm floor                                                                 cycles=33839 stalls=7499 fmac=5576 lq=1229 ilw=134 waitq=560
+vusl world_lm floor_lit                                                             cycles=66562 stalls=14986 fmac=11146 lq=2455 ilw=265 waitq=1120
 vusl world_lm kernel:EXPL_clipper_ClipTriangle_clipper_ClipTriangle_lloop_59        entries=42 cycles=1260 stalls=0 per100=3000
 vusl world_lm kernel:lloop_7                                                        entries=294 cycles=6468 stalls=0 per100=2200
 vusl world_lm prologue:lloop_7                                                      entries=6 cycles=264 stalls=54 fmac=36 lq=18 per100=4400
-vusl world_lm side                                                                  cycles=16204 stalls=2571 fmac=1950 lq=423 ilw=134 waitq=64
-vusl world_lm side_lit                                                              cycles=31419 stalls=5130 fmac=3894 lq=843 ilw=265 waitq=128
-vusl world_lm wall                                                                  cycles=2130 stalls=9 fmac=6 lq=3
-vusl world_lm wall_lit                                                              cycles=3149 stalls=9 fmac=6 lq=3
+vusl world_lm side                                                                  cycles=8367 stalls=1031 fmac=698 lq=167 ilw=134 waitq=32
+vusl world_lm side_lit                                                              cycles=15690 stalls=2050 fmac=1390 lq=331 ilw=265 waitq=64
+vusl world_lm wall                                                                  cycles=2131 stalls=9 fmac=6 lq=3
+vusl world_lm wall_lit                                                              cycles=3152 stalls=9 fmac=6 lq=3
 vusl world_strips compile                                                           pairs=323 programs=5 regions=5 nodes=0 steps=65560 checks=389865 analyses=79 walks=4313
 vusl world_strips compile phase:loops                                               nodes=0 steps=64770 checks=377028 analyses=18 walks=852
 vusl world_strips compile phase:prepare                                             nodes=0 steps=0 checks=0 analyses=61 walks=3461

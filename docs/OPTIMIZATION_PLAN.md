@@ -453,10 +453,10 @@ take:
 
 | Scene | Cycles | Stall cycles | In the clip-pass loops |
 | --- | ---: | ---: | --- |
-| `world_lm` floor | 40,528 | 8,651 | 27,489 cycles (68%), 8,427 stalls (97%) |
-| `world_lm` side | 16,204 | 2,571 | 2,258 stalls (88%) |
+| `world_lm` floor | 33,839 | 7,499 | 24,001 cycles (71%), 7,275 stalls (97%) |
+| `world_lm` side | 8,367 | 1,031 | 3,018 cycles (36%), 876 stalls (85%) |
 | `textured_triangles` world floor | 13,664 | 3,013 | at least 7,819 cycles (57%), 2,638 stalls (88%) |
-| `world_lm` wall, `textured_triangles` model | 2,130, 1,175 | 9, 0 | none |
+| `world_lm` wall, `textured_triangles` model | 2,131, 1,175 | 9, 0 | none |
 
 The unclipped scenes have almost no stalls left, so O5's gain is on
 clipped batches. A clip pass's body is five streams: a header that loads
@@ -477,7 +477,7 @@ The header is one dependency chain, `lq` → `mul` → `sub` → `mul` → `mul`
 the chain to another stream does not help: rotating `clipPass` in the
 source, so that each iteration computes the next corner's distance in the
 latch, puts the whole chain in the latch (18 cycles), adds two copies, and
-makes the floor scene slower (42,333 cycles). VU latency overlaps only with
+makes the floor scene 4.5% slower. VU latency overlaps only with
 independent instructions issued after it, so the chain's instructions have
 to be placed in later streams and later iterations, which only a scheduler
 working across streams can do.
@@ -502,8 +502,9 @@ working across streams can do.
    retarget the branch one instruction later when the target has no other
    predecessor that relies on it; place final stores in the E row and upper
    work in its delay slot. *Expected:* about 6 of the 39 cycles per corner
-   on the usual path, about −13% on the clip-pass loops and −8 to −10% on
-   the clipped scenes. Medium effort.
+   on the usual path, about −13% on the clip-pass loops: about −9% on the
+   `world_lm` floor, −7% on `textured_triangles`' world floor and −5% on
+   the `world_lm` side. Medium effort.
 2. **Pipeline loops with branches.** The streams that every iteration runs
    form the kernel, and the conditional streams stay as holes on their
    paths. Later corners' loads and distance chains issue in earlier
@@ -513,7 +514,7 @@ working across streams can do.
    streams every iteration runs hold about 9 upper and 8 lower instructions
    and 3 branches per corner; with the store, the usual path would take
    about 18 to 20 cycles instead of 39. *Expected:* at best −25 to −35% on
-   the clipped scenes; register pressure (two or three corners in flight)
+   the floors and about −18% on the `world_lm` side; register pressure (two or three corners in flight)
    and the flag timing will take part of that. This is a new modulo
    scheduler, as O2 needs, so it extends O2's rather than building a second
    one. Large to very large effort.
@@ -855,8 +856,8 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 2a | O11 (`unswitch`: a copy of a loop's usual path per mode) | Medium | quake2 world triangles −41%, models −15%; tyra `stapip` −15 to −20% |
 | 3 | O3 step 1 (reschedule loop prologues and epilogues): measured, not kept | Medium | 130 of the public corpus's 15,239 rows and stalls; little in the scenes |
 | 4 | O4 (merge induction variables, post-increment folding): `pointers`, without the folding | Medium | One cycle per iteration in lower-bound kernels whose hint promises nothing more (`mcpip_as_is` 23 → 22; ps2gl's would gain but promise a safe count) |
-| 4a | O5 step 1 (move work between streams that run on every path; fill delay slots) | Medium | About −13% on the clip-pass loops, −8 to −10% on the clipped scenes |
-| 5 | O2 (bound-reaching modulo scheduler), then O5 step 2 (pipeline loops with branches) on it | Large to very large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50; the clipped scenes at best −25 to −35% |
+| 4a | O5 step 1 (move work between streams that run on every path; fill delay slots) | Medium | About −13% on the clip-pass loops, −5 to −9% on the clipped scenes |
+| 5 | O2 (bound-reaching modulo scheduler), then O5 step 2 (pipeline loops with branches) on it | Large to very large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50; the clipped floors at best −25 to −35% |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
 | 7 | O5 step 3 (superblocks, hoisting setup code), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls, little at run time |
 | 8 | O12 (single-product ACC chains in VUSL, Q forms): done | Small | The VUSL scenes −0.7%, no scene slower; prologue and epilogue stalls about −40% |

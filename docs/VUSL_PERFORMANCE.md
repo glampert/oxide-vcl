@@ -52,15 +52,15 @@ scene.
 | doom3 world_strips | 323 + 458 / 695 | wall | 2184 | 3896 | −43.9% |
 | | | floor | 40107 | 47371 | −15.3% |
 | | | side | 15847 | 19314 | −18.0% |
-| doom3 world_lm | 644 + 458 / 1019 | wall | 2130 | 2259 | −5.7% |
-| | | wall lit | 3149 | 3476 | −9.4% |
-| | | floor | 40528 | 46153 | −12.2% |
-| | | floor lit | 80003 | 91197 | −12.3% |
-| | | side | 16204 | 18224 | −11.1% |
-| | | side lit | 31419 | 35403 | −11.3% |
+| doom3 world_lm | 661 + 458 / 1019 | wall | 2131 | 2259 | −5.7% |
+| | | wall lit | 3152 | 3476 | −9.3% |
+| | | floor | 33839 | 46153 | −26.7% |
+| | | floor lit | 66562 | 91197 | −27.0% |
+| | | side | 8367 | 18224 | −54.1% |
+| | | side lit | 15690 | 35403 | −55.7% |
 
 The doom3 programs' 458 is the clipper library, resident at 1536 and shared: the two programs and
-the library take 1,425 instructions, the two hand-written programs 1,714.
+the library take 1,442 instructions, the two hand-written programs 1,714.
 
 ## Where the differences come from
 
@@ -91,6 +91,10 @@ the library take 1,425 instructions, the two hand-written programs 1,714.
 - **world_lm.**
   - Its strip path and transform loop gain as world_strips' do; the scenes that clip pay for the
     library call.
+  - Each vertex keeps its six clip flags (`clipbits()`), and a triangle whose three corners share
+    one, wholly outside that plane, is dropped before the call: the clipper would send nothing
+    for it. This halves the floor scene's calls and leaves the side scene an eighth of
+    them.
 - **The clipper library.** Its passes test signs as textured_triangles' do, and a plane's
   distance is `w` scaled less or plus the plane's coordinate, with no negated copy. Each call costs the argument and result moves, the JALR and the entry
   table's branch, the library's saves and restores of VI06–VI09 and VF16–VF23, the JR, and the
