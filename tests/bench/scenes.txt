@@ -74,11 +74,11 @@ vusl particles compile phase:tables                                             
 vusl particles epilogue:lloop_2                                                     entries=1 cycles=18 stalls=1 fmac=1 per100=1800
 vusl particles kernel:lloop_2                                                       entries=58 cycles=928 stalls=0 per100=1600
 vusl particles prologue:lloop_2                                                     entries=1 cycles=32 stalls=6 fmac=3 lq=3 per100=3200
-vusl textured_triangles compile                                                     pairs=1132 programs=27 regions=138 nodes=132140 steps=1316186 checks=10091726 analyses=504 walks=119301
+vusl textured_triangles compile                                                     pairs=1131 programs=27 regions=138 nodes=132035 steps=1315988 checks=10083239 analyses=504 walks=119301
 vusl textured_triangles compile phase:loops                                         nodes=0 steps=673725 checks=6143140 analyses=141 walks=27949
 vusl textured_triangles compile phase:prepare                                       nodes=0 steps=0 checks=0 analyses=363 walks=91352
-vusl textured_triangles compile phase:schedule                                      nodes=132140 steps=642461 checks=2485230 analyses=0 walks=0
-vusl textured_triangles compile phase:tables                                        nodes=0 steps=0 checks=1463356 analyses=0 walks=0
+vusl textured_triangles compile phase:schedule                                      nodes=132035 steps=642263 checks=2480181 analyses=0 walks=0
+vusl textured_triangles compile phase:tables                                        nodes=0 steps=0 checks=1459918 analyses=0 walks=0
 vusl textured_triangles epilogue:lloop_96__u0                                       entries=2 cycles=24 stalls=10 fmac=10 per100=1200
 vusl textured_triangles kernel:lloop_96__u0                                         entries=3 cycles=90 stalls=0 per100=3000
 vusl textured_triangles model                                                       cycles=1175 stalls=0

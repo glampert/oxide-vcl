@@ -196,8 +196,13 @@ without first moving it. VUSL makes lane moves explicit.
   bits move only by rotation.
 - **Scalars go where they are used.** A scalar whose instruction can write any lane is made in the
   lane its store or component write wants: `st.z = q` after a division is a single
-  `addq.z st, vf00, q`. Assigned to a local inside an `if` or a loop, it is made in the lane the
-  local already has.
+  `addq.z st, vf00, q`. An operation of two scalars is made there when one operand is in that
+  lane, or is a constant (made in x, y and z alike): `v.y = a.x * b.y` is `mul.y v, b, a[x]`, and
+  `v.x = a.w + 0.25` an `add.x` after the constant's `loi` and `addi`. Assigned to a local inside an
+  `if` or a loop, it is made in the lane the local already has.
+- **A move of a value the loop does not change happens before the loop.** In a loop, moving a
+  value made before it into a fixed lane (`layout(lane = w) float f = scale.z;`) costs nothing per
+  iteration: the move is made once before the loop.
 - **Constructors are free when only broadcast.** In `m * vec4(p.pos, 1.0)` the product reads
   `p`'s lanes and VF00's w directly. Otherwise a constructor costs one instruction per part not
   already in place.
@@ -486,7 +491,9 @@ other terms take n + k instructions instead of 2n + k − 1. For one product tha
 instructions, but the chain does not wait for the product: ACC has no data hazards, so the `madd`
 issues right after the `mula`. A product with a division's or root's result reads Q in the chain (`mulaq`,
 `maddaq`, `msubaq`, `maddq`, `msubq`). A sum's lanes must match, as for any element-wise
-operation. VU1 rounds each product before adding it, so the chain computes what
+operation; scalar terms chain in a lane each can take, a product in either operand's lane and
+another term in its own or in w, so `pos.w * shrink - pos.z * f`, with `f` in w, is a `mula.w` and
+an `msub.w`. VU1 rounds each product before adding it, so the chain computes what
 the separate operations would. `precise` is accepted on declarations and changes nothing.
 
 Constant expressions fold at compile time in IEEE single precision, which differs from the VU's

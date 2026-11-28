@@ -85,6 +85,18 @@ enum Component {
     Literal(f32),
 }
 
+/// The end of the code before a loop being lowered.
+#[derive(Clone, Copy, Debug)]
+struct Preheader {
+    /// The line after it.
+    at: usize,
+    /// How many VF variables there were then: those made before hold the
+    /// same value all through the loop, unless they are a local's.
+    vfs: usize,
+    /// The values it keeps in registers across the loop.
+    kept: usize,
+}
+
 /// The registers of a local.
 #[derive(Clone, Debug)]
 enum LocalReg {
@@ -132,6 +144,9 @@ pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<
         clips_in_block_from: 0,
         cache: Cache::default(),
         q_holds: None,
+        want: None,
+        splats: Vec::new(),
+        preheaders: Vec::new(),
         bits_read,
     };
     lowering.program_text(source)?;
@@ -173,6 +188,16 @@ struct Lowering<'p> {
     /// The register lane whose value Q holds too, while no FDIV operation
     /// or label has come since: its readers take Q directly.
     q_holds: Option<(Vf, Lane)>,
+    /// For the scalar operation being lowered: the lane its result is
+    /// wanted in, and the register to write there, when an operand order
+    /// puts it there. Only the outermost operation reads it.
+    want: Option<(Lane, Option<Vf>)>,
+    /// Registers that hold a float constant in x, y and z alike, so any of
+    /// those lanes is the constant's.
+    splats: Vec<Vf>,
+    /// The loops being lowered, outermost first: where code before each
+    /// one ends, which instructions moved out of it go before.
+    preheaders: Vec<Preheader>,
     /// The float locals whose exact bits are read: their copies are raw.
     bits_read: Vec<bool>,
 }
@@ -417,6 +442,19 @@ impl Lowering<'_> {
     }
 
     /// Whether `value` is the one Q holds too.
+    /// `value`, a scalar, read in `lane`: where it is, or another lane of
+    /// a splat constant.
+    fn in_lane(&self, value: Fv, lane: Lane) -> Option<Fv> {
+        if !value.is_scalar() {
+            return None;
+        }
+        if value.lane() == lane {
+            return Some(value);
+        }
+        (lane != Lane::W && value.lane() != Lane::W && self.splats.contains(&value.reg))
+            .then(|| Fv::scalar(value.reg, lane))
+    }
+
     fn is_q(&self, value: Fv) -> bool {
         value.is_scalar() && self.q_holds == Some((value.reg, value.lane()))
     }
@@ -501,7 +539,8 @@ impl Lowering<'_> {
 
     /// Lowers the invariants of a loop with `effects` before it, so the
     /// loop finds them in registers.
-    fn hoist(&mut self, stmts: &[&[Stmt]], conds: &[&Expr], effects: &Effects) -> Lowered<()> {
+    /// It returns how many values it keeps in registers.
+    fn hoist(&mut self, stmts: &[&[Stmt]], conds: &[&Expr], effects: &Effects) -> Lowered<usize> {
         let program = self.program;
         let mut found = Vec::new();
         {
@@ -556,7 +595,7 @@ impl Lowering<'_> {
                 kept += 1;
             }
         }
-        Ok(())
+        Ok(kept)
     }
 
     // ----------------------------------------------
@@ -1264,6 +1303,19 @@ impl Lowering<'_> {
         hints: &LoopHints,
         pos: Pos,
     ) -> Lowered<()> {
+        let depth = self.preheaders.len();
+        let result = self.lower_loop_within(kind, body, hints, pos);
+        self.preheaders.truncate(depth);
+        result
+    }
+
+    fn lower_loop_within(
+        &mut self,
+        kind: &LoopKind,
+        body: &[Stmt],
+        hints: &LoopHints,
+        pos: Pos,
+    ) -> Lowered<()> {
         let program = self.program;
         let top = self.out.label("loop");
         let next = self.out.label("next");
@@ -1280,7 +1332,7 @@ impl Lowering<'_> {
         // What the loop changes is not known at its top; its invariants
         // are computed once, before it.
         self.forget(&effects);
-        match kind {
+        let kept = match kind {
             LoopKind::Condition {
                 cond_stmts,
                 cond,
@@ -1288,7 +1340,12 @@ impl Lowering<'_> {
                 ..
             } => self.hoist(&[cond_stmts, body, step], &[cond], &effects)?,
             LoopKind::Range { .. } => self.hoist(&[body], &[], &effects)?,
-        }
+        };
+        self.preheaders.push(Preheader {
+            at: self.out.instructions(),
+            vfs: self.out.vf_count(),
+            kept,
+        });
         self.out.pos = Some(pos);
         // The values every path to the exit has.
         let at_exit;
@@ -2065,8 +2122,8 @@ impl Lowering<'_> {
         match components {
             None => {
                 if let Some(target) = fixed {
-                    let value = self.vf_toward(value, reg, target)?;
-                    self.write_lanes(value, reg, target, raw)?;
+                    let lowered = self.vf_toward(value, reg, target)?;
+                    self.write_moved(value, lowered, reg, target, raw, true)?;
                     return Ok(target);
                 }
                 // A constructor writes its result a lane at a time, so it
@@ -2107,8 +2164,8 @@ impl Lowering<'_> {
                 let Some(target) = base.select(components) else {
                     return self.not_yet("these components");
                 };
-                let value = self.vf_toward(value, reg, target)?;
-                self.write_lanes(value, reg, target, raw)?;
+                let lowered = self.vf_toward(value, reg, target)?;
+                self.write_moved(value, lowered, reg, target, raw, false)?;
                 Ok(base)
             }
         }
@@ -2121,6 +2178,163 @@ impl Lowering<'_> {
             1 => self.vf_in_lane(value, Some(reg), target.lane(0)),
             _ => self.vf(value),
         }
+    }
+
+    /// The key of `expr`'s value moved into the lanes `target`, and the
+    /// registers it names.
+    fn moved_key(&self, expr: &Expr, target: Placement) -> Option<(String, Vec<Vf>)> {
+        let (key, regs) = self.vf_key(expr)?;
+        Some((format!("{key}@{}", target.letters()), regs))
+    }
+
+    /// `expr`'s value, lowered to `value`, into `dest`'s lanes `target`,
+    /// as `write_lanes` puts it, for a local's `whole` value or some of its
+    /// components. A lane move is a value too: when a register already
+    /// holds `expr` in those lanes, moved before or before the loop, it is
+    /// copied from there, and a move made here is remembered.
+    fn write_moved(
+        &mut self,
+        expr: &Expr,
+        value: Fv,
+        dest: Vf,
+        target: Placement,
+        raw: bool,
+        whole: bool,
+    ) -> Lowered<()> {
+        if raw || value.placement == target {
+            return self.write_lanes(value, dest, target, raw);
+        }
+        if value.is_scalar() && target.len() == 1 && value.reg != Vf::Zero {
+            return self.move_scalar(value, dest, target.lane(0), whole);
+        }
+        let key = self.moved_key(expr, target);
+        if let Some((key, _)) = &key
+            && let Some(Value::Vf(moved)) = self.cache.find(&Key::Expr(key.clone()))
+        {
+            return self.write_lanes(moved, dest, target, raw);
+        }
+        self.write_lanes(value, dest, target, raw)?;
+        if let Some((key, regs)) = key {
+            let moved = Fv {
+                reg: dest,
+                placement: target,
+            };
+            self.remember_naming(expr, key, Value::Vf(moved), regs);
+        }
+        Ok(())
+    }
+
+    /// A scalar into lane `to` of `dest`, from another lane or register.
+    /// The move is a value, by its source register and lanes: one made
+    /// before, still valid, is copied. For a local's `whole` value, whose
+    /// copy the peephole can drop, one from a register the enclosing loops
+    /// do not change, made before them and no local's (a local set by a
+    /// copy counts as the register it copies), goes before the outermost of
+    /// them, once, into a register of its own. A component write keeps its
+    /// move in the loop, as a copy would cost as much there.
+    fn move_scalar(&mut self, value: Fv, dest: Vf, to: Lane, whole: bool) -> Lowered<()> {
+        let value = self.copied_from(value);
+        let target = Placement::starting_at(to, 1).expect("one lane");
+        let from = value.lane();
+        let key = Key::Expr(format!(
+            "move {}[{}] {}",
+            self.name(value.reg),
+            from.letter(),
+            to.letter()
+        ));
+        if let Some(Value::Vf(moved)) = self.cache.find(&key) {
+            return self.write_lanes(moved, dest, target, false);
+        }
+        let entry = |moved: Fv| Entry {
+            key: key.clone(),
+            value: Value::Vf(moved),
+            reads: Vec::new(),
+            locals: Vec::new(),
+            elements: Vec::new(),
+            regs: vec![value.reg],
+        };
+        if whole && let Some(index) = self.invariant_since(value.reg) {
+            let reg = self.out.vf("moved");
+            let at = self.preheaders[index].at;
+            let names = [self.name(reg), self.out.field(value.reg, from)];
+            let (mnemonic, source) = if from == to {
+                ("move", self.name(value.reg))
+            } else if to == Lane::W {
+                ("mul", names[1].clone())
+            } else {
+                ("add", names[1].clone())
+            };
+            let operands = if mnemonic == "move" {
+                vec![names[0].clone(), source]
+            } else {
+                vec![names[0].clone(), "vf00".into(), source]
+            };
+            self.out
+                .insert_inst(at, mnemonic, &to.letter().to_string(), &operands);
+            for preheader in &mut self.preheaders {
+                if preheader.at >= at {
+                    preheader.at += 1;
+                }
+            }
+            self.preheaders[index].kept += 1;
+            let moved = Fv {
+                reg,
+                placement: target,
+            };
+            self.cache.insert(entry(moved));
+            return self.write_lanes(moved, dest, target, false);
+        }
+        self.write_lanes(value, dest, target, false)?;
+        self.cache.insert(entry(Fv {
+            reg: dest,
+            placement: target,
+        }));
+        Ok(())
+    }
+
+    /// `value`, read from the register a local was copied from while the
+    /// copy holds.
+    fn copied_from(&self, value: Fv) -> Fv {
+        let local = self
+            .locals
+            .iter()
+            .position(|local| matches!(local, LocalReg::Vf(reg) if *reg == value.reg));
+        if let Some(id) = local
+            && let Some((source, placement, writes)) = self.copies[id]
+            && self.cache.writes(source) == writes
+            && value
+                .placement
+                .lanes()
+                .iter()
+                .all(|lane| placement.lanes().contains(lane))
+        {
+            return Fv {
+                reg: source,
+                placement: value.placement,
+            };
+        }
+        value
+    }
+
+    /// The outermost loop being lowered that `reg` holds one value all
+    /// through, with room for another value kept across it: `reg` was made
+    /// before it and is no local's.
+    fn invariant_since(&self, reg: Vf) -> Option<usize> {
+        let Vf::Var(number) = reg else {
+            return None;
+        };
+        if self.out.is_physical(reg)
+            || self.locals.iter().any(|local| match local {
+                LocalReg::Vf(held) => *held == reg,
+                LocalReg::Mat(held) => held.contains(&reg),
+                _ => false,
+            })
+        {
+            return None;
+        }
+        self.preheaders.iter().position(|preheader| {
+            number < preheader.vfs && preheader.kept < self.settings.hoist_limit
+        })
     }
 
     /// Puts `value`'s components into `dest` at `lanes`: nothing when they
@@ -2875,7 +3089,16 @@ impl Lowering<'_> {
         let reg = self.dest(dest);
         self.out.inst("loi", None, &[float_text(value)]);
         let name = self.name(reg);
-        let field = lane.letter().to_string();
+        // A register of its own takes the constant in x, y and z with the
+        // one instruction, so an operation can read it in whichever of
+        // those lanes puts its result where it is wanted. vcl narrows the
+        // mask to the lanes read.
+        let field = if dest.is_none() && lane != Lane::W {
+            self.splats.push(reg);
+            "xyz".to_string()
+        } else {
+            lane.letter().to_string()
+        };
         // VF00's w is 1, not 0: I times 1 there.
         let mnemonic = if lane == Lane::W { "muli" } else { "addi" };
         self.out
@@ -2890,13 +3113,29 @@ impl Lowering<'_> {
     /// A scalar in `lane`, when its instruction can put it in any lane;
     /// in `dest` then too, which keeps its other lanes.
     fn vf_in_lane(&mut self, expr: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
-        let dest = dest.filter(|_| any_lane(expr));
-        self.vf_full(expr, dest, lane)
+        if any_lane(expr) {
+            return self.vf_full(expr, dest, lane);
+        }
+        // An operation of two scalars puts its result in its lane-wise
+        // operand's lane: it is wanted in `lane`, and in `dest` when there.
+        let scalar_operation = expr.ty.vf_lanes() == Some(1)
+            && matches!(
+                expr.kind,
+                ExprKind::Binary {
+                    op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Min | BinOp::Max,
+                    ..
+                }
+            );
+        if scalar_operation {
+            self.want = Some((lane, dest));
+        }
+        self.vf_full(expr, None, lane)
     }
 
     /// `expr`'s value, in `dest` when it can, and a scalar that can go in
     /// any lane in `lane`.
     fn vf_full(&mut self, expr: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
+        let want = self.want.take();
         let cacheable = match &expr.kind {
             ExprKind::Const(Const::Float(value)) => {
                 !(*value == 0.0 && value.is_sign_positive()) && *value != 1.0
@@ -2918,21 +3157,27 @@ impl Lowering<'_> {
         {
             return Ok(value);
         }
-        let value = self.vf_lower(expr, dest, lane)?;
+        let value = self.vf_lower(expr, dest, lane, want)?;
         if let Some((key, regs)) = key {
             self.remember_naming(expr, key, Value::Vf(value), regs);
         }
         Ok(value)
     }
 
-    fn vf_lower(&mut self, expr: &Expr, dest: Option<Vf>, lane: Lane) -> Lowered<Fv> {
+    fn vf_lower(
+        &mut self,
+        expr: &Expr,
+        dest: Option<Vf>,
+        lane: Lane,
+        want: Option<(Lane, Option<Vf>)>,
+    ) -> Lowered<Fv> {
         if matches!(
             expr.kind,
             ExprKind::Binary {
                 op: BinOp::Add | BinOp::Sub,
                 ..
             }
-        ) && let Some(value) = self.contract(expr, dest)?
+        ) && let Some(value) = self.contract(expr, dest, want)?
         {
             return Ok(value);
         }
@@ -2970,11 +3215,11 @@ impl Lowering<'_> {
             }
             ExprKind::Neg(operand) => self.negate(operand, dest, lane),
             ExprKind::Binary { op, lhs, rhs } => match op {
-                BinOp::Add => self.elementwise("add", lhs, rhs, dest, true),
-                BinOp::Sub => self.elementwise("sub", lhs, rhs, dest, false),
-                BinOp::Mul => self.elementwise("mul", lhs, rhs, dest, true),
-                BinOp::Min => self.elementwise("mini", lhs, rhs, dest, true),
-                BinOp::Max => self.elementwise("max", lhs, rhs, dest, true),
+                BinOp::Add => self.elementwise("add", lhs, rhs, dest, true, want),
+                BinOp::Sub => self.elementwise("sub", lhs, rhs, dest, false, want),
+                BinOp::Mul => self.elementwise("mul", lhs, rhs, dest, true, want),
+                BinOp::Min => self.elementwise("mini", lhs, rhs, dest, true, want),
+                BinOp::Max => self.elementwise("max", lhs, rhs, dest, true, want),
                 BinOp::Div => self.divide(lhs, rhs, dest, lane),
                 BinOp::MatVec => self.transform(lhs, rhs, dest),
                 BinOp::VecMat => self.transform(rhs, lhs, dest),
@@ -3060,10 +3305,11 @@ impl Lowering<'_> {
         rhs: &Expr,
         dest: Option<Vf>,
         commutative: bool,
+        want: Option<(Lane, Option<Vf>)>,
     ) -> Lowered<Fv> {
         let a = self.vf(lhs)?;
         let b = self.vf(rhs)?;
-        self.elementwise_values(mnemonic, a, b, dest, commutative)
+        self.elementwise_wanted(mnemonic, a, b, dest, commutative, want)
     }
 
     fn elementwise_values(
@@ -3074,7 +3320,24 @@ impl Lowering<'_> {
         dest: Option<Vf>,
         commutative: bool,
     ) -> Lowered<Fv> {
-        let (a, b) = if a.is_scalar() && !b.is_scalar() {
+        self.elementwise_wanted(mnemonic, a, b, dest, commutative, None)
+    }
+
+    /// The lane-wise operation `mnemonic` of `a` and `b`. Of two scalars,
+    /// the lane-wise one is the one in the lane `want` asks for, when one
+    /// is or can be: its order swapped when `mnemonic` is commutative, or a
+    /// splat constant read in that lane. The result is then in that lane,
+    /// and in `want`'s register.
+    fn elementwise_wanted(
+        &mut self,
+        mnemonic: &str,
+        a: Fv,
+        b: Fv,
+        dest: Option<Vf>,
+        commutative: bool,
+        want: Option<(Lane, Option<Vf>)>,
+    ) -> Lowered<Fv> {
+        let (mut a, mut b) = if a.is_scalar() && !b.is_scalar() {
             if !commutative {
                 return self.not_yet("a scalar minus a vector");
             }
@@ -3085,6 +3348,23 @@ impl Lowering<'_> {
         } else {
             (a, b)
         };
+        let mut dest = dest;
+        if let Some((lane, wanted)) = want
+            && a.is_scalar()
+            && b.is_scalar()
+        {
+            if let Some(moved) = self.in_lane(a, lane) {
+                a = moved;
+            } else if commutative
+                && !self.is_q(b)
+                && let Some(moved) = self.in_lane(b, lane)
+            {
+                (a, b) = (moved, a);
+            }
+            if a.lane() == lane {
+                dest = wanted.or(dest);
+            }
+        }
         let reg = self.dest(dest);
         let q_form = self.is_q(b) && matches!(mnemonic, "add" | "sub" | "mul");
         let (mnemonic, operand) = if q_form {
@@ -3110,7 +3390,12 @@ impl Lowering<'_> {
     /// has no data hazards. VU1 rounds each product before adding it, so
     /// the chain's value is the separate operations' exactly. `None` when
     /// `expr` is not such a sum.
-    fn contract(&mut self, expr: &Expr, dest: Option<Vf>) -> Lowered<Option<Fv>> {
+    fn contract(
+        &mut self,
+        expr: &Expr,
+        dest: Option<Vf>,
+        want: Option<(Lane, Option<Vf>)>,
+    ) -> Lowered<Option<Fv>> {
         let mut terms = Vec::new();
         flatten_sum(expr, false, &mut terms);
         let is_product = |term: &Expr| matches!(term.kind, ExprKind::Binary { op: BinOp::Mul, .. });
@@ -3155,6 +3440,71 @@ impl Lowering<'_> {
                 _ => (self.vf(term)?, Fv::scalar(Vf::Zero, Lane::W)),
             };
             operands.push((negative, a, b));
+        }
+        // A chain of scalars goes in a lane every term can take lane-wise:
+        // a product either operand, or a splat constant's other lanes, and
+        // a term that is not a product its own lane, or w as VF00's 1 times
+        // the term broadcast. The wanted lane first, then the first term's.
+        let mut dest = dest;
+        if operands
+            .iter()
+            .all(|(_, a, b)| a.is_scalar() && b.is_scalar())
+        {
+            let one = Fv::scalar(Vf::Zero, Lane::W);
+            // One product and one term added: the two operations take as
+            // many instructions as the chain, and the addition can go in
+            // the wanted lane by its order, when the term can be read
+            // there. The chain then goes only there.
+            let separate_reach = want.is_some_and(|(lane, _)| {
+                products == 1
+                    && operands.len() == 2
+                    && operands.iter().any(|&(negative, a, b)| {
+                        b == one && !negative && self.in_lane(a, lane).is_some()
+                    })
+            });
+            let options = |lowering: &Self, a: Fv, b: Fv, lane: Lane| -> Option<(Fv, Fv)> {
+                let usable = |value: Fv| !lowering.is_q(value);
+                if b == one {
+                    return match lowering.in_lane(a, lane) {
+                        Some(moved) if usable(moved) => Some((moved, one)),
+                        _ if lane == Lane::W => Some((one, a)),
+                        _ => None,
+                    };
+                }
+                match (lowering.in_lane(a, lane), lowering.in_lane(b, lane)) {
+                    (Some(moved), _) if usable(moved) => Some((moved, b)),
+                    (_, Some(moved)) if usable(moved) => Some((moved, a)),
+                    _ => None,
+                }
+            };
+            let mut lanes: Vec<Lane> = want.map(|(lane, _)| lane).into_iter().collect();
+            if !separate_reach {
+                lanes.push(operands[0].1.lane());
+                lanes.push(operands[0].2.lane());
+                lanes.extend([Lane::X, Lane::Y, Lane::Z, Lane::W]);
+            }
+            let mut chosen = None;
+            for lane in lanes {
+                let chosen_terms: Option<Vec<_>> = operands
+                    .iter()
+                    .map(|&(negative, a, b)| {
+                        options(self, a, b, lane).map(|(a, b)| (negative, a, b))
+                    })
+                    .collect();
+                if let Some(terms) = chosen_terms {
+                    operands = terms;
+                    chosen = Some(lane);
+                    if let Some((wanted_lane, wanted)) = want
+                        && wanted_lane == lane
+                    {
+                        dest = wanted.or(dest);
+                    }
+                    break;
+                }
+            }
+            if chosen.is_none() && separate_reach {
+                return Ok(None);
+            }
         }
         let placement = operands[0].1.placement;
         let fits = operands.iter().all(|(_, a, b)| {

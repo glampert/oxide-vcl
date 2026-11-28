@@ -9,21 +9,21 @@
         lq.xyzw    fpos_0, 0(vi00)
         move.w     fd_1, fpos_0
         add.w      fd_1, fd_1, fpos_0[x]
-        add.y      fstore_3, vf00, fd_1[w]
-        sq.y       fstore_3, 1(vi00)
-        move.z     fscale_4, vf00
+        add.y      fstore_2, vf00, fd_1[w]
+        sq.y       fstore_2, 1(vi00)
+        move.z     fscale_3, vf00
         ilw.x      iswitch_0, 1(vi00)
         iaddiu     it_1, vi00, 1
         ibeq       iswitch_0, it_1, lskip_4
         iaddiu     it_2, vi00, 2
         ibne       iswitch_0, it_2, lelse_2
 lskip_4:
-        add.z      fscale_4, vf00, fpos_0[y]
+        add.z      fscale_3, vf00, fpos_0[y]
         b          lendif_3
 lelse_2:
-        move.z     fscale_4, fpos_0
+        move.z     fscale_3, fpos_0
 lendif_3:
-        sq.z       fscale_4, 1(vi00)
+        sq.z       fscale_3, 1(vi00)
 lexit_1:
 --exit
 --endexit

@@ -32,7 +32,7 @@ in_vf.xyzw fvalue_0(vf16)
 in_vi   vi15
 --endenter
         loi        2.0
-        addi.x     ft_1, vf00, i
+        addi.xyz   ft_1, vf00, i
         mul.xyzw   ft_2, fvalue_0, ft_1[x]
         sq.xyzw    ft_2, 0(iat_0)
         sq.xyzw    fvalue_0, 1(iat_0)

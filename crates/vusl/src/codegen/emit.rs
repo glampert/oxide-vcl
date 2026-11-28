@@ -176,6 +176,29 @@ impl Output {
         }
     }
 
+    /// An instruction at line `at`, before the lines from there on, at
+    /// the current place.
+    pub fn insert_inst(&mut self, at: usize, mnemonic: &str, mask: &str, operands: &[String]) {
+        let inst = Inst {
+            mnemonic: mnemonic.to_string(),
+            mask: Some(mask.to_string()),
+            operands: operands.to_vec(),
+            exact: None,
+        };
+        self.lines.insert(at, (Line::Inst(inst), self.pos));
+    }
+
+    /// How many VF variables there are so far: those made before a point
+    /// number below its count.
+    pub fn vf_count(&self) -> usize {
+        self.vf_names.len()
+    }
+
+    /// Whether `reg` names a physical register, a library call's.
+    pub fn is_physical(&self, reg: Vf) -> bool {
+        matches!(reg, Vf::Var(index) if self.vf_names[index].starts_with("vf"))
+    }
+
     /// How many lines are written so far: a count that grows with every
     /// instruction.
     pub fn instructions(&self) -> usize {

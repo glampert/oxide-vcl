@@ -9,7 +9,7 @@
         xtop       ixtop_0
         lq.xyzw    ft_0, 1(ixtop_0)
         loi        0.5
-        addi.x     ft_1, vf00, i
+        addi.xyz   ft_1, vf00, i
         lq.xyzw    ft_2, 2(ixtop_0)
         ilw.w      it_1, 0(ixtop_0)
         iaddiu     iitem_2, ixtop_0, 3

@@ -195,11 +195,11 @@ fn propagate_copies(lines: &mut Vec<(Line, Option<Pos>)>) {
 
 /// For `to`, defined at `index` from `from`: the last line where `to` is
 /// live, when the definition can go and `from` stand for `to` up to
-/// there. That needs every other mention of `to` after the definition,
-/// none writing it, and `from` unchanged in between. A branch from
-/// further on back into that range (a loop around the uses) extends it to
-/// the branch; a branch from before the definition into it, past the
-/// definition, rules it out.
+/// there, or the definition itself when nothing reads `to`. That needs
+/// every other mention of `to` after the definition, none writing it, and
+/// `from` unchanged in between. A branch from further on back into that
+/// range (a loop around the uses) extends it to the branch; a branch from
+/// before the definition into it, past the definition, rules it out.
 fn live_range(lines: &[(Line, Option<Pos>)], index: usize, to: &str, from: &str) -> Option<usize> {
     if to == from || declared(lines, to) {
         return None;
@@ -211,9 +211,14 @@ fn live_range(lines: &[(Line, Option<Pos>)], index: usize, to: &str, from: &str)
     if lines[..index].iter().any(names_to) {
         return None;
     }
-    let last = (index + 1..lines.len())
+    // A copy nothing reads goes, unless into a physical register, which a
+    // library call reads.
+    let Some(last) = (index + 1..lines.len())
         .rev()
-        .find(|&at| names_to(&lines[at]))?;
+        .find(|&at| names_to(&lines[at]))
+    else {
+        return (!physical(to)).then_some(index);
+    };
     let labels: HashMap<&str, usize> = lines
         .iter()
         .enumerate()
@@ -256,6 +261,13 @@ fn live_range(lines: &[(Line, Option<Pos>)], index: usize, to: &str, from: &str)
         _ => false,
     });
     (!written).then_some(end)
+}
+
+/// Whether `name` is a physical register, `vf05` or `vi11`, not a variable.
+fn physical(name: &str) -> bool {
+    name.len() == 4
+        && (name.starts_with("vf") || name.starts_with("vi"))
+        && name[2..].bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// The register names in an operand: `ft_4[x]` names `ft_4`, `3(ixtop_0)`

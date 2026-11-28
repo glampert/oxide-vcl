@@ -9,7 +9,7 @@
         lq.xyzw    ft_0, 0(vi00)
         sq.x       ft_0, 1(vi00)
         loi        2.0
-        addi.x     ft_1, vf00, i
+        addi.xyz   ft_1, vf00, i
         mul.yzw    ft_2, ft_0, ft_1[x]
         sq.yzw     ft_2, 2(vi00)
         add.z      fstore_3, vf00, vf00[w]

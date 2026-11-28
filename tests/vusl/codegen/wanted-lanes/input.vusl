@@ -1,0 +1,18 @@
+// A scalar operation assigned to one lane is computed in that lane: an
+// addition or product of two scalars takes the operand already there as its
+// lane-wise one, a constant is read in whichever of x, y and z is wanted,
+// and a sum of scalar products chains in a lane each product has. None of
+// these assignments moves a lane.
+struct In { vec4 a; vec4 b; };
+struct Out { vec4 v; };
+
+void main(layout(address = 0) in In data,
+          layout(address = 2) out Out result)
+{
+    vec4 v;
+    v.x = data.a.w + 0.25;
+    v.y = data.a.x * data.b.y;
+    v.z = data.a.z * data.b.w - data.a.y * data.b.z;
+    v.w = data.a.w * data.b.x;
+    result.v = v;
+}

@@ -1,0 +1,21 @@
+// A value that a loop does not change, moved inside it into a local's fixed
+// lanes, is moved once before the loop into a register that both inlined
+// calls read: here lane z of a parameter, which each call copies. Each
+// distance is then a MULA and an MSUB.
+struct Pair { vec4 a; vec4 b; };
+struct Block { vec4 scale; Pair pairs[8]; };
+
+float distance(vec4 point, vec4 scale)
+{
+    layout(lane = w) float factor = scale.z;
+    return point.w - point.z * factor;
+}
+
+void main(layout(address = 0) inout Block block)
+{
+    for (inout Pair pair : block.pairs)
+    {
+        pair.a.w = distance(pair.a, block.scale);
+        pair.b.w = distance(pair.b, block.scale);
+    }
+}

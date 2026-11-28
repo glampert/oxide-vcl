@@ -930,15 +930,55 @@ fn one_product_sums_are_chains_with_the_same_values() {
                   \x20   o.lanes.w = v.c.x - v.a.y * v.b.y + v.c.w;\n\
                   }\n";
     let compiled = compile(source);
-    // Four chains: the lanes of one qword, and scalars in different lanes,
-    // are not one.
-    assert_eq!(compiled.vcl.matches("mula").count(), 4, "{}", compiled.vcl);
+    // Five chains: the lanes of one qword are not one, and a chain of
+    // scalars in different lanes goes in w, with VF00's 1 times the term
+    // that is not a product. The last has no lane every term can take.
+    assert_eq!(compiled.vcl.matches("mula").count(), 5, "{}", compiled.vcl);
+    assert!(compiled.vcl.contains("madd.w"), "{}", compiled.vcl);
     assert_eq!(
         compiled.vcl.matches("msub.xyzw").count(),
         2,
         "{}",
         compiled.vcl
     );
+    agree_compiled(compiled, 8, |_, _, _| {});
+}
+
+#[test]
+fn scalars_made_in_the_lanes_they_are_wanted_keep_their_values() {
+    let source = "struct In { vec4 a; vec4 b; };\n\
+                  struct Pair { vec4 a; vec4 b; };\n\
+                  struct Out { vec4 v; vec4 u; Pair pairs[3]; };\n\
+                  float distance(vec4 point, vec4 scale)\n\
+                  {\n\
+                  \x20   layout(lane = w) float factor = scale.z;\n\
+                  \x20   return point.w - point.z * factor;\n\
+                  }\n\
+                  void main(layout(address = 0) in In data, layout(address = 2) inout Out out0)\n\
+                  {\n\
+                  \x20   vec4 v;\n\
+                  \x20   v.x = data.a.w + 0.25;\n\
+                  \x20   v.y = data.a.x * data.b.y;\n\
+                  \x20   v.z = data.a.z * data.b.w - data.a.y * data.b.z;\n\
+                  \x20   v.w = 0.5 - data.b.x;\n\
+                  \x20   out0.v = v;\n\
+                  \x20   vec4 u = data.b;\n\
+                  \x20   u.y = data.a.x * data.b.w + 0.5;\n\
+                  \x20   u.z = data.b.y * data.a.w - data.b.x;\n\
+                  \x20   out0.u = u;\n\
+                  \x20   for (inout Pair pair : out0.pairs)\n\
+                  \x20   {\n\
+                  \x20       pair.a.w = distance(pair.a, data.a);\n\
+                  \x20       pair.b.x = distance(pair.b, data.a);\n\
+                  \x20   }\n\
+                  }\n";
+    let compiled = compile(source);
+    // No lane moves for v's lanes, and the factor moved before the loop.
+    assert!(compiled.vcl.contains("add.x      fv_"), "{}", compiled.vcl);
+    assert!(compiled.vcl.contains("msub.z     fv_"), "{}", compiled.vcl);
+    let moved = compiled.vcl.find("fmoved").expect("a moved factor");
+    let top = compiled.vcl.find("lloop").expect("a loop");
+    assert!(moved < top, "{}", compiled.vcl);
     agree_compiled(compiled, 8, |_, _, _| {});
 }
 

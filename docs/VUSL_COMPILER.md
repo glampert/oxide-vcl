@@ -150,8 +150,13 @@ count. There is no SSA form and no separate IR: lowering works on this tree.
 `codegen/mod.rs` is destination-driven. An expression computes into the register its consumer
 wants where it can. Vectors stay in the lanes the checker placed them in, and a scalar whose
 instruction can write any lane is made in the lane its store or component write wants
-(`vf_in_lane`, `any_lane`): Q and P copies, constants through I, `mfir`, negation. There is no
-separate lane solver. Outside any `if` or loop, a local takes the lanes of each value assigned to
+(`vf_in_lane`, `any_lane`): Q and P copies, constants through I, `mfir`, negation. An addition,
+product, minimum or maximum of two scalars, or a chain of them (contraction, below), is wanted in
+that lane (`Lowering::want`): its lane-wise operand is the one already there, by swapping the
+operands of a commutative operation, and the result is then written into the local's register
+directly. A constant made into a register of its own fills x, y and z with the one `addi`
+(`splats`), so it can be the lane-wise operand in any of them; vcl narrows the mask to the lanes
+read. There is no separate lane solver. Outside any `if` or loop, a local takes the lanes of each value assigned to
 it whole. Inside one (`joins`), an assignment writes the value into the lanes the local already
 has: the paths meet with the local where each left it, and a value made in another lane than the
 checker placed it, such as a negation, would leave the paths disagreeing.
@@ -176,6 +181,12 @@ and XTOP read once into a register. Generated names are `f` or `i`, the source n
   operands. A component that is the constant 1 is VF00's w, and a 0 drops its term.
 - **Contraction** (`contract`). A sum with a product and at least one other term is one ACC chain,
   with `msuba` and `msub` for the negative terms and a term that is not a product times `vf00[w]`.
+  A chain of scalars goes in a lane every term can take as its lane-wise operand: either operand
+  of a product, another lane of a splat constant, and for a term that is not a product its own
+  lane, or w as `vf00` times the term broadcast. The wanted lane is tried first, then the first
+  term's. With one product and one added term, two separate operations take as many instructions
+  as the chain, so when the chain cannot go in the wanted lane but the addition can, by its order,
+  there is no chain.
   A product with the value Q holds takes the Q form (`mulaq`, `maddaq`, `msubaq`, `maddq`, `msubq`),
   with Q as the broadcast operand.
   A sum's only product goes first when it is added, so the chain claims ACC once the product's
@@ -187,6 +198,14 @@ and XTOP read once into a register. Generated names are `f` or `i`, the source n
 - **Qword assembly** (`qword_run`). Consecutive stores to lanes of one qword become one masked `sq`
   when their values can be made in one register's lanes with fewer extra moves than the stores
   saved.
+- **Lane moves** (`move_scalar`). A scalar moved into another lane, for a local's fixed lanes or a
+  component write, is a value too, by its source register and the two lanes: a move made before
+  and still valid is copied rather than made again, as a second inlined call's. For a fixed-lane
+  local's whole value, a source register that the enclosing loops do not change (made before them
+  and no local's; a local set by a copy counts as the register it copies) is moved once, at the end
+  of the code before the outermost such loop (`Preheader`), into a register of its own, within the
+  loop's `hoist_limit`; the copy into the local then goes in the peephole. A component write keeps
+  its move in the loop, where the copy would cost as much (textured_triangles' `st.z`).
 - **Raw moves** (`copy`). vcl may schedule a MOVE in the upper pipe as MAX of the source with itself,
   which flushes bit patterns that read as denormal floats. A copy of raw bits, or of a float local
   whose bits a `floatBitsTo*` conversion reads (`bit_read_locals`), carries an exact form: a reload
@@ -301,7 +320,8 @@ calls), which give vcl the register contract it cannot see across programs.
 1. **`coalesce_moves`.** A temporary written by one instruction and then moved whole into a register
    is written there directly.
 2. **`propagate_copies`.** A copy (`move`, `iaddiu r, t, 0`) whose destination is only read after it
-   is replaced by its source. A variable that a declaration line names (an entry's `in_vi
+   is replaced by its source, and one nothing reads goes, unless into a physical register a library
+   call reads. A variable that a declaration line names (an entry's `in_vi
    icursor_3(vi11)`) keeps its name, and counts those lines among its mentions. The source must keep its value up to the destination's last reader
    in program order. A branch from further on back into that stretch extends it to the branch, so
    a loop that changes the source keeps the copy. A branch from before the copy into the stretch
@@ -387,6 +407,8 @@ Each case in `tests/vusl/codegen` names the hand-written sequence it stands for:
 | `multiply-add` | A sum of products as one ACC chain |
 | `multiply-add-one` | One product and another term as one ACC chain, the added product first |
 | `multiply-add-q` | Products with Q in ACC chains: the five Q forms |
+| `wanted-lanes` | Scalars assigned to lanes and made there: a swapped product, a splat constant read in x, a chain of scalar products in z |
+| `loop-lane-moves` | A parameter's lane moved into a fixed-lane local once before the loop, for both inlined calls, each distance a `mula` and an `msub` |
 | `qword-assembly` | Lane stores built in one register and stored once |
 | `load-reuse` | One `lq` for every lane of a qword, again after a store, and raw bits copied |
 | `ref-cursor` | A ref as an output cursor, and the count written |

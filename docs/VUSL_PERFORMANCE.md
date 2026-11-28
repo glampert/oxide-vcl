@@ -45,7 +45,7 @@ scene.
 | Program | Instructions (VUSL / hand-written) | Scene | Cycles (VUSL) | Cycles (hand-written) | Change |
 |---|---|---|---:|---:|---:|
 | quake2 particles | 113 / 114 | burst | 1017 | 1189 | −14.5% |
-| quake2 textured_triangles | 1132 / 1190 | world wall | 1801 | 2805 | −35.8% |
+| quake2 textured_triangles | 1131 / 1190 | world wall | 1801 | 2805 | −35.8% |
 | | | world floor | 12586 | 15863 | −20.7% |
 | | | model | 1175 | 1578 | −25.5% |
 | | | model near | 3001 | 3628 | −17.3% |
