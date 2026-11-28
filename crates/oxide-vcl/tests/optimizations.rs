@@ -1356,3 +1356,101 @@ fn speculate_keeps_a_flag_writer_its_own_stream_tests() {
     let (_, header) = table(&optimized, "lpass");
     assert!(!header.contains("addx.w"), "{optimized}");
 }
+
+// ----------------------------------------------
+// steps
+// ----------------------------------------------
+
+/// A loop that copies two qwords a pass and steps each pointer once a
+/// qword, so the lower pipe bounds its kernel.
+const STEPPED: &str = ".init_vf_all\n\
+                       .init_vi_all\n\
+                       --enter\n\
+                       in_vi base(vi01)\n\
+                       in_vi count(vi02)\n\
+                       in_vi dst(vi03)\n\
+                       --endenter\n\
+                       loop:\n\
+                       lq first,0(base)\n\
+                       lq second,1(base)\n\
+                       add total,first,second\n\
+                       sq total,0(dst)\n\
+                       sq first,1(dst)\n\
+                       iaddiu base,base,1\n\
+                       iaddiu base,base,1\n\
+                       iaddiu dst,dst,1\n\
+                       iaddiu dst,dst,1\n\
+                       isubiu count,count,1\n\
+                       ibne count,vi00,loop\n\
+                       --exit\n\
+                       --endexit\n";
+
+/// The `iaddiu` instructions of a listing's kernel.
+fn steps_in(listing: &str) -> usize {
+    let start = listing
+        .find("; _LPOPT_w=[")
+        .unwrap_or_else(|| panic!("no kernel\n{listing}"));
+    let kernel = &listing[start..];
+    let end = kernel[1..].find("; _L").map_or(kernel.len(), |at| at + 1);
+    kernel[..end]
+        .lines()
+        .filter(|line| line.contains(" iaddiu "))
+        .count()
+}
+
+#[test]
+fn steps_folds_a_run_of_steps_into_one() {
+    // Expanding the kernel merges the steps it holds, but the search
+    // gives each step a slot of the lower pipe: 10 lower instructions and
+    // a period of 10, against 8 folded.
+    let (_, optimized) = same_results(STEPPED);
+    let unfolded = compile(STEPPED, &["--no-opt=steps"]);
+    assert_eq!(period(&unfolded), 10, "{unfolded}");
+    assert_eq!(period(&optimized), 8, "{optimized}");
+}
+
+#[test]
+fn steps_moves_the_steps_before_an_access_into_its_offset() {
+    // Each load and store reads the pointer one step on: folded, they take
+    // that step into their offsets.
+    let source = STEPPED
+        .replace(
+            "lq first,0(base)\nlq second,1(base)\n",
+            "lq first,0(base)\niaddiu base,base,1\nlq second,0(base)\n",
+        )
+        .replace(
+            "sq total,0(dst)\nsq first,1(dst)\niaddiu base,base,1\niaddiu base,base,1\n",
+            "sq total,0(dst)\niaddiu dst,dst,1\nsq first,0(dst)\niaddiu base,base,1\n",
+        )
+        .replace("iaddiu dst,dst,1\niaddiu dst,dst,1\n", "iaddiu dst,dst,1\n");
+    let (_, optimized) = same_results(&source);
+    let unfolded = compile(&source, &["--no-opt=steps"]);
+    assert!(steps_in(&optimized) < steps_in(&unfolded), "{optimized}");
+}
+
+#[test]
+fn steps_keeps_a_run_whose_pointer_is_read_between() {
+    // `base` is stored between its steps, as a value; `dst`'s steps fold.
+    let source = ".init_vf_all\n\
+                  .init_vi_all\n\
+                  --enter\n\
+                  in_vi base(vi01)\n\
+                  in_vi dst(vi03)\n\
+                  --endenter\n\
+                  lq first,0(base)\n\
+                  iaddiu base,base,1\n\
+                  isw.x base,0(dst)\n\
+                  iaddiu base,base,1\n\
+                  lq second,0(base)\n\
+                  sq second,1(dst)\n\
+                  iaddiu dst,dst,1\n\
+                  iaddiu dst,dst,1\n\
+                  sq first,0(dst)\n\
+                  --exit\n\
+                  --endexit\n";
+    let (_, optimized) = same_results(source);
+    let steps = |listing: &str| listing.matches(" iaddiu ").count();
+    let unfolded = compile(source, &["--no-opt=steps"]);
+    assert_eq!(steps(&unfolded), 4, "{unfolded}");
+    assert_eq!(steps(&optimized), 3, "{optimized}");
+}

@@ -33,11 +33,11 @@ hand textured_triangles prologue:lFanLoop__u0                                   
 hand textured_triangles prologue:lFanLoop__u1                                       entries=10 cycles=340 stalls=0 per100=3400
 hand textured_triangles world_floor                                                 cycles=15863 stalls=3832 fmac=2796 lq=522 ilw=409 fdiv=105
 hand textured_triangles world_wall                                                  cycles=2805 stalls=574 fmac=90 lq=90 ilw=184 fdiv=210
-hand world_lm compile                                                               pairs=997 programs=3 regions=3 nodes=0 steps=412522 checks=2747672 analyses=54 walks=15290
+hand world_lm compile                                                               pairs=989 programs=3 regions=3 nodes=0 steps=411532 checks=2724275 analyses=54 walks=15290
 hand world_lm compile phase:loops                                                   nodes=0 steps=402174 checks=2594520 analyses=21 walks=4735
 hand world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=33 walks=10555
-hand world_lm compile phase:schedule                                                nodes=0 steps=10348 checks=66673 analyses=0 walks=0
-hand world_lm compile phase:tables                                                  nodes=0 steps=0 checks=86479 analyses=0 walks=0
+hand world_lm compile phase:schedule                                                nodes=0 steps=9358 checks=52468 analyses=0 walks=0
+hand world_lm compile phase:tables                                                  nodes=0 steps=0 checks=77287 analyses=0 walks=0
 hand world_lm epilogue:lFanLoop                                                     entries=93 cycles=744 stalls=186 fmac=186 per100=800
 hand world_lm epilogue:lTransform                                                   entries=6 cycles=132 stalls=0 per100=2200
 hand world_lm exit:lTransform                                                       entries=6 cycles=12 stalls=0 per100=200
@@ -48,18 +48,18 @@ hand world_lm kernel:lTransform                                                 
 hand world_lm prologue:lTransform                                                   entries=6 cycles=126 stalls=12 fmac=6 lq=6 per100=2100
 hand world_lm side                                                                  cycles=17672 stalls=3661 fmac=2188 lq=383 ilw=1090
 hand world_lm side_lit                                                              cycles=34299 stalls=7314 fmac=4372 lq=765 ilw=2177
-hand world_lm wall                                                                  cycles=2259 stalls=8 fmac=4 lq=1 ilw=3
-hand world_lm wall_lit                                                              cycles=3476 stalls=8 fmac=4 lq=1 ilw=3
-hand world_strips compile                                                           pairs=673 programs=3 regions=3 nodes=0 steps=398602 checks=1345280 analyses=51 walks=9539
+hand world_lm wall                                                                  cycles=2207 stalls=8 fmac=4 lq=1 ilw=3
+hand world_lm wall_lit                                                              cycles=3372 stalls=8 fmac=4 lq=1 ilw=3
+hand world_strips compile                                                           pairs=672 programs=3 regions=3 nodes=0 steps=398599 checks=1345130 analyses=51 walks=9539
 hand world_strips compile phase:loops                                               nodes=0 steps=390030 checks=1266570 analyses=18 walks=2962
 hand world_strips compile phase:prepare                                             nodes=0 steps=0 checks=0 analyses=33 walks=6577
-hand world_strips compile phase:schedule                                            nodes=0 steps=8572 checks=44389 analyses=0 walks=0
-hand world_strips compile phase:tables                                              nodes=0 steps=0 checks=34321 analyses=0 walks=0
+hand world_strips compile phase:schedule                                            nodes=0 steps=8569 checks=44380 analyses=0 walks=0
+hand world_strips compile phase:tables                                              nodes=0 steps=0 checks=34180 analyses=0 walks=0
 hand world_strips epilogue:lFanLoop                                                 entries=31 cycles=248 stalls=62 fmac=62 per100=800
 hand world_strips floor                                                             cycles=44637 stalls=11031 fmac=8471 lq=1194 ilw=1366
 hand world_strips kernel:lFanLoop                                                   entries=14 cycles=392 stalls=0 per100=2800
 hand world_strips side                                                              cycles=18762 stalls=4398 fmac=3136 lq=376 ilw=886
-hand world_strips wall                                                              cycles=3896 stalls=952 fmac=952
+hand world_strips wall                                                              cycles=3895 stalls=952 fmac=952
 vusl library compile                                                                pairs=443 programs=3 regions=3 nodes=0 steps=150188 checks=1463460 analyses=51 walks=3803
 vusl library compile phase:loops                                                    nodes=0 steps=144237 checks=1405308 analyses=18 walks=1180
 vusl library compile phase:prepare                                                  nodes=0 steps=0 checks=0 analyses=33 walks=2623

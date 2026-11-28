@@ -88,6 +88,9 @@ optimizations (--mode=oxide only, which runs them all by default):
                  unswitch: give a loop one copy of its usual path for each
                  outcome of a branch on a register the path never writes;
                  larger programs, fewer branches
+                 steps: fold a run of steps of one pointer within a block
+                 into one step, the accesses between taking the steps
+                 into their offsets
                  pointers: make pointers a loop steps together one, and
                  test a pointer instead of a count, where that shortens a
                  pipelined loop's kernel

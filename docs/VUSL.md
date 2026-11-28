@@ -557,7 +557,8 @@ work the source asks for.
 
 oxide-vcl then does the rest in its oxide mode: scheduling, pairing, register allocation, field
 narrowing and dead code, loop pipelining (`loops`), loop unswitching on registers the loop does
-not change (`unswitch`), one pointer for pointers that step together (`pointers`), work every
+not change (`unswitch`), one step for a run of steps of a pointer (`steps`), one pointer for
+pointers that step together (`pointers`), work every
 path through a loop's iteration does moved up into its earliest stream (`hoist`), and a conditional
 stream's first work started in a stream every iteration runs (`speculate`). See
 `docs/OPTIMIZATION_PLAN.md`.

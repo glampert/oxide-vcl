@@ -177,7 +177,8 @@ chosen with `--opt=` and turned off with `--no-opt=`, and checked with
 rewrites the parsed program before it is compiled, as the `entry` fix's
 waits do (`compiler/loop_entry.rs`). When the result does not fit in micro
 memory it falls back to one level of copies, then to the program as
-written. `pointers` (`compiler/pointers.rs`) rewrites the parsed program
+written. `steps` (`compiler/steps.rs`) folds runs of pointer steps in the
+parsed program first. `pointers` (`compiler/pointers.rs`) rewrites the parsed program
 before `unswitch` does: each of its rewrites is compiled on its own and
 kept when the kernels are shorter with it. `hoist` (`compiler/hoist.rs`)
 rewrites the program those two settle on, compiles it once more, and keeps

@@ -49,18 +49,18 @@ scene.
 | | | world floor | 12586 | 15863 | −20.7% |
 | | | model | 1175 | 1578 | −25.5% |
 | | | model near | 3001 | 3628 | −17.3% |
-| doom3 world_strips | 323 + 443 / 673 | wall | 2184 | 3896 | −43.9% |
+| doom3 world_strips | 323 + 443 / 672 | wall | 2184 | 3895 | −43.9% |
 | | | floor | 36916 | 44637 | −17.3% |
 | | | side | 15123 | 18762 | −19.4% |
-| doom3 world_lm | 661 + 443 / 997 | wall | 2131 | 2259 | −5.7% |
-| | | wall lit | 3152 | 3476 | −9.3% |
+| doom3 world_lm | 661 + 443 / 989 | wall | 2131 | 2207 | −3.4% |
+| | | wall lit | 3152 | 3372 | −6.5% |
 | | | floor | 30936 | 43419 | −28.8% |
 | | | floor lit | 60756 | 85729 | −29.1% |
 | | | side | 8089 | 17672 | −54.2% |
 | | | side lit | 15134 | 34299 | −55.9% |
 
 The doom3 programs' 443 is the clipper library, resident at 1536 and shared: the two programs and
-the library take 1,427 instructions, the two hand-written programs 1,670.
+the library take 1,427 instructions, the two hand-written programs 1,661.
 
 ## Where the differences come from
 

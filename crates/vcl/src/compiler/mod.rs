@@ -39,6 +39,7 @@ mod software_loops;
 mod source_passes;
 mod speculate;
 mod spill;
+mod steps;
 mod table_planning;
 mod table_timing;
 mod unswitch;
@@ -1668,8 +1669,9 @@ impl Failure {
     }
 }
 
-/// Compiles a parsed program. With the `hoist` optimization, the program
-/// `pointers` and `unswitch` settle on then has work its loops do on every
+/// Compiles a parsed program. With the `steps` optimization, its runs of
+/// pointer steps fold first (`steps`). With the `hoist` optimization, the
+/// program `pointers` and `unswitch` settle on then has work its loops do on every
 /// path moved up (`hoist`) where that shortens the streams it moves between,
 /// and with `speculate`, the program that gives then has its loops'
 /// conditional streams start their first work in the streams every
@@ -1681,6 +1683,10 @@ fn compile_parsed(
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
+    let parsed = match options.optimizes(Optimization::Steps) {
+        true => steps::fold_steps(&parsed).unwrap_or(parsed),
+        false => parsed,
+    };
     let (base, program) = compile_pointers(parsed, filename, options)?;
     let limit = program_size::MICRO_MEMORY.max(base.instruction_pairs);
     let compile = |program: parser::Program| {

@@ -6,10 +6,11 @@ sets of disassembled VU programs. This chapter asks the next question: where doe
 original leave cycles on the table, and which code generation changes could
 win them back without changing what programs compute?
 
-Six optimizations exist: `exit` (part of O9), `loops` (O1 without
-O10's budget option), `unswitch` (O11), `pointers` (O4 without
-post-increment folding), and `hoist` and `speculate` (O5 step 1 without
-its delay-slot filling); oxide-vusl also contracts single products (O12). The measuring and checking tools of section 5 exist; section 6
+Seven optimizations exist: `exit` (part of O9), `loops` (O1 without
+O10's budget option), `unswitch` (O11), `steps` (O2's bookkeeping, and
+O4's folding of repeated steps), `pointers` (O4 without post-increment
+folding), and `hoist` and `speculate` (O5 step 1 without its delay-slot
+filling); oxide-vusl also contracts single products (O12). The measuring and checking tools of section 5 exist; section 6
 gives the order of the rest.
 
 The ground rules:
@@ -125,9 +126,12 @@ ten times that (`VCL_LPGEN_BUDGET=200000`), the port finds the same periods:
 | `general_tri` `xform_loop` | 36 (16 s) | 36 (203 s) | 35 |
 | `general_pv_diff_quad` `xform_loop` | 51 (6 s) | 51 (58 s) | 50 |
 
-The compile time grows with the budget and the period does not move: the
-original's list scheduler, given more time, does not find the bound. O2
-needs a different scheduler, not a larger budget.
+The compile time grows with the budget and the period does not move. What
+keeps these kernels off their bound is their own bookkeeping, not the
+search: each steps its pointers once per vertex, four or three
+`iaddiu` per pointer, and each step takes a slot of the lower pipe. With
+the steps folded (`steps`, O2) the same search reaches the bound: quad
+45, tri 35, and pv_diff_quad 45, whose bound falls to 45 as well.
 
 The resource bound itself is not fixed: several kernels spend bound slots
 on bookkeeping that could be removed.
@@ -168,7 +172,7 @@ the memory their hosts send. Cycles in oxide mode, and where they go:
 
 | Program and scene | Cycles (`--opt=none` → all) | Where the optimized cycles go |
 | --- | ---: | --- |
-| doom3 `world_lm`, wall (strip path, nearly every batch) | 3,372 → 2,259 | `lTransform` kernel 46%; the strip emit loop `lStripRoom` 45%, issue-bound |
+| doom3 `world_lm`, wall (strip path, nearly every batch) | 3,372 → 2,207 | `lTransform` kernel 47%; the strip emit loop `lStripRoom` 44%, issue-bound |
 | doom3 `world_lm`, floor (clipped) | 47,417 → 43,419 | the five clip passes 83%, a quarter of it stalls |
 | doom3 `world_strips`, wall | 3,896 → 3,896 | `lTransform` 75%, 952 of its 2,933 cycles stalls |
 | quake2 `textured_triangles`, world wall | 4,783 → 2,805 | `lTriangleLoop`'s copy for the world's colour mode (O11) |
@@ -187,10 +191,11 @@ vertex. The strip emit loop is bound by its lower instructions, 14 per
 vertex with an empty upper pipe, so pipelining it past its window-full
 branch would gain nothing. Three of those 14 repeat work: the `iMask`
 constant is set again for each of the four vertices, and each vertex
-adds to `iOutPtr` and `iVertsLeft`. Folding them, by hand, takes the
-`world_lm` wall from 2,259 to 2,106 cycles (−7%): repeated-expression
-removal within a block and O4's increment folding, applied to a loop
-that is not pipelined. On the clipped scenes the clip passes stall a
+adds to `iOutPtr` and `iVertsLeft`. `steps` (O2) folds the additions,
+which takes the `world_lm` wall from 2,259 to 2,207 cycles (−2.3%);
+folding the constant too, by hand, took it to 2,106 (−7% in all):
+repeated-expression removal within a block, applied to a loop that is
+not pipelined. On the clipped scenes the clip passes stall a
 quarter of their cycles across their blocks (O5).
 
 ## 3. Opportunities, by expected value
@@ -315,6 +320,49 @@ cut-offs. The port already has a deterministic step budget
 *Risks:* compile time (cap the solver), and more stages meaning longer
 prologues and epilogues (O3 offsets this).
 
+*The `steps` optimization* (`--opt=steps`, `--no-opt=steps`;
+`crates/vcl/src/compiler/steps.rs`) removes the bookkeeping that keeps the
+evidence kernels off their bound. It rewrites the parsed program before
+`pointers` does:
+
+- A block is a run of ordinary instructions between labels, branches,
+  barriers, raw code and directives. In a block, steps of one register by
+  an immediate (`iaddiu r, r, k`, `isubiu r, r, k` or `iaddi r, r, k`, all
+  of one of those) make a run as long as nothing between them reads or
+  writes the register, except as the base of an `lq`, `sq`, `ilw` or
+  `isw` with an offset.
+- The run becomes its last step, by the sum, when the sum fits the
+  instruction's immediate field. The accesses between its steps take the
+  steps before them into their offsets, which must stay within the signed
+  11-bit field (`steps_moves_the_steps_before_an_access_into_its_offset`,
+  and `steps_keeps_a_run_whose_pointer_is_read_between` for a read that
+  ends a run).
+- The register holds what it held after each run and every access reads
+  the address it read, whatever a loop's `--LoopCS` promises: unlike
+  `pointers`, it changes nothing a schedule could expose.
+
+Expanding a kernel already merges the steps it holds, but the search
+gives each step a lower-pipe slot first, so the period pays for them
+(`steps_folds_a_run_of_steps_into_one`: 10 cycles, 8 folded).
+
+*Measured* (`tests/bench/loops.txt`, `tests/bench/scenes.txt`): the ps2gl
+`xform_loop` kernels reach their bounds, quad and `nospec_quad` 47 → 45,
+`pv_diff_quad` 51 → 45, the three `tri` 36 → 35. Those kernels are a
+small part of their programs' runs, where the lighting loops take most of
+the cycles: the whole of `general_quad` is 7 cycles faster at 4 vertices
+and 32 at 48. The `tri` kernels' shorter period comes with a deeper
+schedule, a prologue and a longer epilogue: 6 cycles slower at 3 vertices,
+7 faster at 48, and 9 to 14% more code, where `general_quad` and
+`nospec_quad` have 13 and 18% less. doom3's hand-written `world_lm` strip and lightmap loops
+take 5% fewer cycles a vertex, and its wall scene 2.3% fewer (lit, 3.0%).
+No VUSL port changes: oxide-vusl steps a pointer once per element.
+
+*What remains* of O2 after `steps`, against the first period each search
+tries: tyra's `dynpip_d` 95 against 93, and openvcl's sprite and
+triangle examples 9 against 7, in loops of two or three iterations. The
+kernels with `--LoopExtra` sit at their bound plus what the source asks
+for (`pt_light_vert_loop` 39, 34 without the hint).
+
 ### O3. Schedule loop prologues, epilogues and entry/exit points
 
 *Evidence:* 1,782 stall cycles in 3,688 rows. In `general` the loop parts
@@ -430,7 +478,8 @@ and the VUSL scenes do not change; the VUSL ports already share one pointer
 where they can. The other lower-bound kernels need what this does not do:
 doom3's and quake2's fan loops count down with `ibgtz`, which no pointer
 test matches, and `stapip_as_is_c` counts down in a loop that `unswitch`
-splits. Post-increment folding is not done.
+splits. Folding a block's runs of steps into one is `steps` (O2);
+folding steps into `lqi`/`sqi` post-increments is not done.
 
 ### O5. Schedule across streams
 
@@ -996,7 +1045,8 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 3 | O3 step 1 (reschedule loop prologues and epilogues): measured, not kept | Medium | 130 of the public corpus's 15,239 rows and stalls; little in the scenes |
 | 4 | O4 (merge induction variables, post-increment folding): `pointers`, without the folding | Medium | One cycle per iteration in lower-bound kernels whose hint promises nothing more (`mcpip_as_is` 23 → 22; ps2gl's would gain but promise a safe count) |
 | 4a | O5 step 1 (move work between streams that run on every path; fill delay slots): `hoist` and `speculate`, without the delay slots | Medium | The clip pass's usual path 39 → about 35 cycles a corner, and its intersection 21 → 11 rows; the clipped scenes −3.3 to −8.6% |
-| 5 | O2 (bound-reaching modulo scheduler), then O5 step 2 (pipeline loops with branches) on it | Large to very large | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 50; the clipped floors at best −25 to −35% |
+| 4b | O2's bookkeeping: `steps` (fold a block's runs of pointer steps) | Small | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 45; doom3 `world_lm` wall −2.3% |
+| 5 | O5 step 2 (pipeline loops with branches), on the modulo scheduler O2 describes | Large to very large | The clipped floors at best −25 to −35% |
 | 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
 | 7 | O5 step 3 (superblocks, hoisting setup code), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls, little at run time |
 | 8 | O12 (single-product ACC chains in VUSL, Q forms): done | Small | The VUSL scenes −0.7%, no scene slower; prologue and epilogue stalls about −40% |
@@ -1027,16 +1077,18 @@ Why this order:
   already allocated, so reuse of physical registers limits what it finds.
   Step 1 alone found little (O3, *Measured*): what the parts lose is
   their overlap with the code beside them, which step 2 and O5 bring.
-- **O2 after O4**, because O4 lowers the bounds O2 aims at, and O2 needs a
-  new scheduler (section 2). `--LoopExtra` stays honoured: the source asks
-  for those cycles.
+- **O2 after O4**, because O4 lowers the bounds O2 aims at. Its first step,
+  `steps`, needed no new scheduler: the original's search reaches the
+  evidence kernels' bounds once their steps fold. `--LoopExtra` stays
+  honoured: the source asks for those cycles.
 - **O5 step 1 after O4**: the clip passes hold almost all the stalls left
   in the renderer scenes (O5, *Evidence, at run time*), and step 1 needs no
   new scheduler: it rewrites the source the original's wrangler schedules,
   as `unswitch` and `pointers` do.
-- **O5 step 2 with O2**: both need a modulo scheduler that is not the
-  original's, and step 2 is that scheduler with conditional streams in its
-  kernel.
+- **O5 step 2 with O2's scheduler**: step 2 needs a modulo scheduler that
+  is not the original's, with conditional streams in its kernel. After
+  `steps`, what is left for that scheduler in single-block loops is small
+  (O2, *What remains*).
 - **O5 step 3 last**: the largest piece of work, with code duplication
   at side entries, for code that runs once per batch.
 

@@ -195,6 +195,11 @@ pub enum Optimization {
     /// compiled as two copies of that path, one for each outcome, without
     /// those branches (`unswitch`).
     Unswitch,
+    /// A run of steps of one pointer within a block, with nothing between
+    /// them but loads and stores through it, becomes one step, and the
+    /// accesses between take the steps before them into their offsets
+    /// (`steps`).
+    Steps,
     /// Pointers a loop steps by the same amount, whose difference is
     /// known, become one: the accesses through one use the other with the
     /// difference in their offsets, and its step goes (`pointers`).
@@ -213,10 +218,11 @@ pub enum Optimization {
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 6] = [
+    pub const ALL: [Optimization; 7] = [
         Optimization::Exit,
         Optimization::Loops,
         Optimization::Unswitch,
+        Optimization::Steps,
         Optimization::Pointers,
         Optimization::Hoist,
         Optimization::Speculate,
@@ -228,6 +234,7 @@ impl Optimization {
             Optimization::Exit => "exit",
             Optimization::Loops => "loops",
             Optimization::Unswitch => "unswitch",
+            Optimization::Steps => "steps",
             Optimization::Pointers => "pointers",
             Optimization::Hoist => "hoist",
             Optimization::Speculate => "speculate",

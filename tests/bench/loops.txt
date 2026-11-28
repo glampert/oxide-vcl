@@ -761,7 +761,7 @@ vcl tyra__engine_src_renderer_core_paths_path1_draw_finish total                
 vcl tyra__engine_src_renderer_core_paths_path1_draw_finish table:__v_CORPUS_4                                      entries=13 cycles=65 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough total                                                   c1=5 c2=5 c3=5 c4=5 c5=5 c6=5 c8=5 c9=5 c12=5 c16=5 c24=5 c32=5 c48=5
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_passthrough table:__v_CORPUS_4                                      entries=13 cycles=65 stalls=0 per100=500
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm total                                                      c1=5093 c2=4627 c3=8440 c4=1072 c5=17948 c6=28365 c8=17209 c9=31452 c12=41748 c16=117251 c24=51399 c32=151754
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm total                                                      c1=5093 c2=4627 c3=8440 c4=1048 c5=17948 c6=28365 c8=17209 c9=31452 c12=41748 c16=117251 c24=51399 c32=151754
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_4                                         entries=12 cycles=360 stalls=36 fmac=36 per100=3000
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm prologue:lTransform                                        entries=12 cycles=252 stalls=24 fmac=12 lq=12 per100=2100
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm kernel:lTransform                                          entries=158 cycles=3318 stalls=0 per100=2100
@@ -769,7 +769,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm epilogue:lTransform     
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm exit:lTransform                                            entries=12 cycles=24 stalls=0 per100=200
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_7                                         entries=1 cycles=7 stalls=0 per100=700
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lStripQword                                          entries=4 cycles=16 stalls=0 per100=400
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lStripRoom                                           entries=4 cycles=236 stalls=0 per100=5900
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lStripRoom                                           entries=4 cycles=224 stalls=0 per100=5600
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_15                                        entries=1 cycles=5 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_16                                        entries=1 cycles=5 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_17                                        entries=1 cycles=6 stalls=0 per100=600
@@ -777,7 +777,7 @@ oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_18     
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lStripLast                                           entries=1 cycles=6 stalls=3 ilw=3 per100=600
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_20                                        entries=1 cycles=8 stalls=0 per100=800
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lLightmapQword                                       entries=4 cycles=16 stalls=0 per100=400
-oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lLightmapRoom                                        entries=4 cycles=252 stalls=0 per100=6300
+oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:lLightmapRoom                                        entries=4 cycles=240 stalls=0 per100=6000
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_28                                        entries=1 cycles=5 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_29                                        entries=1 cycles=5 stalls=0 per100=500
 oxide doom3-bfg-ps2__src_ps2_renderer_vu1progs_world_lm table:__v_CORPUS_30                                        entries=1 cycles=6 stalls=0 per100=600
@@ -1089,13 +1089,11 @@ oxide openvcl__test_fixtures_general_nospec prologue:final_loop_lid             
 oxide openvcl__test_fixtures_general_nospec kernel:final_loop_lid                                                  entries=145 cycles=725 stalls=0 per100=500
 oxide openvcl__test_fixtures_general_nospec epilogue:final_loop_lid                                                entries=13 cycles=103 stalls=27 fmac=27 per100=792
 oxide openvcl__test_fixtures_general_nospec exit:final_loop_lid                                                    entries=13 cycles=39 stalls=0 per100=300
-oxide openvcl__test_fixtures_general_nospec_quad total                                                             c4=1064 c8=3154 c12=6329 c16=10592 c24=22382 c32=38524 c48=83864
+oxide openvcl__test_fixtures_general_nospec_quad total                                                             c4=1058 c8=3143 c12=6316 c16=10577 c24=22363 c32=38501 c48=83833
 oxide openvcl__test_fixtures_general_nospec_quad table:__v_CORPUS_4                                                entries=7 cycles=35 stalls=0 per100=500
-oxide openvcl__test_fixtures_general_nospec_quad table:main_loop_lid                                               entries=7 cycles=315 stalls=0 per100=4500
-oxide openvcl__test_fixtures_general_nospec_quad prologue:xform_loop_lid                                           entries=6 cycles=282 stalls=0 per100=4700
-oxide openvcl__test_fixtures_general_nospec_quad kernel:xform_loop_lid                                             entries=23 cycles=1081 stalls=0 per100=4700
-oxide openvcl__test_fixtures_general_nospec_quad epilogue:xform_loop_lid                                           entries=7 cycles=221 stalls=0 per100=3157
-oxide openvcl__test_fixtures_general_nospec_quad exit:xform_loop_lid                                               entries=7 cycles=42 stalls=0 per100=600
+oxide openvcl__test_fixtures_general_nospec_quad table:main_loop_lid                                               entries=7 cycles=378 stalls=0 per100=5400
+oxide openvcl__test_fixtures_general_nospec_quad kernel:xform_loop_lid                                             entries=29 cycles=1305 stalls=0 per100=4500
+oxide openvcl__test_fixtures_general_nospec_quad epilogue:xform_loop_lid                                           entries=7 cycles=140 stalls=0 per100=2000
 oxide openvcl__test_fixtures_general_nospec_quad table:__v_CORPUS_9                                                entries=7 cycles=7 stalls=0 per100=100
 oxide openvcl__test_fixtures_general_nospec_quad table:dir_light_loop_lid                                          entries=144 cycles=2448 stalls=0 per100=1700
 oxide openvcl__test_fixtures_general_nospec_quad prologue:dir_light_vert_loop_lid                                  entries=144 cycles=3456 stalls=720 lq=720 per100=2400
@@ -1114,11 +1112,13 @@ oxide openvcl__test_fixtures_general_nospec_quad prologue:final_loop_lid        
 oxide openvcl__test_fixtures_general_nospec_quad kernel:final_loop_lid                                             entries=130 cycles=650 stalls=0 per100=500
 oxide openvcl__test_fixtures_general_nospec_quad epilogue:final_loop_lid                                           entries=7 cycles=56 stalls=14 fmac=14 per100=800
 oxide openvcl__test_fixtures_general_nospec_quad exit:final_loop_lid                                               entries=7 cycles=21 stalls=0 per100=300
-oxide openvcl__test_fixtures_general_nospec_tri total                                                              c3=707 c6=1973 c9=3845 c12=6329 c24=22385 c48=83873
+oxide openvcl__test_fixtures_general_nospec_tri total                                                              c3=711 c6=1978 c9=3849 c12=6332 c24=22384 c48=83864
 oxide openvcl__test_fixtures_general_nospec_tri table:__v_CORPUS_4                                                 entries=6 cycles=30 stalls=0 per100=500
-oxide openvcl__test_fixtures_general_nospec_tri table:main_loop_lid                                                entries=6 cycles=288 stalls=0 per100=4800
-oxide openvcl__test_fixtures_general_nospec_tri kernel:xform_loop_lid                                              entries=28 cycles=1008 stalls=0 per100=3600
-oxide openvcl__test_fixtures_general_nospec_tri epilogue:xform_loop_lid                                            entries=6 cycles=126 stalls=6 fmac=6 per100=2100
+oxide openvcl__test_fixtures_general_nospec_tri table:main_loop_lid                                                entries=6 cycles=264 stalls=6 lq=6 per100=4400
+oxide openvcl__test_fixtures_general_nospec_tri prologue:xform_loop_lid                                            entries=5 cycles=175 stalls=5 lq=5 per100=3500
+oxide openvcl__test_fixtures_general_nospec_tri kernel:xform_loop_lid                                              entries=23 cycles=805 stalls=0 per100=3500
+oxide openvcl__test_fixtures_general_nospec_tri epilogue:xform_loop_lid                                            entries=6 cycles=148 stalls=30 fmac=30 per100=2466
+oxide openvcl__test_fixtures_general_nospec_tri exit:xform_loop_lid                                                entries=6 cycles=36 stalls=0 per100=600
 oxide openvcl__test_fixtures_general_nospec_tri table:__v_CORPUS_9                                                 entries=6 cycles=6 stalls=0 per100=100
 oxide openvcl__test_fixtures_general_nospec_tri table:dir_light_loop_lid                                           entries=102 cycles=1734 stalls=0 per100=1700
 oxide openvcl__test_fixtures_general_nospec_tri prologue:dir_light_vert_loop_lid                                   entries=102 cycles=2424 stalls=507 lq=507 per100=2376
@@ -1168,11 +1168,11 @@ oxide openvcl__test_fixtures_general_pv_diff prologue:final_loop_lid            
 oxide openvcl__test_fixtures_general_pv_diff kernel:final_loop_lid                                                 entries=145 cycles=725 stalls=0 per100=500
 oxide openvcl__test_fixtures_general_pv_diff epilogue:final_loop_lid                                               entries=13 cycles=103 stalls=27 fmac=27 per100=792
 oxide openvcl__test_fixtures_general_pv_diff exit:final_loop_lid                                                   entries=13 cycles=39 stalls=0 per100=300
-oxide openvcl__test_fixtures_general_pv_diff_quad total                                                            c4=1825 c8=5408 c12=10815 c16=18046 c24=37980 c32=65210 c48=141558
+oxide openvcl__test_fixtures_general_pv_diff_quad total                                                            c4=1819 c8=5396 c12=10797 c16=18022 c24=37944 c32=65162 c48=141486
 oxide openvcl__test_fixtures_general_pv_diff_quad table:__v_CORPUS_4                                               entries=7 cycles=35 stalls=0 per100=500
-oxide openvcl__test_fixtures_general_pv_diff_quad table:main_loop_lid                                              entries=7 cycles=399 stalls=28 lq=28 per100=5700
-oxide openvcl__test_fixtures_general_pv_diff_quad kernel:xform_loop_lid                                            entries=29 cycles=1479 stalls=0 per100=5100
-oxide openvcl__test_fixtures_general_pv_diff_quad epilogue:xform_loop_lid                                          entries=7 cycles=196 stalls=0 per100=2800
+oxide openvcl__test_fixtures_general_pv_diff_quad table:main_loop_lid                                              entries=7 cycles=413 stalls=0 per100=5900
+oxide openvcl__test_fixtures_general_pv_diff_quad kernel:xform_loop_lid                                            entries=29 cycles=1305 stalls=0 per100=4500
+oxide openvcl__test_fixtures_general_pv_diff_quad epilogue:xform_loop_lid                                          entries=7 cycles=140 stalls=0 per100=2000
 oxide openvcl__test_fixtures_general_pv_diff_quad table:__v_CORPUS_9                                               entries=7 cycles=7 stalls=0 per100=100
 oxide openvcl__test_fixtures_general_pv_diff_quad table:dir_light_loop_lid                                         entries=144 cycles=9648 stalls=5616 fmac=1584 lq=144 ilw=288 waitp=3600 per100=6700
 oxide openvcl__test_fixtures_general_pv_diff_quad prologue:dir_light_vert_loop_lid                                 entries=144 cycles=4464 stalls=720 fmac=720 per100=3100
@@ -1191,11 +1191,13 @@ oxide openvcl__test_fixtures_general_pv_diff_quad prologue:final_loop_lid       
 oxide openvcl__test_fixtures_general_pv_diff_quad kernel:final_loop_lid                                            entries=130 cycles=650 stalls=0 per100=500
 oxide openvcl__test_fixtures_general_pv_diff_quad epilogue:final_loop_lid                                          entries=7 cycles=56 stalls=14 fmac=14 per100=800
 oxide openvcl__test_fixtures_general_pv_diff_quad exit:final_loop_lid                                              entries=7 cycles=21 stalls=0 per100=300
-oxide openvcl__test_fixtures_general_pv_diff_tri total                                                             c3=1212 c6=3384 c8=196808 c9=6582 c12=10806 c24=37962 c48=141522
+oxide openvcl__test_fixtures_general_pv_diff_tri total                                                             c3=1216 c6=3389 c8=191351 c9=6586 c12=10809 c24=37961 c48=141513
 oxide openvcl__test_fixtures_general_pv_diff_tri table:__v_CORPUS_4                                                entries=7 cycles=35 stalls=0 per100=500
-oxide openvcl__test_fixtures_general_pv_diff_tri table:main_loop_lid                                               entries=7 cycles=343 stalls=0 per100=4900
-oxide openvcl__test_fixtures_general_pv_diff_tri kernel:xform_loop_lid                                             entries=5491 cycles=197676 stalls=0 per100=3600
-oxide openvcl__test_fixtures_general_pv_diff_tri epilogue:xform_loop_lid                                           entries=7 cycles=147 stalls=7 fmac=7 per100=2100
+oxide openvcl__test_fixtures_general_pv_diff_tri table:main_loop_lid                                               entries=7 cycles=308 stalls=0 per100=4400
+oxide openvcl__test_fixtures_general_pv_diff_tri prologue:xform_loop_lid                                           entries=6 cycles=210 stalls=6 lq=6 per100=3500
+oxide openvcl__test_fixtures_general_pv_diff_tri kernel:xform_loop_lid                                             entries=5485 cycles=191975 stalls=0 per100=3500
+oxide openvcl__test_fixtures_general_pv_diff_tri epilogue:xform_loop_lid                                           entries=7 cycles=173 stalls=35 fmac=35 per100=2471
+oxide openvcl__test_fixtures_general_pv_diff_tri exit:xform_loop_lid                                               entries=7 cycles=49 stalls=0 per100=700
 oxide openvcl__test_fixtures_general_pv_diff_tri table:__v_CORPUS_9                                                entries=6 cycles=6 stalls=0 per100=100
 oxide openvcl__test_fixtures_general_pv_diff_tri table:dir_light_loop_lid                                          entries=102 cycles=6834 stalls=3978 fmac=1122 lq=102 ilw=204 waitp=2550 per100=6700
 oxide openvcl__test_fixtures_general_pv_diff_tri prologue:dir_light_vert_loop_lid                                  entries=102 cycles=3162 stalls=510 fmac=510 per100=3100
@@ -1214,13 +1216,11 @@ oxide openvcl__test_fixtures_general_pv_diff_tri prologue:final_loop_lid        
 oxide openvcl__test_fixtures_general_pv_diff_tri kernel:final_loop_lid                                             entries=96 cycles=480 stalls=0 per100=500
 oxide openvcl__test_fixtures_general_pv_diff_tri epilogue:final_loop_lid                                           entries=7 cycles=56 stalls=14 fmac=14 per100=800
 oxide openvcl__test_fixtures_general_pv_diff_tri exit:final_loop_lid                                               entries=7 cycles=21 stalls=0 per100=300
-oxide openvcl__test_fixtures_general_quad total                                                                    c4=1842 c8=5444 c12=10867 c16=18114 c24=38080 c32=65342 c48=141754
+oxide openvcl__test_fixtures_general_quad total                                                                    c4=1835 c8=5432 c12=10853 c16=18098 c24=38060 c32=65318 c48=141722
 oxide openvcl__test_fixtures_general_quad table:__v_CORPUS_4                                                       entries=7 cycles=35 stalls=0 per100=500
-oxide openvcl__test_fixtures_general_quad table:main_loop_lid                                                      entries=7 cycles=315 stalls=0 per100=4500
-oxide openvcl__test_fixtures_general_quad prologue:xform_loop_lid                                                  entries=6 cycles=282 stalls=0 per100=4700
-oxide openvcl__test_fixtures_general_quad kernel:xform_loop_lid                                                    entries=23 cycles=1081 stalls=0 per100=4700
-oxide openvcl__test_fixtures_general_quad epilogue:xform_loop_lid                                                  entries=7 cycles=221 stalls=0 per100=3157
-oxide openvcl__test_fixtures_general_quad exit:xform_loop_lid                                                      entries=7 cycles=56 stalls=0 per100=800
+oxide openvcl__test_fixtures_general_quad table:main_loop_lid                                                      entries=7 cycles=378 stalls=0 per100=5400
+oxide openvcl__test_fixtures_general_quad kernel:xform_loop_lid                                                    entries=29 cycles=1305 stalls=0 per100=4500
+oxide openvcl__test_fixtures_general_quad epilogue:xform_loop_lid                                                  entries=7 cycles=147 stalls=0 per100=2100
 oxide openvcl__test_fixtures_general_quad table:__v_CORPUS_9                                                       entries=7 cycles=7 stalls=0 per100=100
 oxide openvcl__test_fixtures_general_quad table:dir_light_loop_lid                                                 entries=144 cycles=9648 stalls=5760 fmac=1728 lq=144 ilw=288 waitp=3600 per100=6700
 oxide openvcl__test_fixtures_general_quad prologue:dir_light_vert_loop_lid                                         entries=144 cycles=5040 stalls=720 fmac=720 per100=3500
@@ -1239,11 +1239,13 @@ oxide openvcl__test_fixtures_general_quad prologue:final_loop_lid               
 oxide openvcl__test_fixtures_general_quad kernel:final_loop_lid                                                    entries=130 cycles=650 stalls=0 per100=500
 oxide openvcl__test_fixtures_general_quad epilogue:final_loop_lid                                                  entries=7 cycles=56 stalls=14 fmac=14 per100=800
 oxide openvcl__test_fixtures_general_quad exit:final_loop_lid                                                      entries=7 cycles=21 stalls=0 per100=300
-oxide openvcl__test_fixtures_general_tri total                                                                     c3=1226 c6=3413 c9=6626 c12=10865 c24=38081 c48=141761
+oxide openvcl__test_fixtures_general_tri total                                                                     c3=1232 c6=3420 c9=6632 c12=10870 c24=38082 c48=141754
 oxide openvcl__test_fixtures_general_tri table:__v_CORPUS_4                                                        entries=6 cycles=30 stalls=0 per100=500
-oxide openvcl__test_fixtures_general_tri table:main_loop_lid                                                       entries=6 cycles=288 stalls=0 per100=4800
-oxide openvcl__test_fixtures_general_tri kernel:xform_loop_lid                                                     entries=28 cycles=1008 stalls=0 per100=3600
-oxide openvcl__test_fixtures_general_tri epilogue:xform_loop_lid                                                   entries=6 cycles=126 stalls=6 fmac=6 per100=2100
+oxide openvcl__test_fixtures_general_tri table:main_loop_lid                                                       entries=6 cycles=264 stalls=6 lq=6 per100=4400
+oxide openvcl__test_fixtures_general_tri prologue:xform_loop_lid                                                   entries=5 cycles=175 stalls=5 lq=5 per100=3500
+oxide openvcl__test_fixtures_general_tri kernel:xform_loop_lid                                                     entries=23 cycles=805 stalls=0 per100=3500
+oxide openvcl__test_fixtures_general_tri epilogue:xform_loop_lid                                                   entries=6 cycles=148 stalls=30 fmac=30 per100=2466
+oxide openvcl__test_fixtures_general_tri exit:xform_loop_lid                                                       entries=6 cycles=48 stalls=0 per100=800
 oxide openvcl__test_fixtures_general_tri table:__v_CORPUS_9                                                        entries=6 cycles=6 stalls=0 per100=100
 oxide openvcl__test_fixtures_general_tri table:dir_light_loop_lid                                                  entries=102 cycles=6834 stalls=4080 fmac=1224 lq=102 ilw=204 waitp=2550 per100=6700
 oxide openvcl__test_fixtures_general_tri prologue:dir_light_vert_loop_lid                                          entries=102 cycles=3570 stalls=510 fmac=510 per100=3500
