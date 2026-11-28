@@ -10,6 +10,9 @@ use crate::sema::layout::LayoutErrorKind;
 use crate::syntax::lexer::LexErrorKind;
 use crate::syntax::parser::SyntaxErrorKind;
 
+/// VU1's micro memory, in 64-bit instructions.
+pub const MICRO_MEMORY: usize = 2048;
+
 /// Every message the VUSL compiler and its driver give.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum VuslMessage {
@@ -175,6 +178,21 @@ pub enum VuslMessage {
     /// `export` or file-scope memory in a file without `#pragma library`.
     OutsideLibrary {
         what: &'static str,
+    },
+    /// A library whose code runs past the end of micro memory from its
+    /// address.
+    LibraryTooLarge {
+        name: String,
+        instructions: usize,
+        address: u16,
+    },
+    /// A program longer than the micro memory below the library it calls,
+    /// where it has to fit.
+    CallerReachesLibrary {
+        program: String,
+        instructions: usize,
+        library: String,
+        address: u16,
     },
     /// An export's definition whose signature is not its prototype's.
     ExportMismatch {
@@ -671,6 +689,32 @@ fn wording(message: &VuslMessage) -> Wording {
             format!("{what} needs #pragma library: only a library has it"),
             None,
             Some("name the library first: #pragma library(name, address = A)"),
+        ),
+        LibraryTooLarge {
+            name,
+            instructions,
+            address,
+        } => (
+            format!(
+                "library '{name}' takes {instructions} instructions, but only {} fit from its address {address} to the end of micro memory",
+                MICRO_MEMORY - usize::from(*address)
+            ),
+            Some(name.clone()),
+            Some("give the library a lower address, or make it smaller"),
+        ),
+        CallerReachesLibrary {
+            program,
+            instructions,
+            library,
+            address,
+        } => (
+            format!(
+                "'{program}' takes {instructions} instructions, but only {address} fit below library '{library}', which it calls"
+            ),
+            Some(library.clone()),
+            Some(
+                "a program that calls a library lives below it: make the program smaller, or give the library a higher address",
+            ),
         ),
         ExportMismatch { name } => (
             format!("'{name}' is defined with another signature than its prototype"),

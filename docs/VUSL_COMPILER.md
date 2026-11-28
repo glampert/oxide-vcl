@@ -286,6 +286,10 @@ calls), which give vcl the register contract it cannot see across programs.
   global `<entry>_CodeStart`. The table branches to the local label because dvp-as leaves a branch
   to a global symbol as a relocation, `R_MIPS_DVP_11_PCREL`, which ld rejects ("unsupported
   relocation").
+- **Fitting micro memory** (`Checked::fits`, after `compile`). A library's listing must end
+  within micro memory's 2048 instructions from its address (`LibraryTooLarge`), and a program
+  that calls a library must take no more instructions than the library's address
+  (`CallerReachesLibrary`): wherever the host puts it, it sits below the library.
 
 ## The peephole passes
 

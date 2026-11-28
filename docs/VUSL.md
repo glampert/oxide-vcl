@@ -704,7 +704,10 @@ the prototypes still compiles, and the interpreter stops at its first call with 
 
 Rejected: `export` or file-scope memory without `#pragma library`; a definition whose signature is
 not its prototype's; a library build that leaves an export undefined; memory, `bool`, matrices or
-`clipflags` as export parameters; `yield` in an export.
+`clipflags` as export parameters; `yield` in an export. Once compiled, a library whose code runs
+past the end of micro memory (2048 instructions) from its address, and a program that calls a
+library and takes more instructions than the library's address, since such a program lives below
+its library.
 
 ## Reflection
 

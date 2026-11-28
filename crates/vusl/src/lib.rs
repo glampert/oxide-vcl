@@ -147,6 +147,46 @@ impl Checked {
         Ok(Vcl { text, origins })
     }
 
+    /// An error unless `instructions` of code fit in micro memory with
+    /// `library`: a library's own build from its address to the end, a
+    /// program that calls it below its address.
+    fn fits(
+        &self,
+        library: &sema::hir::Library,
+        instructions: usize,
+    ) -> Result<(), Box<CompileFailure>> {
+        let address = usize::from(library.address);
+        let message = if self.is_library() {
+            if address + instructions <= diagnostics::MICRO_MEMORY {
+                return Ok(());
+            }
+            VuslMessage::LibraryTooLarge {
+                name: library.name.clone(),
+                instructions,
+                address: library.address,
+            }
+        } else {
+            if instructions <= address {
+                return Ok(());
+            }
+            VuslMessage::CallerReachesLibrary {
+                program: self.program.name.clone(),
+                instructions,
+                library: library.name.clone(),
+                address: library.address,
+            }
+        };
+        let problem = Problem {
+            message,
+            pos: library.pos,
+            notes: Vec::new(),
+        };
+        Err(Box::new(CompileFailure::Generate(Box::new(Failure {
+            error: self.locator().diagnostic(true, &problem),
+            warnings: Vec::new(),
+        }))))
+    }
+
     /// Whether this is a library's own build: entries to compile, no
     /// program.
     pub fn is_library(&self) -> bool {
@@ -225,14 +265,22 @@ fn spills(compiled: &vcl::Compiled) -> usize {
 /// of registers, or spills values to a `layout(spill)` work area, the VCL
 /// is generated again with fewer of the loops' invariants kept in
 /// registers across them, and the compile with the fewest spills is kept.
+///
+/// A library's code must end within micro memory from its address, and a
+/// program that calls a library must fit in the micro memory below it.
 pub fn compile(
     checked: &Checked,
     options: &Options,
 ) -> Result<(Vcl, vcl::Compiled), Box<CompileFailure>> {
-    if checked.is_library() {
-        return compile_library(checked, options);
+    let (vcl, compiled) = if checked.is_library() {
+        compile_library(checked, options)?
+    } else {
+        compile_program(checked, &checked.program, options)?
+    };
+    if let Some(library) = &checked.program.library {
+        checked.fits(library, compiled.instruction_pairs)?;
     }
-    compile_program(checked, &checked.program, options)
+    Ok((vcl, compiled))
 }
 
 /// A library's own build: an entry table, one pair per export and its

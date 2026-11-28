@@ -212,6 +212,100 @@ fn programs_check_and_compile() {
     assert!(result.file("p.h").unwrap().contains("kInstructions = "));
 }
 
+/// A library's header at micro address `address`, with one export.
+fn library_header(address: u16) -> String {
+    format!(
+        "#pragma once\n\
+         #pragma library(mathlib, address = {address})\n\
+         struct Frame {{ vec4 scale; }};\n\
+         layout(address = 0) uniform Frame frame;\n\
+         export float scaled(float value);\n"
+    )
+}
+
+const LIBRARY: &str = "#include \"mathlib.vush\"\n\
+                       export float scaled(float value)\n\
+                       {\n\
+                       \x20   return value * frame.scale.x;\n\
+                       }\n";
+
+/// The instructions a run's `--header=p.h` gives.
+fn instructions(run: &Run) -> u16 {
+    let header = run
+        .file("p.h")
+        .unwrap_or_else(|| panic!("no header\n{}", run.stderr));
+    let line = header
+        .lines()
+        .find(|line| line.contains("kInstructions = "))
+        .unwrap();
+    line.split("kInstructions = ")
+        .nth(1)
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[test]
+fn a_library_must_end_within_micro_memory() {
+    let compile = |address: u16| {
+        let header = library_header(address);
+        let files = [("mathlib.vush", header.as_str()), ("lib.vusl", LIBRARY)];
+        run(
+            &format!("library-{address}"),
+            &["--color=never", "--header=p.h", "-o", "p.vsm", "lib.vusl"],
+            &files,
+        )
+    };
+    let size = instructions(&compile(1000));
+    // Up to the last instruction of micro memory, and no further.
+    let last = 2048 - size;
+    let result = compile(last);
+    assert_eq!((result.status, result.stderr.as_str()), (0, ""));
+    let result = compile(last + 1);
+    assert_eq!(result.status, 1, "{}", result.stderr);
+    let expected = format!(
+        "mathlib.vush(2): error: library 'mathlib' takes {size} instructions, but only {} fit from its address {} to the end of micro memory",
+        size - 1,
+        last + 1
+    );
+    assert!(result.stderr.contains(&expected), "{}", result.stderr);
+    assert!(result.files.iter().all(|(name, _)| name != "p.vsm"));
+}
+
+#[test]
+fn a_program_that_calls_a_library_must_fit_below_it() {
+    let program = "#include \"mathlib.vush\"\n\
+                   struct Block { vec4 scale; float out0; float pad0; float pad1; float pad2; };\n\
+                   void main(layout(address = 0) uniform Frame frame, layout(address = 2) inout Block block)\n\
+                   {\n\
+                   \x20   block.out0 = scaled(frame.scale.x);\n\
+                   }\n";
+    let compile = |address: u16| {
+        let header = library_header(address);
+        let files = [("mathlib.vush", header.as_str()), ("p.vusl", program)];
+        run(
+            &format!("caller-{address}"),
+            &["--color=never", "--header=p.h", "-o", "p.vsm", "p.vusl"],
+            &files,
+        )
+    };
+    let size = instructions(&compile(1000));
+    // Right below the library, and not one instruction into it.
+    let result = compile(size);
+    assert_eq!((result.status, result.stderr.as_str()), (0, ""));
+    let result = compile(size - 1);
+    assert_eq!(result.status, 1, "{}", result.stderr);
+    let expected = format!(
+        "mathlib.vush(2): error: 'p' takes {size} instructions, but only {} fit below library 'mathlib', which it calls",
+        size - 1
+    );
+    assert!(result.stderr.contains(&expected), "{}", result.stderr);
+    assert!(result.files.iter().all(|(name, _)| name != "p.vsm"));
+}
+
 #[test]
 fn optimizations_are_chosen_on_the_command_line() {
     let program = |pragma: &str| {
