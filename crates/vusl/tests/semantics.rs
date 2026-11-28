@@ -983,6 +983,44 @@ fn scalars_made_in_the_lanes_they_are_wanted_keep_their_values() {
 }
 
 #[test]
+fn copies_hold_only_on_the_paths_that_made_them() {
+    // `side` starts as a copy of a load, and the loop negates it: inside
+    // the loop it is no longer the load. An `if` that copies another load
+    // into it leaves its `else` reading it as it was.
+    let source = "struct Out { vec4 v; };\n\
+                  struct Block { vec4 scale; vec4 other; vec4 point; Out outs[3]; };\n\
+                  float distance(vec4 point, vec3 scale)\n\
+                  {\n\
+                  \x20   layout(lane = w) float factor = scale.x;\n\
+                  \x20   return point.w - point.x * factor;\n\
+                  }\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   vec3 side = block.scale.xyz;\n\
+                  \x20   ref<Out> cursor = ref<Out>(block.outs);\n\
+                  \x20   int16 left = 2;\n\
+                  \x20   do\n\
+                  \x20   {\n\
+                  \x20       cursor.v.w = distance(block.point, side);\n\
+                  \x20       cursor += 1;\n\
+                  \x20       side = -side;\n\
+                  \x20       left--;\n\
+                  \x20   } while (left > 0);\n\
+                  \x20   vec3 chosen = block.scale.xyz;\n\
+                  \x20   if (block.scale.w > 0.0)\n\
+                  \x20   {\n\
+                  \x20       chosen = block.other.xyz;\n\
+                  \x20   }\n\
+                  \x20   else\n\
+                  \x20   {\n\
+                  \x20       cursor.v.w = distance(block.point, chosen);\n\
+                  \x20   }\n\
+                  \x20   cursor.v.x = distance(block.point, chosen);\n\
+                  }\n";
+    agree(source, 16, |_, _, _| {});
+}
+
+#[test]
 fn products_with_q_are_chains_with_the_same_values() {
     let source = "struct V { vec4 a; vec4 b; vec4 c; };\n\
                   struct O { vec4 lerp; vec4 offset; vec4 sum; vec4 difference; vec4 mixed; };\n\

@@ -32,6 +32,8 @@ pub(super) enum Key {
     Sum(Vi, Vi),
     /// A pure expression, by its text.
     Expr(String),
+    /// The register and lanes a local was last set by a copy of.
+    Copy(LocalId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -68,9 +70,6 @@ pub(super) struct Entry {
 pub(super) struct Cache {
     entries: Vec<(u64, Entry)>,
     made: u64,
-    /// How many times each VF register has been written, for copies that
-    /// name their source while it is unchanged.
-    writes: std::collections::HashMap<Vf, u64>,
 }
 
 impl Cache {
@@ -86,11 +85,6 @@ impl Cache {
         self.entries.retain(|(_, old)| old.key != entry.key);
         self.entries.push((self.made, entry));
         self.made += 1;
-    }
-
-    /// How many times `reg` has been written.
-    pub fn writes(&self, reg: Vf) -> u64 {
-        self.writes.get(&reg).copied().unwrap_or(0)
     }
 
     /// The number the next entry gets.
@@ -112,7 +106,6 @@ impl Cache {
     /// The VF register `reg` written: values it holds from entries made
     /// before `since`, and entries whose key names it, are gone.
     pub fn clobber_vf(&mut self, reg: Vf, since: u64) {
-        *self.writes.entry(reg).or_default() += 1;
         self.entries.retain(|(made, entry)| {
             let held = *made < since && matches!(entry.value, Value::Vf(fv) if fv.reg == reg);
             !held && !entry.regs.contains(&reg)
@@ -127,7 +120,7 @@ impl Cache {
             let named = match entry.key {
                 Key::Qword { base, .. } | Key::Int16 { base, .. } => base == reg,
                 Key::Sum(a, b) => a == reg || b == reg,
-                Key::Expr(_) => false,
+                Key::Expr(_) | Key::Copy(_) => false,
             };
             !held && !named
         });

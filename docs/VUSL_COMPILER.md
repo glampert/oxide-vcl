@@ -223,9 +223,12 @@ and XTOP read once into a register. Generated names are `f` or `i`, the source n
 - a sum of two VI registers;
 - a pure expression, by a text key (`expr_key`). While lowering, a VF local in the key is named
   by the register and lanes that hold it (`vf_key`), and a local last set by a copy of another
-  register by that register, while the register's write count (`Cache::writes`) is what it was at
-  the copy. Two locals holding one value then give one key: an inlined call's `in` parameter
-  copied from a load and the next call's.
+  register by that register. Two locals holding one value then give one key: an inlined call's
+  `in` parameter copied from a load and the next call's;
+- a local's copy (`Key::Copy`): the register and lanes the local was last set by a copy of. It is
+  an entry like the others, so it holds only on the paths that made it: an `if`'s `else` does not
+  see a copy its `then` made, a loop's top forgets the copies of the locals the loop writes, and
+  writing either register ends it.
 
 Each entry also records the memory reads it depends on, as a `Region` and the base and offset when
 known, and the locals and range elements it reads.

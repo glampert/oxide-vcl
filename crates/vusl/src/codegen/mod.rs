@@ -165,10 +165,11 @@ struct Lowering<'p> {
     /// paths meet again, after an `if`, at a loop's top and after it, so
     /// inside one a local keeps the lanes it has.
     joins: usize,
-    /// For a local last set by a copy of another register: that register,
-    /// the lanes, and how many times it had been written then. While it is
-    /// unchanged, keys name the local by it.
-    copies: Vec<Option<(Vf, Placement, u64)>>,
+    /// A copy the statement being lowered made into each local: the
+    /// register and lanes copied. After the statement it is a cache entry
+    /// (`Key::Copy`), and keys name the local by that register while it
+    /// holds.
+    copies: Vec<Option<Fv>>,
     /// Each range element's pointer and its offset from it, inside its
     /// loop.
     elements: Vec<Option<(Vi, i64)>>,
@@ -1009,6 +1010,18 @@ impl Lowering<'_> {
                     self.cache.clobber_vi(reg, since);
                 }
                 self.cache.clobber_local(*local);
+                // A copy is known while neither register changes, on the
+                // paths that made it: the cache's rules for values.
+                if let Some(source) = self.copies[*local].take() {
+                    self.cache.insert(Entry {
+                        key: Key::Copy(*local),
+                        value: Value::Vf(source),
+                        reads: Vec::new(),
+                        locals: vec![*local],
+                        elements: Vec::new(),
+                        regs: vec![source.reg],
+                    });
+                }
                 Ok(())
             }
             Stmt::Store {
@@ -2151,8 +2164,7 @@ impl Lowering<'_> {
                     };
                     self.copy(reg, result.reg, &result.placement, raw, reload);
                     if !raw {
-                        let writes = self.cache.writes(result.reg);
-                        self.copies[id] = Some((result.reg, result.placement, writes));
+                        self.copies[id] = Some(result);
                     }
                 }
                 Ok(result.placement)
@@ -2292,6 +2304,15 @@ impl Lowering<'_> {
         Ok(())
     }
 
+    /// The register and lanes local `id` was last set by a copy of, while
+    /// neither has changed since on any path here.
+    fn copy_of(&self, id: LocalId) -> Option<Fv> {
+        match self.cache.find(&Key::Copy(id)) {
+            Some(Value::Vf(source)) => Some(source),
+            _ => None,
+        }
+    }
+
     /// `value`, read from the register a local was copied from while the
     /// copy holds.
     fn copied_from(&self, value: Fv) -> Fv {
@@ -2300,16 +2321,15 @@ impl Lowering<'_> {
             .iter()
             .position(|local| matches!(local, LocalReg::Vf(reg) if *reg == value.reg));
         if let Some(id) = local
-            && let Some((source, placement, writes)) = self.copies[id]
-            && self.cache.writes(source) == writes
+            && let Some(source) = self.copy_of(id)
             && value
                 .placement
                 .lanes()
                 .iter()
-                .all(|lane| placement.lanes().contains(lane))
+                .all(|lane| source.placement.lanes().contains(lane))
         {
             return Fv {
-                reg: source,
+                reg: source.reg,
                 placement: value.placement,
             };
         }
@@ -2850,10 +2870,8 @@ impl Lowering<'_> {
     fn vf_key(&self, expr: &Expr) -> Option<(String, Vec<Vf>)> {
         let named = std::cell::RefCell::new(Vec::new());
         let name = |id: LocalId| {
-            let (reg, placement) = match (self.copies[id], &self.locals[id]) {
-                (Some((source, placement, writes)), _) if self.cache.writes(source) == writes => {
-                    (source, placement)
-                }
+            let (reg, placement) = match (self.copy_of(id), &self.locals[id]) {
+                (Some(source), _) => (source.reg, source.placement),
                 (_, LocalReg::Vf(reg)) => (*reg, self.placements[id]?),
                 _ => return None,
             };
