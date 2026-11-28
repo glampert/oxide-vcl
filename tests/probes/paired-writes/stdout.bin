@@ -1,0 +1,34 @@
+;-------------------------
+;-------------------------
+;-----VCL CODE------------
+;-------------------------
+;-------------------------
+; =================================================
+; flowMon::Emit() vcl 1.4beta7 produced this code:
+		.align 4
+__v_X_4:
+; _LNOPT_w=[ normal2 ] 5 [11 0] 11   [__v_X_4]
+         NOP                                                        lq.yz         VF01,0(VI00)                        
+         subx.z        VF02,VF01,VF00x                              move.y        VF02,VF01                                  ;	STALL_LATENCY ?3
+         abs.z         VF00,VF02                                    fsand         VI01,0x00000003                            ;	STALL_LATENCY ?3
+         NOP                                                        ibne          VI01,VI00,skip                      
+         NOP                                                        NOP                                               
+; _LNOPT_w=[ normal2 ] 1 [4 0] 1   [__v_X_5]
+         suby.y        VF02,VF00,VF01y                              NOP                                               
+skip:
+; _LNOPT_w=[ normal2 ] 5 [1 0] 5   [skip]
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP                                                        NOP                                               
+         NOP[E]                                                     sq.y          VF02,1(VI00)                        
+         NOP                                                        NOP                                               
+		.align 4
+;	iCount=11
+; register stats:
+;   2 VU User integer
+;   3 VU User floating point
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------
+;-------------------------

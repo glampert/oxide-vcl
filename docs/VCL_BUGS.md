@@ -21,7 +21,7 @@ original" below) with synthetic probes. The results fall into three groups:
 
 The shared defects get opt-in fixes, one per defect, plus a warning for
 program size: `imm` (F1), `alias` (F2), `clip` (F3), `end` (F4),
-`size` (F5), `operands` (F6) and `entry` (F7).
+`size` (F5), `operands` (F6), `entry` (F7) and `pairs` (F8).
 
 Ground rules:
 
@@ -90,6 +90,7 @@ Field widths and latencies come from the VU User's Manual 6.0:
 | `branches`: wrapped offsets | No: the program counter wraps, so they land | VCL emits labels; dvp-as encodes | program-size warning only (F5) |
 | Short ILW, ISW, ILWR, ISWR operands | **Yes**, valid programs are rejected | `checker-parse-*` | F6 |
 | A pipelined loop reading Q, P or a flag set before it | **Yes** | `loop-entry-q-in-flight` | F7 |
+| An upper and a lower instruction of one row writing one VF register | **Yes**, in a flag cap's scratch register | `paired-writes` | F8 |
 
 ## 3. Defects the original shares
 
@@ -498,6 +499,42 @@ whose first iteration reads Q, P or the status flags of the instruction
 before them, and require the fixed listing to compute, in the timed VU
 model, what the same source compiled with `-L` computes; the unfixed Q
 loop does not.
+
+### F8. Two writes to one VF register in a pair
+
+When the upper and lower instructions of a pair write the same VF
+register, the VU writes only the upper's result, whatever fields each
+writes (VU User's Manual, 3.4.3, "Priority for Writing to a Register", and
+the remarks of each lower instruction that writes VF). Values vcl
+1.4beta7 allocates never share a register written twice in one row
+(inferred from vcl 1.4beta7). A scratch register is different: when
+pruning sends an unused FMAC result to VF00 but a flag test reads that
+instruction's flags, vcl gives it a scratch VF for the `abs` cap that
+waits on it, picking the first VF whose fields its table does not use
+(inferred from vcl 1.4beta7). That can be a register whose other fields
+the lower instruction of the same row writes. In `paired-writes` the dead
+`sub.z` gets VF02.z, beside `kept` in VF02.y, and is paired with
+`move.y VF02,VF01` (observed from vcl 1.4beta7): on the path that skips
+the second subtraction, the program stores what VF02.y held before.
+
+No listing of the public corpus or of the local corpus has such a pair,
+in either mode; a VUSL semantics test met one. A software-pipelined
+kernel gets no cap, so the defect is in straight-line tables.
+
+The port reproduces it by default.
+
+**Fix (`--fix=pairs`).** After the tables' rows are final, each scratch
+destination that the lower instruction of its row also writes moves to
+another VF that its table does not use and that the lower instruction
+does not write (`separate_paired_scratches`,
+`crates/vcl/src/compiler/region.rs`). The cap reads the new register; no
+row changes. `the_pairs_fix_keeps_a_scratch_off_the_register_its_partner_writes`
+in `crates/oxide-vcl/tests/vcl_bugs.rs` runs `paired-writes` in the timed
+VU model: unfixed, the skipping path stores the wrong value; under
+`--fix=pairs`, `--fix=all` and `--mode=oxide` no row pairs two writes to
+one register and both paths store what the source computes.
+`the_pairs_fix_leaves_listings_without_such_a_pair` checks that other
+listings do not change.
 
 ## 4. OpenVCL-only defects (absent from the original)
 

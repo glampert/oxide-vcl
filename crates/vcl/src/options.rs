@@ -107,11 +107,14 @@ pub enum Fix {
     /// it waits for the value the code before it may still be computing
     /// (`entry`).
     Entry,
+    /// No row pairs an upper instruction with a lower one that writes the
+    /// same VF register, whose result the VU would discard (`pairs`).
+    Pairs,
 }
 
 impl Fix {
     /// Every fix, in the order the help lists them.
-    pub const ALL: [Fix; 7] = [
+    pub const ALL: [Fix; 8] = [
         Fix::Imm,
         Fix::Alias,
         Fix::Clip,
@@ -119,6 +122,7 @@ impl Fix {
         Fix::Size,
         Fix::Operands,
         Fix::Entry,
+        Fix::Pairs,
     ];
 
     /// The fix's name on the command line.
@@ -131,6 +135,7 @@ impl Fix {
             Fix::Size => "size",
             Fix::Operands => "operands",
             Fix::Entry => "entry",
+            Fix::Pairs => "pairs",
         }
     }
 

@@ -345,6 +345,22 @@ fn compile_region_candidate(
         &mut plans,
     );
     let region = repicked.as_ref().unwrap_or(region);
+    let separated = if options.fixes(Fix::Pairs) {
+        separate_paired_scratches(
+            program,
+            region,
+            analysis,
+            &emission_blocks,
+            &schedules,
+            &last_member,
+            &mappings,
+            &mut scratched,
+            &mut plans,
+        )
+    } else {
+        None
+    };
+    let region = separated.as_ref().unwrap_or(region);
     let repairs = displacement_repairs(region, &schedules, &wrangled_tables);
 
     let emitter = Emitter {
@@ -2456,6 +2472,107 @@ fn repick_scratches(
         }
     }
     Some(copy)
+}
+
+/// The `pairs` fix: gives a scratch destination that the lower instruction
+/// of its row writes too another VF. When an upper and a lower instruction
+/// of one row write the same VF register, the VU discards the lower's
+/// result, whatever fields each writes (VU User's Manual, 3.4.3). vcl
+/// 1.4beta7 picks a scratch by the fields its table uses, so it can take
+/// the register whose other fields the lower writes in that row (observed
+/// from vcl 1.4beta7, probe `paired-writes`). Allocated values never share
+/// a register written in one row. Returns the region with the new
+/// destinations, if any moved.
+#[allow(clippy::too_many_arguments)]
+fn separate_paired_scratches(
+    program: &Source,
+    region: &Region,
+    analysis: &flow::Analysis,
+    emission_blocks: &[Block],
+    schedules: &[Option<Rows>],
+    last_member: &[usize],
+    mappings: &BTreeMap<usize, String>,
+    scratched: &mut Scratched,
+    plans: &mut BTreeMap<usize, CompressionPlan>,
+) -> Option<Region> {
+    let writes_vf = |region: &Region, id: usize| -> [bool; 32] {
+        let mut written = [false; 32];
+        for write in &region.instructions[id].effects.writes {
+            if program.registers.named(write.register).family == Family::Vector
+                && let Some(vf) = physical(&mappings[&write.register], Family::Vector)
+            {
+                written[vf] = true;
+            }
+        }
+        written
+    };
+    let mut copy: Option<Region> = None;
+    let mut renamed: BTreeMap<usize, usize> = BTreeMap::new();
+    for head in 0..schedules.len() {
+        let Some(rows) = schedules[head].as_ref() else {
+            continue;
+        };
+        for row in rows {
+            let (Some(id), Some(partner)) = (row[0], row[1]) else {
+                continue;
+            };
+            let Some(&(destination, old, register)) = scratched.get(&id) else {
+                continue;
+            };
+            let current = copy.as_ref().unwrap_or(region);
+            let Some(scratch) = physical(&mappings[&register], Family::Vector) else {
+                continue;
+            };
+            let partner_writes = writes_vf(current, partner);
+            if !partner_writes[scratch] {
+                continue;
+            }
+            let mut used = [0u8; 32];
+            for access in analysis.live_in[head]
+                .iter()
+                .chain(&analysis.live_out[last_member[head]])
+                .chain(&current.inputs)
+                .chain(&emission_blocks[head].outputs)
+            {
+                mark_used(program, mappings, &mut used, access);
+            }
+            for &other in rows.iter().flatten().flatten() {
+                if other == id {
+                    continue;
+                }
+                let effects = &current.instructions[other].effects;
+                for access in effects.reads.iter().chain(&effects.writes) {
+                    mark_used(program, mappings, &mut used, access);
+                }
+            }
+            for (vf, written) in partner_writes.iter().enumerate() {
+                if *written {
+                    used[vf] = 0xff;
+                }
+            }
+            let mask = current.instructions[id].instruction.mask.0;
+            let Some(fresh) = pick_scratch(program, mask, &used) else {
+                continue;
+            };
+            let fresh = scratch_register(program, fresh);
+            let target = copy.get_or_insert_with(|| region.clone());
+            retarget_destination(&mut target.instructions[id], destination, register, fresh);
+            scratched.insert(id, (destination, old, fresh));
+            renamed.insert(id, fresh);
+        }
+    }
+    for plan in plans.values_mut() {
+        for sync in plan.sync.iter_mut().flatten() {
+            if let Synchronization::Vector {
+                register, producer, ..
+            } = sync
+                && let Some(&fresh) = renamed.get(producer)
+            {
+                *register = fresh;
+            }
+        }
+    }
+    copy
 }
 
 /// Displacement repair: a consumer that crossed its induction update absorbs

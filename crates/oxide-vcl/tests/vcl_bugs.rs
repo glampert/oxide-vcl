@@ -1583,3 +1583,118 @@ fn the_entry_fix_leaves_loops_that_read_nothing_from_before_them() {
         entry_compile(&entry_program("div Q,a.x,a.y", "mulq b,a,Q"), &["-L"])
     );
 }
+
+// ----------------------------------------------
+// F8: two writes to one VF register in a pair (`--fix=pairs`)
+// ----------------------------------------------
+
+/// The rows of `listing` whose upper and lower instructions both write the
+/// same VF register (VF00 aside), in any fields.
+fn same_register_pairs(listing: &str) -> Vec<String> {
+    let destination = |mnemonic: &str, operands: Option<&str>, lower: bool| {
+        let name = mnemonic
+            .split(['.', '['])
+            .next()
+            .unwrap()
+            .to_ascii_lowercase();
+        let writes = if lower {
+            [
+                "lq", "lqi", "lqd", "move", "mr32", "mfir", "mfp", "rget", "rnext",
+            ]
+            .contains(&name.as_str())
+        } else {
+            !["nop", "clipw"].contains(&name.as_str())
+        };
+        let first = operands?.split(',').next()?.trim().to_ascii_uppercase();
+        (writes && first.starts_with("VF") && first.len() >= 4)
+            .then(|| first[..4].to_string())
+            .filter(|register| register != "VF00")
+    };
+    let mut rows = Vec::new();
+    for line in listing.lines() {
+        let code = line.split(';').next().unwrap();
+        if !code.starts_with("         ") {
+            continue;
+        }
+        let tokens: Vec<&str> = code.split_whitespace().collect();
+        let Some(&first) = tokens.first() else {
+            continue;
+        };
+        let (upper, lower) = if first.to_ascii_uppercase().starts_with("NOP") {
+            ((first, None), &tokens[1..])
+        } else {
+            (
+                (first, tokens.get(1).copied()),
+                tokens.get(2..).unwrap_or(&[]),
+            )
+        };
+        let upper = destination(upper.0, upper.1, false);
+        let lower = lower
+            .first()
+            .and_then(|&mnemonic| destination(mnemonic, lower.get(1).copied(), true));
+        if upper.is_some() && upper == lower {
+            rows.push(code.trim().to_string());
+        }
+    }
+    rows
+}
+
+/// Qword 1 after running the `paired-writes` listing with `a` at qword 0:
+/// the probe stores `kept` there, `a.y`, or `-a.y` when `a.z` is above 0.
+fn paired_run(listing: &str, a: [f32; 4]) -> [u32; 4] {
+    let mut state = State::default();
+    state.memory[0] = a.map(f32::to_bits);
+    Program::parse(listing)
+        .unwrap()
+        .run(state, Config::TIMED, 4096)
+        .unwrap()
+        .state
+        .memory[1]
+}
+
+#[test]
+fn the_pairs_fix_keeps_a_scratch_off_the_register_its_partner_writes() {
+    // vcl 1.4beta7 gives the dead `sub.z`'s flag cap the scratch VF02.z,
+    // beside `kept` in VF02.y, and pairs it with `move.y kept`
+    // (`paired-writes`): the VU keeps only the upper's write, so the path
+    // that skips the subtraction stores what VF02.y held before.
+    let unfixed = compile_probe("paired-writes", &[]);
+    assert_eq!(same_register_pairs(&unfixed).len(), 1, "{unfixed}");
+    let skipped = [0.0, 3.0, -1.0, 0.0];
+    let taken = [0.0, 3.0, 2.0, 0.0];
+    assert_ne!(
+        paired_run(&unfixed, skipped)[1],
+        3.0f32.to_bits(),
+        "{unfixed}"
+    );
+    for flags in [&["--fix=pairs"][..], &["--fix=all"], &["--mode=oxide"]] {
+        let fixed = compile_probe("paired-writes", flags);
+        assert!(same_register_pairs(&fixed).is_empty(), "{flags:?}: {fixed}");
+        // The rows stay as they were: only the scratch's register changes.
+        assert_eq!(
+            tables(&fixed).concat().len(),
+            tables(&unfixed).concat().len()
+        );
+        assert_eq!(
+            paired_run(&fixed, skipped)[1],
+            3.0f32.to_bits(),
+            "{flags:?}: {fixed}"
+        );
+        assert_eq!(
+            paired_run(&fixed, taken)[1],
+            (-3.0f32).to_bits(),
+            "{flags:?}: {fixed}"
+        );
+    }
+}
+
+#[test]
+fn the_pairs_fix_leaves_listings_without_such_a_pair() {
+    for case in ["loop-entry-q-in-flight", "external-vf-two"] {
+        assert_eq!(
+            compile_probe(case, &["--fix=pairs"]),
+            compile_probe(case, &[]),
+            "{case}"
+        );
+    }
+}

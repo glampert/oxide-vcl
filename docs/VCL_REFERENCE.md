@@ -1171,6 +1171,7 @@ name with `--fix=`; `--mode=oxide` enables all of them.
 | `size` | A warning for a program larger than the 2048 instructions of VU1 micro memory. A branch farther than its 11-bit offset reaches is not warned about: the assembler truncates the offset, and the program counter wraps around micro memory to the target. |
 | `entry` | A software-pipelined loop whose first iteration reads Q, P or a flag that the code before the loop sets: vcl's kernel can read it before it lands. With the fix a `waitq` or `waitp` row, or for a flag up to three empty rows, comes before the loop's label, as if written in raw code. Loops reached by a branch to their label are left as vcl compiles them. |
 | `operands` | An ILW, ISW, ILWR or ISWR memory operand that vcl rejects only for its length (`ilw.x t,0(p)`, `ilwr.x t,(p)`, `0(p):tag`). With the fix it compiles as its longer spellings (`0(p)x`, `0(ptr)`) do. Operands with a wrong shape are still rejected: a capital field mask, a field mask after an LQ or SQ operand, or text before `(p++)`. |
+| `pairs` | An upper and a lower instruction of one row that write the same VF register, whose lower result the VU discards whatever fields each writes. vcl pairs them when it gives the scratch register of a flag test's unused FMAC result the fields beside a value the lower instruction writes. With the fix that scratch takes another free register; the rows stay as they are. |
 
 ```sh
 oxide-vcl --fix=end -oskin.vsm skin.vcl       # vcl's output, with the E bit fix
