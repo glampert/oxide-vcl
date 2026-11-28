@@ -196,7 +196,8 @@ without first moving it. VUSL makes lane moves explicit.
   bits move only by rotation.
 - **Scalars go where they are used.** A scalar whose instruction can write any lane is made in the
   lane its store or component write wants: `st.z = q` after a division is a single
-  `addq.z st, vf00, q`.
+  `addq.z st, vf00, q`. Assigned to a local inside an `if` or a loop, it is made in the lane the
+  local already has.
 - **Constructors are free when only broadcast.** In `m * vec4(p.pos, 1.0)` the product reads
   `p`'s lanes and VF00's w directly. Otherwise a constructor costs one instruction per part not
   already in place.

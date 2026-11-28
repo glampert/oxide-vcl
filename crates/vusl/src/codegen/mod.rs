@@ -121,6 +121,7 @@ pub fn generate(program: &Program, source: &str, settings: Settings) -> Lowered<
         out: Output::default(),
         locals: vec![LocalReg::Unset; program.locals.len()],
         placements: vec![None; program.locals.len()],
+        joins: 0,
         copies: vec![None; program.locals.len()],
         elements: vec![None; program.elements.len()],
         xtop: None,
@@ -145,6 +146,10 @@ struct Lowering<'p> {
     locals: Vec<LocalReg>,
     /// Where each local's value is now, as the code goes.
     placements: Vec<Option<Placement>>,
+    /// How many `if`s and loops the code being lowered is inside. Their
+    /// paths meet again, after an `if`, at a loop's top and after it, so
+    /// inside one a local keeps the lanes it has.
+    joins: usize,
     /// For a local last set by a copy of another register: that register,
     /// the lanes, and how many times it had been written then. While it is
     /// unchanged, keys name the local by it.
@@ -1048,14 +1053,14 @@ impl Lowering<'_> {
                 // different by path.
                 let clips = self.clips;
                 self.clips_in_block_from = self.clips;
-                self.stmts(then)?;
+                self.joined(|lowering| lowering.stmts(then))?;
                 if !otherwise.is_empty() {
                     self.out.pos = Some(*pos);
                     self.out.inst("b", None, std::slice::from_ref(&end));
                 }
                 self.cache = before.clone();
                 self.label_here(&otherwise_label);
-                self.stmts(otherwise)?;
+                self.joined(|lowering| lowering.stmts(otherwise))?;
                 self.label_here(&end);
                 if self.clips != clips {
                     self.clips_reachable_from = self.clips;
@@ -1073,7 +1078,7 @@ impl Lowering<'_> {
                 pos,
             } => {
                 self.out.pos = Some(*pos);
-                self.lower_loop(kind, body, hints, *pos)
+                self.joined(|lowering| lowering.lower_loop(kind, body, hints, *pos))
             }
             Stmt::Break { pos } | Stmt::Continue { pos } => {
                 self.out.pos = Some(*pos);
@@ -1943,6 +1948,14 @@ impl Lowering<'_> {
         regs
     }
 
+    /// `lower`, inside an `if` or a loop (`joins`).
+    fn joined<T>(&mut self, lower: impl FnOnce(&mut Self) -> Lowered<T>) -> Lowered<T> {
+        self.joins += 1;
+        let result = lower(self);
+        self.joins -= 1;
+        result
+    }
+
     fn set_local(
         &mut self,
         id: LocalId,
@@ -2025,7 +2038,9 @@ impl Lowering<'_> {
                 let raw = ty.is_raw() || self.bits_read[id];
                 let reg = self.local_vf(id);
                 let current = self.placements[id];
-                let fixed = local.fixed;
+                // Inside an `if` or a loop, a local keeps its lanes: the
+                // paths meet with the local where each path left it.
+                let fixed = local.fixed.or(current.filter(|_| self.joins > 0));
                 let placement = self.write_vf(id, reg, current, fixed, components, value, raw)?;
                 self.placements[id] = Some(placement);
                 Ok(())

@@ -151,7 +151,10 @@ count. There is no SSA form and no separate IR: lowering works on this tree.
 wants where it can. Vectors stay in the lanes the checker placed them in, and a scalar whose
 instruction can write any lane is made in the lane its store or component write wants
 (`vf_in_lane`, `any_lane`): Q and P copies, constants through I, `mfir`, negation. There is no
-separate lane solver.
+separate lane solver. Outside any `if` or loop, a local takes the lanes of each value assigned to
+it whole. Inside one (`joins`), an assignment writes the value into the lanes the local already
+has: the paths meet with the local where each left it, and a value made in another lane than the
+checker placed it, such as a negation, would leave the paths disagreeing.
 
 The VCL starts with `.syntax new`, `.name`, `.init_vf_all`, `.init_vi_all` and empty `--enter` and
 `--exit` blocks, then `.vu_work_area` for a `spill` parameter, `fcset 0` when the program judges,

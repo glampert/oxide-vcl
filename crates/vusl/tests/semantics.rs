@@ -1598,3 +1598,47 @@ fn the_particle_program() {
         memory[12] = [0x8000, 0, 0, 0];
     });
 }
+
+#[test]
+fn a_local_keeps_its_lanes_where_paths_meet() {
+    // `outside` moves to lane y outside the loop; inside it, its new value
+    // must land in lane y too, where the next iteration's test reads it.
+    let looped = "struct Block { vec4 a; vec4 b; };\n\
+                  void main(layout(address = 0) inout Block block)\n\
+                  {\n\
+                  \x20   float outside = block.a.x;\n\
+                  \x20   outside = block.a.y;\n\
+                  \x20   int16 side = 2;\n\
+                  \x20   do\n\
+                  \x20   {\n\
+                  \x20       if (outside > 0.0)\n\
+                  \x20       {\n\
+                  \x20           block.b.y = block.b.y + 1.0;\n\
+                  \x20       }\n\
+                  \x20       outside = -block.a.y;\n\
+                  \x20       side--;\n\
+                  \x20   } while (side > 0);\n\
+                  }\n";
+    agree(looped, 8, |_, _, _| {});
+    agree(looped, 1, |memory, _, _| {
+        set_float(memory, 0, 1, 1.0);
+        set_float(memory, 1, 1, 0.0);
+    });
+    // An assignment on one path of an `if` lands where the other path
+    // leaves the local, though a negation can be made in any lane.
+    for kept in ["block.a.y", "block.a.y + 1.0"] {
+        let branched = format!(
+            "struct Block {{ vec4 a; vec4 b; }};\n\
+             void main(layout(address = 0) inout Block block)\n\
+             {{\n\
+             \x20   float kept = {kept};\n\
+             \x20   if (block.b.z > 0.0)\n\
+             \x20   {{\n\
+             \x20       kept = -block.a.y;\n\
+             \x20   }}\n\
+             \x20   block.b.x = kept * 2.0;\n\
+             }}\n"
+        );
+        agree(&branched, 12, |_, _, _| {});
+    }
+}
