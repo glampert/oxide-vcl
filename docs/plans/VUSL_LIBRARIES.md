@@ -12,7 +12,7 @@
 | 5. The library in doom3-bfg-ps2 | Done |
 
 Milestones 1–4 are in this repository and milestone 5 in the game repository, whose program
-manager uploads the clipper once at 1536 for the world programs that call it.
+manager uploads the clipper once at 1408 for the world programs that call it.
 
 ## Context
 
@@ -114,7 +114,7 @@ branches are relative, so its listing can be placed anywhere.
 ```glsl
 // clipper.vush
 #pragma once
-#pragma library(clipper, address = 1536, vf = 24, vi = 10, saved_vf = 8, saved_vi = 4, save = saves)
+#pragma library(clipper, address = 1408, vf = 24, vi = 10, saved_vf = 8, saved_vi = 4, save = saves)
 #include "doom3.vush"
 
 struct ClipSaves { qword q[9]; };
@@ -240,7 +240,7 @@ unchanged: the new annotations are rejected in vcl mode.
 4. **Docs.** `docs/VUSL.md` (libraries, the header, the calling convention) and
    `docs/VUSL_COMPILER.md` (the library build and call lowering).
 5. **The library in doom3-bfg-ps2.** Its program manager uploads `clipper.vsm` once into the
-   resident region at 1536, and the world programs that clip call it. The change follows the game
+   resident region at 1408, and the world programs that clip call it. The change follows the game
    repository's commit rules.
 
 ## Verification
