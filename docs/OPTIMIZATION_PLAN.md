@@ -747,6 +747,43 @@ within the code budget.
 the allocator (O7), and keep a copy when removing it would cause a spill or
 a forced-register conflict.
 
+*Measured, coalescing within a block.* A source rewrite removed a
+`move.m dst, src` inside its block in one of two ways: the instruction that
+wrote `src` wrote `dst` instead, or the reads of `dst` after the copy read
+`src`. Each field was checked on its own, and `speculate`'s search proved
+the old values dead. Registers named by number were left alone. The
+listings computed what they did before, and gained nothing:
+
+| Measure, oxide mode | Before | After |
+| --- | ---: | ---: |
+| Public corpus, copies outside loops | 60 | 49 |
+| Public corpus, rows and stalls | 15,022 | 15,022 |
+| Local corpus, sets A and B, rows and stalls | 26,053 | 26,053 |
+| VUSL scenes, the ports' cycles | unchanged | unchanged |
+
+- **Within a block, vcl's allocation already does the work.** It gives a
+  copy's two names one register when their fields allow, as the port does
+  in both modes. The copy then stays as a copy of a register to itself
+  (`max.z VF01,VF01,VF01`), in a slot the stream had free. The copies
+  VUSL's lane assembly writes (`mulq.xy t`, `addq.z st`, `move.xy st, t`)
+  do not appear in the transform kernels at all.
+- **The copies in kernels stay.** The rewrite removes none of the public
+  corpus's 37 kernel copies, in 25 kernels. Some are the pipeliner's own: a
+  value that lives longer than the period passes through a second register,
+  as in the transform kernel of the VUSL world_lm port. Each of the 37
+  sits in the pipe that does not bound its kernel, so removing one frees no
+  slot of the bound. What remains of O6 is renaming instead of copying in
+  kernels, the second half of the design, which pays only where such a
+  copy lengthens a dependence that sets the period.
+- **Removing a loop's copies can stop its pipelining.** Without its three
+  lane-assembly copies, the VUSL clipper's fan loop failed allocation at
+  every period the search tries, up to its straight-line schedule's 31. It
+  ran unpipelined at 32 cycles an iteration instead of 30, and the world_lm
+  floor took 24 cycles more. Keeping a loop's copies when the listing is
+  slower made every scene equal again.
+
+So coalescing within a block is not part of oxide mode.
+
 ### O7. Register allocation that serves the schedule
 
 *Evidence:* `quake2-ps2__src_ps2_renderer_vu1progs_textured_triangles` uses all 31 allocatable VF
@@ -1047,7 +1084,7 @@ size: small is days, medium one to two weeks, large three to five weeks.
 | 4a | O5 step 1 (move work between streams that run on every path; fill delay slots): `hoist` and `speculate`, without the delay slots | Medium | The clip pass's usual path 39 → about 35 cycles a corner, and its intersection 21 → 11 rows; the clipped scenes −3.3 to −8.6% |
 | 4b | O2's bookkeeping: `steps` (fold a block's runs of pointer steps) | Small | quad 47 → 45, tri 36 → 35, pv_diff_quad 51 → 45; doom3 `world_lm` wall −2.3% |
 | 5 | O5 step 2 (pipeline loops with branches), on the modulo scheduler O2 describes | Large to very large | The clipped floors at best −25 to −35% |
-| 6 | O6 (copies), O7 (allocation) | Large | Shorter chains, lower pressure; frees periods in high-pressure kernels |
+| 6 | O6 (copies): coalescing within a block measured, not kept; renaming in kernels. O7 (allocation) | Large | Coalescing: no row in the public or local corpus, no cycle in the scenes. Renaming: only where a kernel's copy lengthens the dependence that sets its period; lower pressure frees periods in high-pressure kernels |
 | 7 | O5 step 3 (superblocks, hoisting setup code), O8 (memory/kick precision) | Very large | Setup chains and stream boundaries; the largest remaining static stalls, little at run time |
 | 8 | O12 (single-product ACC chains in VUSL, Q forms): done | Small | The VUSL scenes −0.7%, no scene slower; prologue and epilogue stalls about −40% |
 
