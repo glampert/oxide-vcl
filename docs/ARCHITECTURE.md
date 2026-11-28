@@ -181,7 +181,10 @@ written. `pointers` (`compiler/pointers.rs`) rewrites the parsed program
 before `unswitch` does: each of its rewrites is compiled on its own and
 kept when the kernels are shorter with it. `hoist` (`compiler/hoist.rs`)
 rewrites the program those two settle on, compiles it once more, and keeps
-the rewrite for each loop whose moved streams get shorter. `loops` and
+the rewrite for each loop whose moved streams get shorter. `speculate`
+(`compiler/speculate.rs`) does the same with the program `hoist` leaves,
+keeping its rewrite for each loop whose conditional streams get shorter
+with none of its streams longer. `loops` and
 `exit` act inside the compiler's phases. See
 [OPTIMIZATION_PLAN.md](OPTIMIZATION_PLAN.md).
 

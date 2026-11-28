@@ -18,53 +18,53 @@ hand particles compile phase:tables                                             
 hand particles epilogue:lParticleLoop                                               entries=1 cycles=24 stalls=6 fmac=6 per100=2400
 hand particles kernel:lParticleLoop                                                 entries=58 cycles=1102 stalls=0 per100=1900
 hand particles prologue:lParticleLoop                                               entries=1 cycles=19 stalls=1 fmac=1 per100=1900
-hand textured_triangles compile                                                     pairs=1202 programs=2 regions=2 nodes=0 steps=165804 checks=1714005 analyses=36 walks=8142
-hand textured_triangles compile phase:loops                                         nodes=0 steps=130472 checks=1524400 analyses=14 walks=2521
-hand textured_triangles compile phase:prepare                                       nodes=0 steps=0 checks=0 analyses=22 walks=5621
-hand textured_triangles compile phase:schedule                                      nodes=0 steps=35332 checks=106259 analyses=0 walks=0
-hand textured_triangles compile phase:tables                                        nodes=0 steps=0 checks=83346 analyses=0 walks=0
+hand textured_triangles compile                                                     pairs=1190 programs=3 regions=3 nodes=0 steps=248731 checks=2575686 analyses=54 walks=12173
+hand textured_triangles compile phase:loops                                         nodes=0 steps=195708 checks=2286600 analyses=21 walks=3769
+hand textured_triangles compile phase:prepare                                       nodes=0 steps=0 checks=0 analyses=33 walks=8404
+hand textured_triangles compile phase:schedule                                      nodes=0 steps=53023 checks=163180 analyses=0 walks=0
+hand textured_triangles compile phase:tables                                        nodes=0 steps=0 checks=125906 analyses=0 walks=0
 hand textured_triangles epilogue:lFanLoop__u0                                       entries=2 cycles=20 stalls=0 per100=1000
 hand textured_triangles epilogue:lFanLoop__u1                                       entries=10 cycles=70 stalls=30 fmac=30 per100=700
 hand textured_triangles kernel:lFanLoop__u0                                         entries=3 cycles=93 stalls=0 per100=3100
 hand textured_triangles kernel:lFanLoop__u1                                         entries=5 cycles=175 stalls=0 per100=3500
 hand textured_triangles model                                                       cycles=1578 stalls=326 fmac=222 lq=12 ilw=56 fdiv=36
-hand textured_triangles model_near                                                  cycles=3716 stalls=915 fmac=709 lq=84 ilw=74 waitq=48
+hand textured_triangles model_near                                                  cycles=3628 stalls=804 fmac=646 lq=84 ilw=74
 hand textured_triangles prologue:lFanLoop__u0                                       entries=2 cycles=60 stalls=4 fmac=2 lq=2 per100=3000
 hand textured_triangles prologue:lFanLoop__u1                                       entries=10 cycles=340 stalls=0 per100=3400
-hand textured_triangles world_floor                                                 cycles=16336 stalls=4480 fmac=3186 lq=522 ilw=409 fdiv=105 waitq=258
+hand textured_triangles world_floor                                                 cycles=15863 stalls=3832 fmac=2796 lq=522 ilw=409 fdiv=105
 hand textured_triangles world_wall                                                  cycles=2805 stalls=574 fmac=90 lq=90 ilw=184 fdiv=210
-hand world_lm compile                                                               pairs=1009 programs=2 regions=2 nodes=0 steps=274998 checks=1828539 analyses=36 walks=10220
-hand world_lm compile phase:loops                                                   nodes=0 steps=268116 checks=1729680 analyses=14 walks=3165
-hand world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=22 walks=7055
-hand world_lm compile phase:schedule                                                nodes=0 steps=6882 checks=41921 analyses=0 walks=0
-hand world_lm compile phase:tables                                                  nodes=0 steps=0 checks=56938 analyses=0 walks=0
+hand world_lm compile                                                               pairs=997 programs=3 regions=3 nodes=0 steps=412522 checks=2747672 analyses=54 walks=15290
+hand world_lm compile phase:loops                                                   nodes=0 steps=402174 checks=2594520 analyses=21 walks=4735
+hand world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=33 walks=10555
+hand world_lm compile phase:schedule                                                nodes=0 steps=10348 checks=66673 analyses=0 walks=0
+hand world_lm compile phase:tables                                                  nodes=0 steps=0 checks=86479 analyses=0 walks=0
 hand world_lm epilogue:lFanLoop                                                     entries=93 cycles=744 stalls=186 fmac=186 per100=800
 hand world_lm epilogue:lTransform                                                   entries=6 cycles=132 stalls=0 per100=2200
 hand world_lm exit:lTransform                                                       entries=6 cycles=12 stalls=0 per100=200
-hand world_lm floor                                                                 cycles=44959 stalls=12174 fmac=8659 lq=1201 ilw=1474 waitq=840
-hand world_lm floor_lit                                                             cycles=88809 stalls=24340 fmac=17314 lq=2401 ilw=2945 waitq=1680
+hand world_lm floor                                                                 cycles=43419 stalls=10198 fmac=7523 lq=1201 ilw=1474
+hand world_lm floor_lit                                                             cycles=85729 stalls=20388 fmac=15042 lq=2401 ilw=2945
 hand world_lm kernel:lFanLoop                                                       entries=42 cycles=1176 stalls=0 per100=2800
 hand world_lm kernel:lTransform                                                     entries=294 cycles=6174 stalls=0 per100=2100
 hand world_lm prologue:lTransform                                                   entries=6 cycles=126 stalls=12 fmac=6 lq=6 per100=2100
-hand world_lm side                                                                  cycles=17848 stalls=4121 fmac=2552 lq=383 ilw=1090 waitq=96
-hand world_lm side_lit                                                              cycles=34651 stalls=8234 fmac=5100 lq=765 ilw=2177 waitq=192
+hand world_lm side                                                                  cycles=17672 stalls=3661 fmac=2188 lq=383 ilw=1090
+hand world_lm side_lit                                                              cycles=34299 stalls=7314 fmac=4372 lq=765 ilw=2177
 hand world_lm wall                                                                  cycles=2259 stalls=8 fmac=4 lq=1 ilw=3
 hand world_lm wall_lit                                                              cycles=3476 stalls=8 fmac=4 lq=1 ilw=3
-hand world_strips compile                                                           pairs=685 programs=2 regions=2 nodes=0 steps=265718 checks=893611 analyses=34 walks=6386
-hand world_strips compile phase:loops                                               nodes=0 steps=260020 checks=844380 analyses=12 walks=1983
-hand world_strips compile phase:prepare                                             nodes=0 steps=0 checks=0 analyses=22 walks=4403
-hand world_strips compile phase:schedule                                            nodes=0 steps=5698 checks=27065 analyses=0 walks=0
-hand world_strips compile phase:tables                                              nodes=0 steps=0 checks=22166 analyses=0 walks=0
+hand world_strips compile                                                           pairs=673 programs=3 regions=3 nodes=0 steps=398602 checks=1345280 analyses=51 walks=9539
+hand world_strips compile phase:loops                                               nodes=0 steps=390030 checks=1266570 analyses=18 walks=2962
+hand world_strips compile phase:prepare                                             nodes=0 steps=0 checks=0 analyses=33 walks=6577
+hand world_strips compile phase:schedule                                            nodes=0 steps=8572 checks=44389 analyses=0 walks=0
+hand world_strips compile phase:tables                                              nodes=0 steps=0 checks=34321 analyses=0 walks=0
 hand world_strips epilogue:lFanLoop                                                 entries=31 cycles=248 stalls=62 fmac=62 per100=800
-hand world_strips floor                                                             cycles=46177 stalls=13007 fmac=9607 lq=1194 ilw=1366 waitq=840
+hand world_strips floor                                                             cycles=44637 stalls=11031 fmac=8471 lq=1194 ilw=1366
 hand world_strips kernel:lFanLoop                                                   entries=14 cycles=392 stalls=0 per100=2800
-hand world_strips side                                                              cycles=18938 stalls=4858 fmac=3500 lq=376 ilw=886 waitq=96
+hand world_strips side                                                              cycles=18762 stalls=4398 fmac=3136 lq=376 ilw=886
 hand world_strips wall                                                              cycles=3896 stalls=952 fmac=952
-vusl library compile                                                                pairs=443 programs=2 regions=2 nodes=0 steps=100092 checks=972595 analyses=34 walks=2562
-vusl library compile phase:loops                                                    nodes=0 steps=96158 checks=936872 analyses=12 walks=795
-vusl library compile phase:prepare                                                  nodes=0 steps=0 checks=0 analyses=22 walks=1767
-vusl library compile phase:schedule                                                 nodes=0 steps=3934 checks=13569 analyses=0 walks=0
-vusl library compile phase:tables                                                   nodes=0 steps=0 checks=22154 analyses=0 walks=0
+vusl library compile                                                                pairs=443 programs=3 regions=3 nodes=0 steps=150188 checks=1463460 analyses=51 walks=3803
+vusl library compile phase:loops                                                    nodes=0 steps=144237 checks=1405308 analyses=18 walks=1180
+vusl library compile phase:prepare                                                  nodes=0 steps=0 checks=0 analyses=33 walks=2623
+vusl library compile phase:schedule                                                 nodes=0 steps=5951 checks=24786 analyses=0 walks=0
+vusl library compile phase:tables                                                   nodes=0 steps=0 checks=33366 analyses=0 walks=0
 vusl particles burst                                                                cycles=1017 stalls=7 fmac=4 lq=3
 vusl particles compile                                                              pairs=113 programs=2 regions=2 nodes=0 steps=280530 checks=8543056 analyses=34 walks=214
 vusl particles compile phase:loops                                                  nodes=0 steps=280434 checks=8534188 analyses=12 walks=56
@@ -74,32 +74,32 @@ vusl particles compile phase:tables                                             
 vusl particles epilogue:lloop_2                                                     entries=1 cycles=18 stalls=1 fmac=1 per100=1800
 vusl particles kernel:lloop_2                                                       entries=58 cycles=928 stalls=0 per100=1600
 vusl particles prologue:lloop_2                                                     entries=1 cycles=32 stalls=6 fmac=3 lq=3 per100=3200
-vusl textured_triangles compile                                                     pairs=1132 programs=21 regions=132 nodes=132140 steps=1055831 checks=7880953 analyses=411 walks=96831
-vusl textured_triangles compile phase:loops                                         nodes=0 steps=538980 checks=4914512 analyses=114 walks=22535
-vusl textured_triangles compile phase:prepare                                       nodes=0 steps=0 checks=0 analyses=297 walks=74296
-vusl textured_triangles compile phase:schedule                                      nodes=132140 steps=516851 checks=1990537 analyses=0 walks=0
-vusl textured_triangles compile phase:tables                                        nodes=0 steps=0 checks=975904 analyses=0 walks=0
+vusl textured_triangles compile                                                     pairs=1132 programs=27 regions=138 nodes=132140 steps=1316186 checks=10091726 analyses=504 walks=119301
+vusl textured_triangles compile phase:loops                                         nodes=0 steps=673725 checks=6143140 analyses=141 walks=27949
+vusl textured_triangles compile phase:prepare                                       nodes=0 steps=0 checks=0 analyses=363 walks=91352
+vusl textured_triangles compile phase:schedule                                      nodes=132140 steps=642461 checks=2485230 analyses=0 walks=0
+vusl textured_triangles compile phase:tables                                        nodes=0 steps=0 checks=1463356 analyses=0 walks=0
 vusl textured_triangles epilogue:lloop_96__u0                                       entries=2 cycles=24 stalls=10 fmac=10 per100=1200
 vusl textured_triangles kernel:lloop_96__u0                                         entries=3 cycles=90 stalls=0 per100=3000
 vusl textured_triangles model                                                       cycles=1175 stalls=0
-vusl textured_triangles model_near                                                  cycles=3081 stalls=498 fmac=386 lq=80 waitq=32
+vusl textured_triangles model_near                                                  cycles=3001 stalls=337 fmac=257 lq=80
 vusl textured_triangles prologue:lloop_96__u0                                       entries=2 cycles=62 stalls=2 fmac=2 per100=3100
-vusl textured_triangles world_floor                                                 cycles=13016 stalls=3013 fmac=2289 lq=552 waitq=172
+vusl textured_triangles world_floor                                                 cycles=12586 stalls=2064 fmac=1512 lq=552
 vusl textured_triangles world_wall                                                  cycles=1801 stalls=60 lq=60
-vusl world_lm compile                                                               pairs=661 programs=11 regions=11 nodes=0 steps=146762 checks=1920316 analyses=161 walks=15969
-vusl world_lm compile phase:loops                                                   nodes=0 steps=143212 checks=1841776 analyses=34 walks=3052
-vusl world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=127 walks=12917
-vusl world_lm compile phase:schedule                                                nodes=0 steps=3550 checks=10948 analyses=0 walks=0
-vusl world_lm compile phase:tables                                                  nodes=0 steps=0 checks=67592 analyses=0 walks=0
+vusl world_lm compile                                                               pairs=661 programs=13 regions=13 nodes=0 steps=220143 checks=2880476 analyses=192 walks=18954
+vusl world_lm compile phase:loops                                                   nodes=0 steps=214818 checks=2762664 analyses=43 walks=3770
+vusl world_lm compile phase:prepare                                                 nodes=0 steps=0 checks=0 analyses=149 walks=15184
+vusl world_lm compile phase:schedule                                                nodes=0 steps=5325 checks=16376 analyses=0 walks=0
+vusl world_lm compile phase:tables                                                  nodes=0 steps=0 checks=101436 analyses=0 walks=0
 vusl world_lm epilogue:EXPL_clipper_ClipTriangle_clipper_ClipTriangle_lloop_59      entries=93 cycles=465 stalls=0 per100=500
 vusl world_lm epilogue:lloop_7                                                      entries=6 cycles=144 stalls=0 per100=2400
-vusl world_lm floor                                                                 cycles=32336 stalls=7499 fmac=5576 lq=1229 ilw=134 waitq=560
-vusl world_lm floor_lit                                                             cycles=63556 stalls=14986 fmac=11146 lq=2455 ilw=265 waitq=1120
+vusl world_lm floor                                                                 cycles=30936 stalls=5016 fmac=3653 lq=1229 ilw=134
+vusl world_lm floor_lit                                                             cycles=60756 stalls=10020 fmac=7300 lq=2455 ilw=265
 vusl world_lm kernel:EXPL_clipper_ClipTriangle_clipper_ClipTriangle_lloop_59        entries=42 cycles=1260 stalls=0 per100=3000
 vusl world_lm kernel:lloop_7                                                        entries=294 cycles=6468 stalls=0 per100=2200
 vusl world_lm prologue:lloop_7                                                      entries=6 cycles=264 stalls=54 fmac=36 lq=18 per100=4400
-vusl world_lm side                                                                  cycles=8169 stalls=1031 fmac=698 lq=167 ilw=134 waitq=32
-vusl world_lm side_lit                                                              cycles=15294 stalls=2050 fmac=1390 lq=331 ilw=265 waitq=64
+vusl world_lm side                                                                  cycles=8089 stalls=777 fmac=476 lq=167 ilw=134
+vusl world_lm side_lit                                                              cycles=15134 stalls=1542 fmac=946 lq=331 ilw=265
 vusl world_lm wall                                                                  cycles=2131 stalls=9 fmac=6 lq=3
 vusl world_lm wall_lit                                                              cycles=3152 stalls=9 fmac=6 lq=3
 vusl world_strips compile                                                           pairs=323 programs=7 regions=7 nodes=0 steps=131120 checks=779730 analyses=111 walks=5994
@@ -109,9 +109,9 @@ vusl world_strips compile phase:schedule                                        
 vusl world_strips compile phase:tables                                              nodes=0 steps=0 checks=22116 analyses=0 walks=0
 vusl world_strips epilogue:EXPL_clipper_ClipTriangle_clipper_ClipTriangle_lloop_59  entries=31 cycles=155 stalls=0 per100=500
 vusl world_strips epilogue:lloop_7                                                  entries=3 cycles=78 stalls=15 fmac=15 per100=2600
-vusl world_strips floor                                                             cycles=38316 stalls=8783 fmac=6539 lq=1421 ilw=263 waitq=560
+vusl world_strips floor                                                             cycles=36916 stalls=6012 fmac=4328 lq=1421 ilw=263
 vusl world_strips kernel:EXPL_clipper_ClipTriangle_clipper_ClipTriangle_lloop_59    entries=14 cycles=420 stalls=0 per100=3000
 vusl world_strips kernel:lloop_7                                                    entries=198 cycles=3762 stalls=0 per100=1900
 vusl world_strips prologue:lloop_7                                                  entries=3 cycles=114 stalls=21 fmac=12 lq=9 per100=3800
-vusl world_strips side                                                              cycles=15283 stalls=2703 fmac=1953 lq=423 ilw=263 waitq=64
+vusl world_strips side                                                              cycles=15123 stalls=2027 fmac=1341 lq=423 ilw=263
 vusl world_strips wall                                                              cycles=2184 stalls=12 fmac=9 lq=3

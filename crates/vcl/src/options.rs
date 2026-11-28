@@ -203,16 +203,23 @@ pub enum Optimization {
     /// the earliest stream that runs exactly when it does, where that
     /// shortens those streams (`hoist`).
     Hoist,
+    /// The first work of a stream that runs on some iterations of a loop,
+    /// and the division or EFU work it feeds, start in the earliest stream
+    /// that runs on every iteration before it, where the paths that skip
+    /// the stream never read the result and that shortens the stream
+    /// without lengthening another (`speculate`).
+    Speculate,
 }
 
 impl Optimization {
     /// Every optimization, in the order the help lists them.
-    pub const ALL: [Optimization; 5] = [
+    pub const ALL: [Optimization; 6] = [
         Optimization::Exit,
         Optimization::Loops,
         Optimization::Unswitch,
         Optimization::Pointers,
         Optimization::Hoist,
+        Optimization::Speculate,
     ];
 
     /// The optimization's name on the command line.
@@ -223,6 +230,7 @@ impl Optimization {
             Optimization::Unswitch => "unswitch",
             Optimization::Pointers => "pointers",
             Optimization::Hoist => "hoist",
+            Optimization::Speculate => "speculate",
         }
     }
 

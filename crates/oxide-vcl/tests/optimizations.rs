@@ -1108,7 +1108,12 @@ const PASS: &str = ".syntax new\n\
 /// (VI02) read from VI01 and written to VI03, with corners on both sides of
 /// both tests, and requires the same memory and VI04 (the corners kept).
 fn hoist_results(source: &str, dst: u16) -> (String, String) {
-    let plain = compile(source, &["--no-opt=hoist"]);
+    pass_results(source, dst, "--no-opt=hoist")
+}
+
+/// [`hoist_results`] against the listing compiled with `without`.
+fn pass_results(source: &str, dst: u16, without: &str) -> (String, String) {
+    let plain = compile(source, &[without]);
     let optimized = compile(source, &[]);
     for count in 1..=6 {
         let mut state = State::default();
@@ -1214,4 +1219,140 @@ fn hoist_keeps_a_load_below_a_store() {
     let (_, optimized) = hoist_results(&source, 11);
     let (_, latch) = table(&optimized, "lnext");
     assert!(latch.contains("lq"), "{optimized}");
+}
+
+// ----------------------------------------------
+// speculate
+// ----------------------------------------------
+
+/// A clipping pass with its intersection: when the edge to the next corner
+/// crosses the plane, the cut point is the corners' difference scaled by
+/// their distances' ratio. The intersection divides first and waits for Q.
+const CUT: &str = ".syntax new\n\
+                   .init_vf_all\n\
+                   .init_vi_all\n\
+                   --enter\n\
+                   in_vi src(vi01)\n\
+                   in_vi count(vi02)\n\
+                   in_vi dst(vi03)\n\
+                   in_vf limit(vf02)\n\
+                   --endenter\n\
+                   iaddiu kept,vi00,0\n\
+                   lpass:\n\
+                   lq.xyzw cur,0(src)\n\
+                   lq.xyzw nxt,1(src)\n\
+                   mul.w dcur,cur,limit[w]\n\
+                   mul.w dnxt,nxt,limit[w]\n\
+                   mul.w cut,dcur,dnxt[w]\n\
+                   sub.w diff,dcur,vf00[x]\n\
+                   fsand flagA,2\n\
+                   ibne flagA,vi00,lskip\n\
+                   sq.xyzw cur,0(dst)\n\
+                   iaddiu dst,dst,1\n\
+                   iaddiu kept,kept,1\n\
+                   lskip:\n\
+                   sub.w later,cut,vf00[x]\n\
+                   fsand flagB,2\n\
+                   ibeq flagB,vi00,lnext\n\
+                   lcut:\n\
+                   sub.w den,dcur,dnxt[w]\n\
+                   div q,dcur[w],den[w]\n\
+                   sub.xyzw edge,nxt,cur\n\
+                   mulaq.xyzw acc,edge,q\n\
+                   madd.xyzw mid,cur,vf00[w]\n\
+                   sq.xyzw mid,0(dst)\n\
+                   iaddiu dst,dst,1\n\
+                   lnext:\n\
+                   iaddiu src,src,1\n\
+                   isubiu count,count,1\n\
+                   ibgtz count,lpass\n\
+                   --exit\n\
+                   out_vi kept(vi04)\n\
+                   --endexit\n";
+
+fn speculate_results(source: &str) -> (String, String) {
+    pass_results(source, 200, "--no-opt=speculate")
+}
+
+#[test]
+fn speculate_starts_the_division_in_the_header() {
+    let (plain, optimized) = speculate_results(CUT);
+    // The header takes the division, the difference it divides by and the
+    // edge in its stall cycles, and is no longer for them.
+    let (before, _) = table(&plain, "lpass");
+    let (after, header) = table(&optimized, "lpass");
+    assert!(after <= before, "{plain}\n{optimized}");
+    assert!(header.contains("div"), "{optimized}");
+    assert!(header.contains(" sub "), "{optimized}");
+    // The intersection no longer waits for Q from its own start.
+    let (before, _) = table(&plain, "lcut");
+    let (after, cut) = table(&optimized, "lcut");
+    assert!(after < before, "{plain}\n{optimized}");
+    assert!(!cut.contains("div"), "{optimized}");
+}
+
+#[test]
+fn speculate_keeps_work_whose_register_the_other_path_reads() {
+    // The latch stores the last edge the intersection computed: on the
+    // corners it skips, that is an earlier corner's.
+    let source = CUT
+        .replace(
+            "iaddiu kept,vi00,0\n",
+            "iaddiu kept,vi00,0\nsub.xyzw edge,vf00,vf00\n",
+        )
+        .replace(
+            "iaddiu src,src,1\n",
+            "sq.xyzw edge,100(src)\niaddiu src,src,1\n",
+        );
+    let (_, optimized) = speculate_results(&source);
+    let (_, header) = table(&optimized, "lpass");
+    assert!(!header.contains(" sub "), "{optimized}");
+}
+
+#[test]
+fn speculate_keeps_a_division_whose_q_the_other_path_reads() {
+    // After the loop, Q is the last cut's ratio, or the one before the loop
+    // when no edge was cut: the last corner's edge may not have been.
+    let source = CUT
+        .replace(
+            "iaddiu kept,vi00,0\n",
+            "iaddiu kept,vi00,0\ndiv q,vf00[w],limit[w]\n",
+        )
+        .replace(
+            "--exit\n",
+            "mulq.xyzw scale,limit,q\nsq.xyzw scale,300(vi00)\n--exit\n",
+        );
+    let (_, optimized) = speculate_results(&source);
+    let (_, header) = table(&optimized, "lpass");
+    assert!(!header.contains("div"), "{optimized}");
+}
+
+#[test]
+fn speculate_keeps_a_flag_writer_above_a_test_it_would_feed() {
+    // The intersection's first instruction reads the second test's
+    // difference, which `hoist` moves into the header just above that test's
+    // FSAND. Landed there, its subtraction, of the opposite sign, would be
+    // the flags the FSAND reads; past the FSAND, nothing in the header writes
+    // the flags again before the streams after it read them.
+    let source = CUT.replace(
+        "lcut:\n",
+        "lcut:\nsub.w scaled,vf00,later\nsq.w scaled,50(dst)\n",
+    );
+    let (_, optimized) = speculate_results(&source);
+    let (_, header) = table(&optimized, "lpass");
+    assert!(!header.contains(" sub.w "), "{optimized}");
+}
+
+#[test]
+fn speculate_keeps_a_flag_writer_its_own_stream_tests() {
+    // The intersection first tests the current corner's side again and skips
+    // the cut for one side. Moved into the header, its ADD would leave the
+    // FSAND reading the second test's flags instead.
+    let source = CUT.replace(
+        "lcut:\n",
+        "lcut:\nadd.w side,dcur,vf00[x]\nfsand flagC,2\nibne flagC,vi00,lnext\n",
+    );
+    let (_, optimized) = speculate_results(&source);
+    let (_, header) = table(&optimized, "lpass");
+    assert!(!header.contains("addx.w"), "{optimized}");
 }

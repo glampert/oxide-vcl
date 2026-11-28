@@ -64,33 +64,9 @@ pub(super) struct HoistedLoop {
 pub(super) fn hoist(parsed: &parser::Program, only: Option<&BTreeSet<String>>) -> Option<Hoisted> {
     let statements = &parsed.statements;
     let labels = label_indices(statements);
-    let mut latches: BTreeMap<usize, usize> = BTreeMap::new();
-    for (index, statement) in statements.iter().enumerate() {
-        if let Some(instruction) = instruction_of(statement)
-            && is_conditional_branch(instruction)
-            && let Some(&header) = branch_target(instruction).and_then(|t| labels.get(&t))
-            && header < index
-        {
-            latches.insert(header, index);
-        }
-    }
-    // Loops with no other inside, and none that overlaps them without
-    // nesting either way.
-    let innermost: Vec<(usize, usize)> = latches
-        .iter()
-        .filter(|&(&header, &latch)| {
-            !latches.iter().any(|(&other, &end)| {
-                (other, end) != (header, latch)
-                    && other <= latch
-                    && header <= end
-                    && !(other < header && latch < end)
-            })
-        })
-        .map(|(&header, &latch)| (header, latch))
-        .collect();
     let mut order: Vec<usize> = (0..statements.len()).collect();
     let mut changed = Vec::new();
-    for (header, latch) in innermost {
+    for (header, latch) in innermost_loops(statements, &labels) {
         let name = label_name(statements, header);
         if only.is_some_and(|only| !only.contains(&name)) {
             continue;
@@ -119,23 +95,55 @@ pub(super) fn hoist(parsed: &parser::Program, only: Option<&BTreeSet<String>>) -
     })
 }
 
+/// The loops `hoist` and `speculate` work on, as their header's and latch's
+/// statement indices: a label and the last conditional branch back to it,
+/// with no other loop inside, and none that overlaps them without nesting
+/// either way.
+pub(super) fn innermost_loops(
+    statements: &[parser::Statement],
+    labels: &BTreeMap<String, usize>,
+) -> Vec<(usize, usize)> {
+    let mut latches: BTreeMap<usize, usize> = BTreeMap::new();
+    for (index, statement) in statements.iter().enumerate() {
+        if let Some(instruction) = instruction_of(statement)
+            && is_conditional_branch(instruction)
+            && let Some(&header) = branch_target(instruction).and_then(|t| labels.get(&t))
+            && header < index
+        {
+            latches.insert(header, index);
+        }
+    }
+    latches
+        .iter()
+        .filter(|&(&header, &latch)| {
+            !latches.iter().any(|(&other, &end)| {
+                (other, end) != (header, latch)
+                    && other <= latch
+                    && header <= end
+                    && !(other < header && latch < end)
+            })
+        })
+        .map(|(&header, &latch)| (header, latch))
+        .collect()
+}
+
 /// Where statement `index` sits in `order`. The loops rewritten do not
 /// overlap, so each loop's statements are still in their own order when it
 /// is rewritten.
-fn position(order: &[usize], index: usize) -> usize {
+pub(super) fn position(order: &[usize], index: usize) -> usize {
     order.iter().position(|&at| at == index).unwrap()
 }
 
 /// A block of a loop: its statements, its instructions other than the
 /// branch that ends it, and that branch.
-struct Block {
-    start: usize,
+pub(super) struct Block {
+    pub(super) start: usize,
     /// One past the last statement.
-    end: usize,
+    pub(super) end: usize,
     /// The first label, lowercase, when the block starts with one.
-    label: Option<String>,
-    body: Vec<usize>,
-    branch: Option<usize>,
+    pub(super) label: Option<String>,
+    pub(super) body: Vec<usize>,
+    pub(super) branch: Option<usize>,
 }
 
 /// The loop's statements in their new order, and the first labels of the
@@ -228,7 +236,7 @@ fn hoist_loop(
 
 /// The loop's blocks, from `header` to `latch`: a label after code starts
 /// one, and a branch ends one.
-fn blocks(statements: &[parser::Statement], header: usize, latch: usize) -> Vec<Block> {
+pub(super) fn blocks(statements: &[parser::Statement], header: usize, latch: usize) -> Vec<Block> {
     let mut blocks: Vec<Block> = Vec::new();
     let mut current = Block {
         start: header,
@@ -294,7 +302,7 @@ fn blocks(statements: &[parser::Statement], header: usize, latch: usize) -> Vec<
 /// `blocks.len()` is the iteration's end: a branch back to the header or out
 /// of the loop, or falling out of it. `None` when a branch goes back to
 /// another block of the loop.
-fn successors(
+pub(super) fn successors(
     statements: &[parser::Statement],
     labels: &BTreeMap<String, usize>,
     blocks: &[Block],
@@ -335,7 +343,7 @@ fn successors(
 
 /// `dominators[b][a]`: block `a` is on every path from the header to `b`.
 /// Every edge goes forward, so one pass in order settles them.
-fn dominators(blocks: &[Block], successors: &[Vec<usize>]) -> Vec<Vec<bool>> {
+pub(super) fn dominators(blocks: &[Block], successors: &[Vec<usize>]) -> Vec<Vec<bool>> {
     let count = blocks.len();
     let mut predecessors = vec![Vec::new(); count];
     for (from, next) in successors.iter().enumerate() {
@@ -369,7 +377,7 @@ fn dominators(blocks: &[Block], successors: &[Vec<usize>]) -> Vec<Vec<bool>> {
 
 /// `post_dominators[a][b]`: block `b` is on every path from `a` to the
 /// iteration's end (`exit`). One pass in reverse order settles them.
-fn post_dominators(successors: &[Vec<usize>], exit: usize) -> Vec<Vec<bool>> {
+pub(super) fn post_dominators(successors: &[Vec<usize>], exit: usize) -> Vec<Vec<bool>> {
     let count = successors.len();
     let mut post = vec![vec![false; count + 1]; count + 1];
     post[exit][exit] = true;
@@ -390,7 +398,7 @@ fn post_dominators(successors: &[Vec<usize>], exit: usize) -> Vec<Vec<bool>> {
 
 /// The blocks strictly between `from` and `to`: reachable from `from`, and
 /// reaching `to`.
-fn between(successors: &[Vec<usize>], from: usize, to: usize) -> Vec<usize> {
+pub(super) fn between(successors: &[Vec<usize>], from: usize, to: usize) -> Vec<usize> {
     let count = successors.len();
     let mut reached = vec![false; count + 1];
     reached[from] = true;
@@ -492,7 +500,7 @@ impl Effects {
 
 /// Whether an instruction may move at all: ordinary code or a load, with no
 /// external, random-unit or memory-ordering effect.
-fn movable(instruction: &Instruction) -> bool {
+pub(super) fn movable(instruction: &Instruction) -> bool {
     let metadata = instruction.metadata;
     let ordinary = match metadata.kind {
         instruction::InstructionKind::Ordinary => true,
@@ -514,6 +522,12 @@ fn movable(instruction: &Instruction) -> bool {
 /// rows it walks, stall rows included (`printed [a b] walked [name]`), which
 /// is what the stream takes when it is entered with nothing in flight.
 pub(super) fn table_cycles(assembly: &str) -> BTreeMap<String, u32> {
+    tables(assembly).into_iter().collect()
+}
+
+/// Each table's stream name, lowercase, and cycles (as [`table_cycles`]
+/// counts them), in the listing's order.
+pub(super) fn tables(assembly: &str) -> Vec<(String, u32)> {
     assembly
         .lines()
         .filter_map(|line| {
@@ -544,7 +558,7 @@ pub(super) fn stream_cycles(
     Some(sums)
 }
 
-fn label_name(statements: &[parser::Statement], index: usize) -> String {
+pub(super) fn label_name(statements: &[parser::Statement], index: usize) -> String {
     match &statements[index].kind {
         StatementKind::Label(label) => label.name.to_ascii_lowercase(),
         _ => String::new(),
@@ -553,7 +567,7 @@ fn label_name(statements: &[parser::Statement], index: usize) -> String {
 
 /// Only labels and ordinary instructions, with no barrier: no regions, raw
 /// code, directives, calls or register branches.
-fn ordinary_body(statements: &[parser::Statement]) -> bool {
+pub(super) fn ordinary_body(statements: &[parser::Statement]) -> bool {
     statements.iter().all(|statement| match &statement.kind {
         StatementKind::Label(_) => true,
         StatementKind::Instruction(instruction) if instruction.mode == ParseMode::Vcl => {
@@ -572,7 +586,7 @@ fn ordinary_body(statements: &[parser::Statement]) -> bool {
 
 /// Whether a branch from outside the loop names one of its labels past the
 /// header.
-fn entered_past_header(
+pub(super) fn entered_past_header(
     statements: &[parser::Statement],
     labels: &BTreeMap<String, usize>,
     header: usize,
@@ -588,7 +602,7 @@ fn entered_past_header(
 }
 
 /// Each label's statement index, by lowercase name.
-fn label_indices(statements: &[parser::Statement]) -> BTreeMap<String, usize> {
+pub(super) fn label_indices(statements: &[parser::Statement]) -> BTreeMap<String, usize> {
     statements
         .iter()
         .enumerate()
@@ -599,7 +613,7 @@ fn label_indices(statements: &[parser::Statement]) -> BTreeMap<String, usize> {
         .collect()
 }
 
-fn instruction_of(statement: &parser::Statement) -> Option<&Instruction> {
+pub(super) fn instruction_of(statement: &parser::Statement) -> Option<&Instruction> {
     match &statement.kind {
         StatementKind::Instruction(instruction) => Some(instruction),
         _ => None,
@@ -607,7 +621,7 @@ fn instruction_of(statement: &parser::Statement) -> Option<&Instruction> {
 }
 
 /// A branch that reads a register and may fall through.
-fn is_conditional_branch(instruction: &Instruction) -> bool {
+pub(super) fn is_conditional_branch(instruction: &Instruction) -> bool {
     instruction.synthetic().is_none()
         && instruction.metadata.is_branch()
         && instruction.metadata.subtype & (REGISTER | LINK) == 0
@@ -618,7 +632,7 @@ fn is_conditional_branch(instruction: &Instruction) -> bool {
 }
 
 /// A branch's target label, lowercase.
-fn branch_target(instruction: &Instruction) -> Option<String> {
+pub(super) fn branch_target(instruction: &Instruction) -> Option<String> {
     if instruction.synthetic().is_some() || !instruction.metadata.is_branch() {
         return None;
     }

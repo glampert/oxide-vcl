@@ -94,6 +94,10 @@ optimizations (--mode=oxide only, which runs them all by default):
                  hoist: in a loop with branches, move work every path
                  through an iteration does up into the earliest stream that
                  runs when it does, where that shortens those streams
+                 speculate: in a loop with branches, start a conditional
+                 stream's first work, and the division it feeds, in an
+                 earlier stream every iteration runs, where the paths that
+                 skip the stream never read it and that shortens it
 
 diagnostics (file(line): severity: message, with the source line and a fix):
   -q             quiet mode: prints only warnings and errors

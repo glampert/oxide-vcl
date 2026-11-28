@@ -37,6 +37,7 @@ mod region;
 mod rows;
 mod software_loops;
 mod source_passes;
+mod speculate;
 mod spill;
 mod table_planning;
 mod table_timing;
@@ -1669,29 +1670,46 @@ impl Failure {
 
 /// Compiles a parsed program. With the `hoist` optimization, the program
 /// `pointers` and `unswitch` settle on then has work its loops do on every
-/// path moved up (`hoist`) where that shortens the streams it moves between:
-/// it is compiled once more with the moves, and when only some loops gain,
-/// once more with just those.
+/// path moved up (`hoist`) where that shortens the streams it moves between,
+/// and with `speculate`, the program that gives then has its loops'
+/// conditional streams start their first work in the streams every
+/// iteration runs (`speculate`) where that shortens them and lengthens no
+/// other. Each is compiled once more with its moves, and when only some
+/// loops gain, once more with just those.
 fn compile_parsed(
     parsed: parser::Program,
     filename: &str,
     options: &Options,
 ) -> Result<Compiled, Box<Failure>> {
     let (base, program) = compile_pointers(parsed, filename, options)?;
-    if !options.optimizes(Optimization::Hoist) {
-        return Ok(base);
-    }
-    let Some(hoisted) = hoist::hoist(&program, None) else {
-        return Ok(base);
-    };
-    let before = hoist::table_cycles(&base.assembly);
+    let limit = program_size::MICRO_MEMORY.max(base.instruction_pairs);
     let compile = |program: parser::Program| {
         compile_waited(program, filename, options)
             .ok()
-            .filter(|output| {
-                output.instruction_pairs <= program_size::MICRO_MEMORY.max(base.instruction_pairs)
-            })
+            .filter(|output| output.instruction_pairs <= limit)
     };
+    let (base, program) = if options.optimizes(Optimization::Hoist) {
+        hoisted(base, program, &compile)
+    } else {
+        (base, program)
+    };
+    if !options.optimizes(Optimization::Speculate) {
+        return Ok(base);
+    }
+    Ok(speculated(base, &program, &compile))
+}
+
+/// `base`, compiled from `program`, or the program with `hoist`'s moves in
+/// the loops they shorten, compiled, and the program it was compiled from.
+fn hoisted(
+    base: Compiled,
+    program: parser::Program,
+    compile: &dyn Fn(parser::Program) -> Option<Compiled>,
+) -> (Compiled, parser::Program) {
+    let Some(hoisted) = hoist::hoist(&program, None) else {
+        return (base, program);
+    };
+    let before = hoist::table_cycles(&base.assembly);
     // The loops whose moved streams take fewer cycles in all.
     let gaining = |hoisted: &hoist::Hoisted, output: &Compiled| -> BTreeSet<String> {
         let after = hoist::table_cycles(&output.assembly);
@@ -1705,21 +1723,62 @@ fn compile_parsed(
             .collect()
     };
     let Some(output) = compile(hoisted.program.clone()) else {
-        return Ok(base);
+        return (base, program);
     };
     let gains = gaining(&hoisted, &output);
     if gains.len() == hoisted.loops.len() {
-        return Ok(output);
+        return (output, hoisted.program);
     }
     if gains.is_empty() {
-        return Ok(base);
+        return (base, program);
     }
     let Some(fewer) = hoist::hoist(&program, Some(&gains)) else {
-        return Ok(base);
+        return (base, program);
     };
     match compile(fewer.program.clone()) {
-        Some(output) if gaining(&fewer, &output).len() == fewer.loops.len() => Ok(output),
-        _ => Ok(base),
+        Some(output) if gaining(&fewer, &output).len() == fewer.loops.len() => {
+            (output, fewer.program)
+        }
+        _ => (base, program),
+    }
+}
+
+/// `base`, compiled from `program`, or the program with `speculate`'s moves
+/// in the loops they shorten, compiled.
+fn speculated(
+    base: Compiled,
+    program: &parser::Program,
+    compile: &dyn Fn(parser::Program) -> Option<Compiled>,
+) -> Compiled {
+    let Some(speculated) = speculate::speculate(program, None) else {
+        return base;
+    };
+    let before = hoist::tables(&base.assembly);
+    let gaining = |speculated: &speculate::Speculated, output: &Compiled| -> BTreeSet<String> {
+        let after = hoist::tables(&output.assembly);
+        speculated
+            .loops
+            .iter()
+            .filter(|changed| speculate::gains(changed, &before, &after))
+            .map(|changed| changed.header.clone())
+            .collect()
+    };
+    let Some(output) = compile(speculated.program.clone()) else {
+        return base;
+    };
+    let gains = gaining(&speculated, &output);
+    if gains.len() == speculated.loops.len() {
+        return output;
+    }
+    if gains.is_empty() {
+        return base;
+    }
+    let Some(fewer) = speculate::speculate(program, Some(&gains)) else {
+        return base;
+    };
+    match compile(fewer.program.clone()) {
+        Some(output) if gaining(&fewer, &output).len() == fewer.loops.len() => output,
+        _ => base,
     }
 }
 

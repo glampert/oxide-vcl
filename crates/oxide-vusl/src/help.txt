@@ -40,7 +40,9 @@ code:
                        loop for a branch that does not change in it),
                        pointers (one pointer for pointers that step
                        together), hoist (work every path of a loop does,
-                       moved up into an earlier stream)
+                       moved up into an earlier stream), speculate (a
+                       conditional stream's first work and division,
+                       started in an earlier stream)
   --vcl-option=<opt>   pass one oxide-vcl compile option, as its command line
                        takes it (-c, -L, --fix=all, ...); may be repeated.
                        Options for files, preprocessing, the mode or label
