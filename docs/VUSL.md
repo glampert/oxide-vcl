@@ -801,7 +801,7 @@ or `-oout.vsm`).
 | `-o <file>` | Write the listing to `<file>` |
 | `--emit-vcl=<file>` | Also write the generated VCL |
 | `--stop-at-vcl` | Write the generated VCL instead of the listing |
-| `--annotate` | In the VCL written, a comment before each run of lines from one VUSL line: its file, number and text (`; clipper.vusl(52): d = d - jp.z;`). Needs `--emit-vcl` or `--stop-at-vcl`; the listing is the same |
+| `--annotate` | In the VCL written, a comment before each run of lines from one VUSL line: its file, number and text (`; clipper.vusl(81): float d = pos.w * frame.clipShrink;`). Needs `--emit-vcl` or `--stop-at-vcl`; the listing is the same |
 | `--preprocess-only` | Write the preprocessed text and stop |
 | `--check` | Check the program and stop: types, lanes, layouts and `main`'s parameters, without generating code |
 | `--reflect=<file>` | Also write the reflection JSON |

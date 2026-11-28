@@ -49,18 +49,18 @@ scene.
 | | | world floor | 12586 | 15863 | −20.7% |
 | | | model | 1175 | 1578 | −25.5% |
 | | | model near | 3001 | 3628 | −17.3% |
-| doom3 world_strips | 323 + 443 / 672 | wall | 2184 | 3895 | −43.9% |
-| | | floor | 36916 | 44637 | −17.3% |
-| | | side | 15123 | 18762 | −19.4% |
-| doom3 world_lm | 661 + 443 / 989 | wall | 2131 | 2207 | −3.4% |
+| doom3 world_strips | 323 + 612 / 672 | wall | 2184 | 3895 | −43.9% |
+| | | floor | 32472 | 44637 | −27.3% |
+| | | side | 14275 | 18762 | −23.9% |
+| doom3 world_lm | 661 + 612 / 989 | wall | 2131 | 2207 | −3.4% |
 | | | wall lit | 3152 | 3372 | −6.5% |
-| | | floor | 30936 | 43419 | −28.8% |
-| | | floor lit | 60756 | 85729 | −29.1% |
-| | | side | 8089 | 17672 | −54.2% |
-| | | side lit | 15134 | 34299 | −55.9% |
+| | | floor | 24284 | 43419 | −44.1% |
+| | | floor lit | 47452 | 85729 | −44.6% |
+| | | side | 6169 | 17672 | −65.1% |
+| | | side lit | 11294 | 34299 | −67.1% |
 
-The doom3 programs' 443 is the clipper library, resident at 1536 and shared: the two programs and
-the library take 1,427 instructions, the two hand-written programs 1,661.
+The doom3 programs' 612 is the clipper library, resident at 1408 and shared: the two programs and
+the library take 1,596 instructions, the two hand-written programs 1,661.
 
 ## Where the differences come from
 
@@ -95,8 +95,13 @@ the library take 1,427 instructions, the two hand-written programs 1,661.
     one, wholly outside that plane, is dropped before the call: the clipper would send nothing
     for it. This halves the floor scene's calls and leaves the side scene an eighth of
     them.
-- **The clipper library.** Its passes test signs as textured_triangles' do, and a plane's
-  distance is `w` scaled less or plus the plane's coordinate, with no negated copy. Each call costs the argument and result moves, the JALR and the entry
+- **The clipper library.** Its passes have no branch per edge. Each edge stores its first corner
+  and its cut, and steps the cursor past those it keeps by 0 or 3 qwords: the step is
+  `clamp((d + 1/16) * 2^30, 0, 3)` converted with FTOI0, which is 0 from -1/16 down and 3 above
+  it: `d + 1/16`, when above 0, is at least 2^-28, the spacing of floats just below 1/16. An unkept store is
+  overwritten by the next one or lies past the survivors. A pass is then one block, so its
+  edges' distance chains overlap where the branches kept them apart. A plane's distance is `w`
+  scaled less or plus the plane's coordinate, with no negated copy. Each call costs the argument and result moves, the JALR and the entry
   table's branch, the library's saves and restores of VI06–VI09 and VF16–VF23, the JR, and the
   scheduling that cannot cross the call. The clipper's pass is an argument, where an inlined
   clipper folds it. A call may change VI10–VI15 and VI01, so what crosses it must fit in VI02–VI09;

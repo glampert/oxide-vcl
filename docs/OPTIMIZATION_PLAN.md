@@ -496,9 +496,11 @@ sit in loops with branches, which no pipeliner takes. The profile report of
 `crates/vusl/tests/programs.rs` (`VUSL_PROFILE=<case> cargo test --release
 -p vusl --test programs profile -- --ignored --nocapture`) gives each
 label's cycles. For the VUSL ports in oxide mode, the clip passes'
-Sutherland-Hodgman loops (`clipPass` in
-`tests/vusl/programs/include/clipper.vusl`, and textured_triangles' own)
-take:
+Sutherland-Hodgman loops take the cycles below. They are written with a
+branch per corner and per cut, as textured_triangles' own passes are; the
+`world_lm` and `world_strips` figures here and in O12 are for the clipper
+library's `clipPass` written the same way. The library's pass has no
+branches (`docs/VUSL_PERFORMANCE.md`), which these tables do not cover.
 
 | Scene | Cycles | Stall cycles | In the clip-pass loops |
 | --- | ---: | ---: | --- |
